@@ -291,6 +291,20 @@ function appendMessage(role, content, blocks = null) {
   return bubble;
 }
 
+function createEmptyBubble(role) {
+  const container = document.getElementById("messages");
+  const bubble = document.createElement("div");
+  bubble.className = `bubble ${role}`;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+  return bubble;
+}
+
+function getActiveToolStreamBubble() {
+  const container = document.getElementById("messages");
+  return container.querySelector(".bubble.assistant[data-tool-stream=\"true\"]:last-child");
+}
+
 function renderPermissionRequest(request) {
   if (!request || !request.id) return;
   if (state.pendingPermissions.has(request.id)) return;
@@ -428,6 +442,122 @@ function updateBubbleContent(bubble, text) {
   highlightCodes(target);
 }
 
+function showTypingIndicator(bubble) {
+  if (!bubble) return;
+  bubble.innerHTML = "";
+  const indicator = document.createElement("div");
+  indicator.className = "typing-indicator";
+  indicator.innerHTML = "<span></span><span></span><span></span>";
+  bubble.appendChild(indicator);
+}
+
+function renderToolStreamItem(block) {
+  const item = document.createElement("div");
+  item.className = "tool-stream-item";
+  const title = document.createElement("div");
+  title.className = "tool-title";
+  const detail = document.createElement("div");
+  detail.className = "tool-details tool-details-row";
+  const body = document.createElement("div");
+  body.className = "tool-body";
+  const pre = document.createElement("pre");
+
+  if (block.type === "tool_use") {
+    title.textContent = `🛠 ${block.name || "tool call"}`;
+    detail.textContent = summarizeToolInput(block.name, block.input);
+    pre.textContent = formatJson(block.input);
+  } else if (block.type === "tool_result") {
+    title.textContent = block.is_error ? "🛠 Tool error" : "🛠 Tool result";
+    pre.textContent = block.content || "(empty result)";
+  } else {
+    title.textContent = "🛠 Tool event";
+    pre.textContent = formatJson(block);
+  }
+
+  body.appendChild(pre);
+  item.appendChild(title);
+  if (detail.textContent) item.appendChild(detail);
+  item.appendChild(body);
+  return item;
+}
+
+function renderToolStreamBlock(blocks) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "tool-block tool-stream";
+  const head = document.createElement("div");
+  head.className = "tool-head";
+  const title = document.createElement("div");
+  title.className = "tool-title";
+  const toggle = document.createElement("button");
+  toggle.className = "tool-toggle";
+  toggle.textContent = "Expand";
+  head.appendChild(title);
+  head.appendChild(toggle);
+
+  const details = document.createElement("div");
+  details.className = "tool-details tool-details-row";
+  const toolCallCount = blocks.filter((b) => b.type === "tool_use").length;
+
+  const lastToolCall = [...blocks].reverse().find((b) => b.type === "tool_use");
+  if (lastToolCall) {
+    const countLabel = toolCallCount ? ` (${toolCallCount})` : "";
+    title.textContent = `🛠 ${lastToolCall.name || "tool call"}${countLabel}`;
+    details.textContent = summarizeToolInput(lastToolCall.name, lastToolCall.input);
+  } else {
+    const lastBlock = blocks[blocks.length - 1];
+    const countLabel = toolCallCount ? ` (${toolCallCount})` : "";
+    title.textContent =
+      (lastBlock && lastBlock.type === "tool_result" ? "🛠 Tool result" : "🛠 Tool") + countLabel;
+  }
+
+  const body = document.createElement("div");
+  body.className = "tool-body";
+  body.style.display = "none";
+  blocks.forEach((block) => body.appendChild(renderToolStreamItem(block)));
+
+  const toggleOpen = () => {
+    const open = wrapper.classList.toggle("open");
+    body.style.display = open ? "block" : "none";
+    toggle.textContent = open ? "Collapse" : "Expand";
+  };
+  head.addEventListener("click", toggleOpen);
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleOpen();
+  });
+
+  wrapper.appendChild(head);
+  if (details.textContent) wrapper.appendChild(details);
+  wrapper.appendChild(body);
+  return wrapper;
+}
+
+function updateToolStreamBubble(bubble, block) {
+  if (!bubble) return;
+  let blocks = [];
+  if (bubble.dataset.toolBlocks) {
+    try {
+      blocks = JSON.parse(bubble.dataset.toolBlocks);
+    } catch (_) {
+      blocks = [];
+    }
+  }
+  blocks.push(block);
+  bubble.dataset.toolBlocks = JSON.stringify(blocks);
+  bubble.innerHTML = "";
+  bubble.appendChild(renderToolStreamBlock(blocks));
+  bubble.scrollIntoView({ block: "end" });
+  highlightCodes(bubble);
+}
+
+function updateBubbleBlock(bubble, block) {
+  if (!bubble) return;
+  bubble.innerHTML = "";
+  bubble.appendChild(renderBlock(block));
+  bubble.scrollIntoView({ block: "end" });
+  highlightCodes(bubble);
+}
+
 function highlightCodes(scope) {
   if (!scope || !window.hljs) return;
   scope.querySelectorAll("pre code").forEach((code) => {
@@ -520,7 +650,9 @@ async function sendMessageOnce(text) {
 
 async function sendMessageStreaming(text) {
   setStatus("Streaming response...");
-  const bubble = appendMessage("assistant", "");
+  const bubble = createEmptyBubble("assistant");
+  showTypingIndicator(bubble);
+  let toolBubble = null;
   let buffer = "";
   let currentText = "";
   const poller = startPermissionPolling();
@@ -567,23 +699,27 @@ async function sendMessageStreaming(text) {
           currentText = evt.content;
           updateBubbleContent(bubble, currentText);
         } else if (evt.type === "tool_call") {
-          appendMessage("assistant", "", [
-            {
-              type: "tool_use",
-              name: evt.name,
-              id: evt.tool_use_id,
-              input: evt.input,
-            },
-          ]);
+          if (!toolBubble || !document.body.contains(toolBubble)) {
+            toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
+            toolBubble.dataset.toolStream = "true";
+          }
+          updateToolStreamBubble(toolBubble, {
+            type: "tool_use",
+            name: evt.name,
+            id: evt.tool_use_id,
+            input: evt.input,
+          });
         } else if (evt.type === "tool_result") {
-          appendMessage("assistant", "", [
-            {
-              type: "tool_result",
-              tool_use_id: evt.tool_use_id,
-              content: evt.content,
-              is_error: !!evt.is_error,
-            },
-          ]);
+          if (!toolBubble || !document.body.contains(toolBubble)) {
+            toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
+            toolBubble.dataset.toolStream = "true";
+          }
+          updateToolStreamBubble(toolBubble, {
+            type: "tool_result",
+            tool_use_id: evt.tool_use_id,
+            content: evt.content,
+            is_error: !!evt.is_error,
+          });
         } else if (evt.type === "permission_request") {
           renderPermissionRequest(evt);
         } else if (evt.type === "error") {
@@ -706,7 +842,7 @@ function setMcpForm(server) {
   const env = server.config.env || {};
   document.getElementById("mcp-env").value = Object.entries(env)
     .map(([k, v]) => `${k}=${v}`)
-    .join(", ");
+    .join("\n");
   document.getElementById("mcp-enabled").value = String(server.config.enabled);
   document.getElementById("connect-mcp-detail").style.display = "";
   document.getElementById("disconnect-mcp-detail").style.display = "";
@@ -797,12 +933,16 @@ async function saveMcpServer() {
 function parseEnv(text) {
   const env = {};
   text
+    .replace(/\r?\n/g, ",")
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean)
     .forEach((pair) => {
-      const [k, v] = pair.split("=");
-      if (k && v !== undefined) env[k.trim()] = v.trim();
+      const idx = pair.indexOf("=");
+      if (idx <= 0) return;
+      const key = pair.slice(0, idx).trim();
+      const value = pair.slice(idx + 1).trim();
+      if (key) env[key] = value;
     });
   return env;
 }
