@@ -31,6 +31,49 @@ pub fn get_logo_for_terminal() -> &'static str {
 
 /// Display the logo with colors using crossterm for smooth gradients
 pub fn display_logo() {
+    if crate::output::is_tui_active() {
+        for line in get_logo_for_terminal().lines() {
+            let mut colored_line = String::new();
+            let chars: Vec<char> = line.chars().collect();
+            for (i, ch) in chars.iter().enumerate() {
+                if *ch == ' ' {
+                    colored_line.push(' ');
+                    continue;
+                }
+                let progress = i as f32 / chars.len().max(1) as f32;
+                let (r, g, b) = if progress < 0.5 {
+                    let t = progress / 0.5;
+                    (255, (165.0 * t) as u8, 0)
+                } else {
+                    let t = (progress - 0.5) / 0.5;
+                    (255, (165.0 * (1.0 - t) + 255.0 * t) as u8, 0)
+                };
+                colored_line.push_str(&format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, ch));
+            }
+            app_println!("{}", colored_line);
+        }
+        let subtitle = "?? Your Supercharged AI Coding Agent";
+        let mut colored_subtitle = String::new();
+        let chars: Vec<char> = subtitle.chars().collect();
+        for (i, ch) in chars.iter().enumerate() {
+            let progress = i as f32 / chars.len().max(1) as f32;
+            let (r, g, b) = if progress < 0.5 {
+                let t = progress / 0.5;
+                (255, (0.0 * (1.0 - t) + 165.0 * t) as u8, 0)
+            } else {
+                let t = (progress - 0.5) / 0.5;
+                (255, (165.0 * (1.0 - t) + 255.0 * t) as u8, 0)
+            };
+            colored_subtitle.push_str(&format!(
+                "\x1b[38;2;{};{};{}m{}\x1b[0m",
+                r, g, b, ch
+            ));
+        }
+        app_println!("{}", colored_subtitle);
+        app_println!();
+        return;
+    }
+
     use crossterm::{
         queue,
         style::{Color, Print, ResetColor, SetForegroundColor},
@@ -41,7 +84,7 @@ pub fn display_logo() {
     let mut stdout = stdout();
 
     // Display the logo with smooth gradient effect
-    for (line_idx, line) in logo.lines().enumerate() {
+    for (_line_idx, line) in logo.lines().enumerate() {
         if line.trim().is_empty() {
             queue!(stdout, Print(line), Print("\n")).ok();
         } else {
@@ -102,3 +145,5 @@ pub fn display_logo() {
     queue!(stdout, ResetColor, Print("\n\n")).ok();
     stdout.flush().ok();
 }
+
+

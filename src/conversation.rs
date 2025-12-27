@@ -151,7 +151,7 @@ impl ConversationManager {
         // Re-add AGENTS.md content if it was captured
         for file_path in &agent_files {
             match self.add_context_file(file_path).await {
-                Ok(_) => println!("{} Re-added context file: {}", "\u{2713}", file_path),
+                Ok(_) => app_println!("{} Re-added context file: {}", "\u{2713}", file_path),
                 Err(e) => log::warn!("Failed to re-add context file '{}': {}", file_path, e),
             }
         }
@@ -312,23 +312,23 @@ impl ConversationManager {
 
     /// Display the current conversation context
     pub fn display_context(&self) {
-        println!("{}", "📝 Current Conversation Context".cyan().bold());
-        println!("{}", "─".repeat(50).dimmed());
-        println!();
+        app_println!("{}", "📝 Current Conversation Context".cyan().bold());
+        app_println!("{}", "─".repeat(50).dimmed());
+        app_println!();
 
         // Display system prompt if set
         if let Some(system_prompt) = &self.system_prompt {
-            println!("{}", "System Prompt:".green().bold());
-            println!("  {}", system_prompt);
-            println!();
+            app_println!("{}", "System Prompt:".green().bold());
+            app_println!("  {}", system_prompt);
+            app_println!();
         }
 
         if self.conversation.is_empty() {
-            println!(
+            app_println!(
                 "{}",
                 "No context yet. Start a conversation to see context here.".dimmed()
             );
-            println!();
+            app_println!();
             return;
         }
 
@@ -339,7 +339,7 @@ impl ConversationManager {
                 _ => "yellow",
             };
 
-            println!(
+            app_println!(
                 "{} {}: {}",
                 format!("[{}]", i + 1).dimmed(),
                 format!("{}", message.role.to_uppercase()).color(role_color),
@@ -362,7 +362,7 @@ impl ConversationManager {
                             } else {
                                 text.clone()
                             };
-                            println!(
+                            app_println!(
                                 "  {} {}: {}",
                                 format!("└─ Block {}", j + 1).dimmed(),
                                 "Text".green(),
@@ -374,7 +374,7 @@ impl ConversationManager {
                         if let (Some(ref id), Some(ref name), Some(ref input)) =
                             (&block.id, &block.name, &block.input)
                         {
-                            println!(
+                            app_println!(
                                 "  {} {}: {} ({})",
                                 format!("└─ Block {}", j + 1).dimmed(),
                                 "Tool Use".yellow(),
@@ -398,7 +398,7 @@ impl ConversationManager {
                             } else {
                                 input_str
                             };
-                            println!("    {} {}", "Input:".dimmed(), preview);
+                            app_println!("    {} {}", "Input:".dimmed(), preview);
                         }
                     }
                     "tool_result" => {
@@ -410,7 +410,7 @@ impl ConversationManager {
                             } else {
                                 "Result".green()
                             };
-                            println!(
+                            app_println!(
                                 "  {} {}: {} ({})",
                                 format!("└─ Block {}", j + 1).dimmed(),
                                 result_type,
@@ -428,11 +428,11 @@ impl ConversationManager {
                             } else {
                                 content.clone()
                             };
-                            println!("    {} {}", "Content:".dimmed(), preview.replace('\n', " "));
+                            app_println!("    {} {}", "Content:".dimmed(), preview.replace('\n', " "));
                         }
                     }
                     _ => {
-                        println!(
+                        app_println!(
                             "  {} {}",
                             format!("└─ Block {}", j + 1).dimmed(),
                             "Unknown".red()
@@ -440,11 +440,11 @@ impl ConversationManager {
                     }
                 }
             }
-            println!();
+            app_println!();
         }
 
-        println!("{}", "─".repeat(50).dimmed());
-        println!(
+        app_println!("{}", "─".repeat(50).dimmed());
+        app_println!(
             "{}: {} messages, {} total content blocks",
             "Summary".bold(),
             self.conversation.len(),
@@ -453,6 +453,8 @@ impl ConversationManager {
                 .map(|m| m.content.len())
                 .sum::<usize>()
         );
-        println!();
+        app_println!();
     }
 }
+
+

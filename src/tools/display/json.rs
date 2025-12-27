@@ -138,16 +138,18 @@ impl JsonDisplay {
 impl super::ToolDisplay for JsonDisplay {
     fn show_call_details(&self, arguments: &Value) {
         let json_output = self.tool_call_to_json(arguments);
-        println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
+        app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
     }
 
     fn complete_success(&mut self, result: &str) {
         let json_output = self.result_to_json(result, false);
-        println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
+        app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
     }
 
     fn complete_error(&mut self, error: &str) {
         let json_output = self.result_to_json(error, true);
-        println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
+        app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
     }
 }
+
+

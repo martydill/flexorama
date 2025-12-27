@@ -1,7 +1,6 @@
 use crate::tools::registry::{DisplayContext, DisplayFormat};
 use colored::Colorize;
 use serde_json::Value;
-use std::io::{self, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Pretty display for tool calls with boxes, colors, and detailed formatting
@@ -195,11 +194,11 @@ impl super::ToolDisplay for PrettyDisplay {
     fn show_call_details(&self, _arguments: &Value) {
         let icon = self.context.metadata.icon;
 
-        println!(
+        app_println!(
             "{}",
             "┌─────────────────────────────────────────────────".dimmed()
         );
-        println!(
+        app_println!(
             "{} {} {} {}",
             "│".dimmed(),
             icon,
@@ -209,16 +208,16 @@ impl super::ToolDisplay for PrettyDisplay {
 
         // Add formatted tool details
         for line in self.format_tool_details() {
-            println!("{}", line);
+            app_println!("{}", line);
         }
 
-        println!(
+        app_println!(
             "{}",
             "└─────────────────────────────────────────────────".dimmed()
         );
 
         // Flush to ensure immediate display
-        io::stdout().flush().unwrap();
+        crate::output::flush();
     }
 
     fn complete_success(&mut self, result: &str) {
@@ -226,11 +225,11 @@ impl super::ToolDisplay for PrettyDisplay {
         let icon = "✅";
         let status = "SUCCESS".green().bold();
 
-        println!(
+        app_println!(
             "{}",
             "┌─────────────────────────────────────────────────".dimmed()
         );
-        println!(
+        app_println!(
             "{} {} {} {} ({})",
             "│".dimmed(),
             icon,
@@ -241,16 +240,16 @@ impl super::ToolDisplay for PrettyDisplay {
 
         // Add formatted result content
         for line in self.format_result_content(result, false) {
-            println!("{}", line);
+            app_println!("{}", line);
         }
 
-        println!(
+        app_println!(
             "{}",
             "└─────────────────────────────────────────────────".dimmed()
         );
 
         // Flush to ensure immediate display
-        io::stdout().flush().unwrap();
+        crate::output::flush();
     }
 
     fn complete_error(&mut self, error: &str) {
@@ -258,11 +257,11 @@ impl super::ToolDisplay for PrettyDisplay {
         let icon = "❌";
         let status = "FAILED".red().bold();
 
-        println!(
+        app_println!(
             "{}",
             "┌─────────────────────────────────────────────────".dimmed()
         );
-        println!(
+        app_println!(
             "{} {} {} {} ({})",
             "│".dimmed(),
             icon,
@@ -273,15 +272,17 @@ impl super::ToolDisplay for PrettyDisplay {
 
         // Add formatted error content
         for line in self.format_result_content(error, true) {
-            println!("{}", line);
+            app_println!("{}", line);
         }
 
-        println!(
+        app_println!(
             "{}",
             "└─────────────────────────────────────────────────".dimmed()
         );
 
         // Flush to ensure immediate display
-        io::stdout().flush().unwrap();
+        crate::output::flush();
     }
 }
+
+

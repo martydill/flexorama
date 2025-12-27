@@ -174,3 +174,5 @@ pub fn create_search_in_files_tool() -> Tool {
         metadata: None, // TODO: Add proper metadata
     }
 }
+
+

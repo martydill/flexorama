@@ -580,8 +580,8 @@ impl Agent {
         for file_path in &context_files {
             debug!("Auto-adding context file from @ syntax: {}", file_path);
             match self.add_context_file(file_path).await {
-                Ok(_) => println!("{} Added context file: {}", "✓".green(), file_path),
-                Err(e) => eprintln!(
+                Ok(_) => app_println!("{} Added context file: {}", "✓".green(), file_path),
+                Err(e) => app_eprintln!(
                     "{} Failed to add context file '{}': {}",
                     "✗".red(),
                     file_path,
@@ -699,7 +699,7 @@ impl Agent {
             if !response_content.is_empty() {
                 if on_stream_content.is_none() {
                     // Only print if not streaming (streaming handles its own output)
-                    println!("{}", response_content);
+                    app_println!("{}", response_content);
                 }
                 // Always accumulate response content, even in streaming mode
                 final_response = response_content.clone();
@@ -917,10 +917,10 @@ impl Agent {
 
     /// Display the active LLM provider info
     pub fn display_provider(&self) {
-        println!("{}", "LLM Provider".cyan().bold());
-        println!("  Provider: {}", self.provider);
-        println!("  Model: {}", self.model);
-        println!("  Base URL: {}", self.base_url);
+        app_println!("{}", "LLM Provider".cyan().bold());
+        app_println!("  Provider: {}", self.provider);
+        app_println!("  Model: {}", self.model);
+        app_println!("  Base URL: {}", self.base_url);
     }
 
     /// Get the active LLM provider
@@ -1329,3 +1329,5 @@ impl Agent {
         }
     }
 }
+
+

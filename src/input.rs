@@ -116,13 +116,13 @@ fn drain_queued_input_after_enter() -> Result<Option<String>> {
 fn print_final_input(content: &str) {
     if let Some((_, tail)) = content.split_once('\n') {
         // First line is already shown on the prompt; only show the remaining lines
-        println!();
+        app_println!();
         if !tail.is_empty() {
-            println!("{}", tail);
+            app_println!("{}", tail);
         }
     } else {
         // Single-line: just move to the next line like normal submit
-        println!();
+        app_println!();
     }
 }
 
@@ -552,7 +552,7 @@ pub fn read_input_with_completion_and_highlighting(
                     // Normal single line input - add to history
                     let trimmed_input = input.trim().to_string();
                     history.add_entry(trimmed_input.clone());
-                    println!();
+                    app_println!();
                     disable_raw_mode_and_bracketed_paste()?;
                     return Ok(trimmed_input);
                 }
@@ -652,7 +652,7 @@ pub fn read_input_with_completion_and_highlighting(
                 ..
             }) if c == 'c' => {
                 // Handle Ctrl+C
-                println!();
+                app_println!();
                 disable_raw_mode_and_bracketed_paste()?;
                 std::process::exit(0);
             }
@@ -663,7 +663,7 @@ pub fn read_input_with_completion_and_highlighting(
                 ..
             }) => {
                 // Handle ESC key - return cancellation signal
-                println!();
+                app_println!();
                 disable_raw_mode_and_bracketed_paste()?;
                 return Err(anyhow::anyhow!("CANCELLED"));
             }
@@ -753,7 +753,7 @@ pub fn read_multiline_input(
     }
 
     loop {
-        print!("... ");
+        app_print!("... ");
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
 
         let mut line = String::new();
@@ -787,7 +787,7 @@ pub fn read_multiline_input(
             }
             Err(_) => {
                 // Handle EOF or input error gracefully
-                println!("\n{} End of input", "👋".blue());
+                app_println!("\n{} End of input", "👋".blue());
                 break;
             }
         }
@@ -803,9 +803,9 @@ pub fn read_multiline_input(
         if input_lines.len() > 1 {
             for (i, line) in input_lines.iter().enumerate() {
                 if i == 0 {
-                    println!("> {}", line);
+                    app_println!("> {}", line);
                 } else {
-                    println!("... {}", line);
+                    app_println!("... {}", line);
                 }
             }
         }
@@ -1012,3 +1012,5 @@ fn highlight_search_in_text(text: &str, query: &str) -> String {
 
     result
 }
+
+

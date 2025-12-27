@@ -9,7 +9,7 @@ pub struct SimpleDisplay {
 impl SimpleDisplay {
     /// Create a new simple display for the given context
     pub fn new(context: DisplayContext) -> Self {
-        println!("▶ {} {}...", context.metadata.icon, context.tool_name);
+        app_println!("▶ {} {}...", context.metadata.icon, context.tool_name);
         Self { context }
     }
 
@@ -88,30 +88,32 @@ impl super::ToolDisplay for SimpleDisplay {
     fn show_call_details(&self, _arguments: &Value) {
         // Show tool details in simple format
         for line in self.format_tool_details() {
-            println!("{}", line);
+            app_println!("{}", line);
         }
     }
 
     fn complete_success(&mut self, result: &str) {
         let duration = self.context.start_time.elapsed();
-        println!("✅ {} completed in {:?}", self.context.tool_name, duration);
+        app_println!("✅ {} completed in {:?}", self.context.tool_name, duration);
 
         // Show limited result
         if !result.is_empty() {
             for line in self.format_result_content(result) {
-                println!("{}", line);
+                app_println!("{}", line);
             }
         }
     }
 
     fn complete_error(&mut self, error: &str) {
         let duration = self.context.start_time.elapsed();
-        println!("❌ {} failed in {:?}", self.context.tool_name, duration);
+        app_println!("❌ {} failed in {:?}", self.context.tool_name, duration);
 
-        println!("   Error:");
+        app_println!("   Error:");
         // Show limited error
         for line in self.format_result_content(error) {
-            println!("{}", line);
+            app_println!("{}", line);
         }
     }
 }
+
+

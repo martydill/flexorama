@@ -48,3 +48,4 @@ mod tests {
         drop(json_display);
     }
 }
+

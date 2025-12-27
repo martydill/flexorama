@@ -335,7 +335,7 @@ fn build_permission_handler(
 
 pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    println!(
+    app_println!(
         "?? Web UI starting on http://{} (Ctrl+C to stop)",
         addr
     );
@@ -1429,3 +1429,5 @@ fn timeline_messages_to_dto(
         })
         .collect()
 }
+
+

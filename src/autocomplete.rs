@@ -360,3 +360,5 @@ pub fn handle_tab_completion(input: &str, cursor_pos: usize) -> Option<String> {
         None
     }
 }
+
+

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use colored::*;
 use regex::Regex;
-use std::io::{self, Write};
 
 pub struct CodeFormatter {
     code_block_regex: Regex,
@@ -882,8 +881,8 @@ impl CodeFormatter {
 
     pub fn print_formatted(&self, text: &str) -> Result<()> {
         let formatted = self.format_response(text)?;
-        print!("{}", formatted);
-        io::stdout().flush()?;
+        app_print!("{}", formatted);
+        crate::output::flush();
         Ok(())
     }
 
@@ -959,7 +958,7 @@ impl StreamingResponseFormatter {
             self.process_complete_line(line.trim_end_matches('\r'))?;
         }
 
-        io::stdout().flush()?;
+        crate::output::flush();
         Ok(())
     }
 
@@ -969,22 +968,22 @@ impl StreamingResponseFormatter {
                 let highlighted = self
                     .formatter
                     .highlight_line(&self.pending_line, &self.current_lang);
-                println!("{}", highlighted);
+                app_println!("{}", highlighted);
             } else {
-                print!("{}", self.pending_line);
+                app_print!("{}", self.pending_line);
             }
             self.pending_line.clear();
         }
 
         if self.in_code_block {
-            println!(
+            app_println!(
                 "{}",
                 self.formatter.build_code_block_footer(&self.current_lang)
             );
             self.in_code_block = false;
         }
 
-        io::stdout().flush()?;
+        crate::output::flush();
         Ok(())
     }
 
@@ -1003,14 +1002,14 @@ impl StreamingResponseFormatter {
             let lang = trimmed.trim_start_matches("```").trim();
             self.start_code_block(lang);
         } else {
-            println!("{}", line);
+            app_println!("{}", line);
         }
         Ok(())
     }
 
     fn handle_code_line(&mut self, line: &str) {
         if line.trim() == "```" {
-            println!(
+            app_println!(
                 "{}",
                 self.formatter.build_code_block_footer(&self.current_lang)
             );
@@ -1019,7 +1018,7 @@ impl StreamingResponseFormatter {
         }
 
         let highlighted = self.formatter.highlight_line(line, &self.current_lang);
-        println!("{}", highlighted);
+        app_println!("{}", highlighted);
     }
 
     fn start_code_block(&mut self, lang: &str) {
@@ -1030,7 +1029,9 @@ impl StreamingResponseFormatter {
             normalized
         };
         self.current_lang = language.to_string();
-        println!("{}", self.formatter.build_code_block_header(language));
+        app_println!("{}", self.formatter.build_code_block_header(language));
         self.in_code_block = true;
     }
 }
+
+

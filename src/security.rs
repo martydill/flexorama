@@ -152,6 +152,7 @@ pub struct PermissionPrompt {
 pub type PermissionHandler =
     Arc<dyn Fn(PermissionPrompt) -> BoxFuture<'static, Option<usize>> + Send + Sync>;
 
+
 impl FileSecurityManager {
     pub fn new(security: FileSecurity) -> Self {
         Self {
@@ -241,12 +242,12 @@ Path: {}", operation, path),
             };
         }
 
-        println!();
-        println!("{}", "?? File Operation Security Check".yellow().bold());
-        println!("The following file operation requires permission:");
-        println!("  Operation: {}", operation.cyan());
-        println!("  Path: {}", path.cyan());
-        println!();
+        app_println!();
+        app_println!("{}", "?? File Operation Security Check".yellow().bold());
+        app_println!("The following file operation requires permission:");
+        app_println!("  Operation: {}", operation.cyan());
+        app_println!("  Path: {}", path.cyan());
+        app_println!();
 
         // Use tokio::task::spawn_blocking with timeout to prevent hanging
         let options_clone = options.clone();
@@ -269,7 +270,7 @@ Path: {}", operation, path),
             }
             Ok(Ok(Err(e))) => {
                 error!("Failed to get user input: {}", e);
-                println!(
+                app_println!(
                     "{} Failed to get user input, denying file operation for safety",
                     "??".yellow()
                 );
@@ -277,7 +278,7 @@ Path: {}", operation, path),
             }
             Ok(Err(e)) => {
                 error!("Task join error: {}", e);
-                println!(
+                app_println!(
                     "{} Failed to get user input, denying file operation for safety",
                     "??".yellow()
                 );
@@ -285,7 +286,7 @@ Path: {}", operation, path),
             }
             Err(_) => {
                 error!("Permission dialog timed out after 30 seconds");
-                println!(
+                app_println!(
                     "{} Permission dialog timed out, denying file operation for safety",
                     "??".yellow()
                 );
@@ -304,12 +305,12 @@ Path: {}", operation, path),
         match selection {
             0 => {
                 // Allow this operation only
-                println!("{} File operation allowed for this time only", "✅".green());
+                app_println!("{} File operation allowed for this time only", "✅".green());
                 Ok(Some(false)) // Allow but don't change session settings
             }
             1 => {
                 // Allow all file operations this session
-                println!(
+                app_println!(
                     "{} All file operations allowed for this session",
                     "✅".green()
                 );
@@ -318,11 +319,11 @@ Path: {}", operation, path),
             }
             2 => {
                 // Deny this operation
-                println!("{} File operation denied", "❌".red());
+                app_println!("{} File operation denied", "❌".red());
                 Ok(None) // Deny
             }
             _ => {
-                println!(
+                app_println!(
                     "{} Invalid selection, denying file operation for safety",
                     "⚠️".yellow()
                 );
@@ -352,42 +353,42 @@ Path: {}", operation, path),
 
     /// Display current file security settings
     pub fn display_file_permissions(&self) {
-        println!();
-        println!("{}", "🔒 File Security Settings".cyan().bold());
-        println!();
+        app_println!();
+        app_println!("{}", "🔒 File Security Settings".cyan().bold());
+        app_println!();
 
-        println!("{}", "Security Status:".green().bold());
+        app_println!("{}", "Security Status:".green().bold());
         let status = if self.security.enabled {
             "✅ Enabled".green().to_string()
         } else {
             "❌ Disabled".red().to_string()
         };
-        println!("  File Security: {}", status);
+        app_println!("  File Security: {}", status);
 
         let ask_status = if self.security.ask_for_permission {
             "✅ Enabled".green().to_string()
         } else {
             "❌ Disabled".red().to_string()
         };
-        println!("  Ask for permission: {}", ask_status);
+        app_println!("  Ask for permission: {}", ask_status);
 
         let session_status = if self.security.allow_all_session {
             "✅ Enabled".green().to_string()
         } else {
             "❌ Disabled".red().to_string()
         };
-        println!("  Allow all this session: {}", session_status);
-        println!();
+        app_println!("  Allow all this session: {}", session_status);
+        app_println!();
 
-        println!("{}", "File Security Tips:".yellow().bold());
-        println!("  • Enable 'ask for permission' for better security");
-        println!("  • Use 'Allow this operation only' for one-off edits");
-        println!("  • Use 'Allow all file operations this session' for trusted sessions");
-        println!(
+        app_println!("{}", "File Security Tips:".yellow().bold());
+        app_println!("  • Enable 'ask for permission' for better security");
+        app_println!("  • Use 'Allow this operation only' for one-off edits");
+        app_println!("  • Use 'Allow all file operations this session' for trusted sessions");
+        app_println!(
             "  • File operations include: write_file, edit_file, create_directory, delete_file"
         );
-        println!("  • Read operations (read_file, list_directory) are always allowed");
-        println!();
+        app_println!("  • Read operations (read_file, list_directory) are always allowed");
+        app_println!();
     }
 }
 
@@ -484,11 +485,11 @@ impl BashSecurityManager {
             };
         }
 
-        println!();
-        println!("{}", "?? Security Check".yellow().bold());
-        println!("The following command is not in the allowlist:");
-        println!("  {}", command.cyan());
-        println!();
+        app_println!();
+        app_println!("{}", "?? Security Check".yellow().bold());
+        app_println!("The following command is not in the allowlist:");
+        app_println!("  {}", command.cyan());
+        app_println!();
 
         // Use tokio::task::spawn_blocking with timeout to prevent hanging
         let options_clone = options.clone();
@@ -508,7 +509,7 @@ impl BashSecurityManager {
             Ok(Ok(Ok(selection))) => self.handle_permission_selection(selection, command).await,
             Ok(Ok(Err(e))) => {
                 error!("Failed to get user input: {}", e);
-                println!(
+                app_println!(
                     "{} Failed to get user input, denying command for safety",
                     "??".yellow()
                 );
@@ -516,7 +517,7 @@ impl BashSecurityManager {
             }
             Ok(Err(e)) => {
                 error!("Task join error: {}", e);
-                println!(
+                app_println!(
                     "{} Failed to get user input, denying command for safety",
                     "??".yellow()
                 );
@@ -524,7 +525,7 @@ impl BashSecurityManager {
             }
             Err(_) => {
                 error!("Permission dialog timed out after 30 seconds");
-                println!(
+                app_println!(
                     "{} Permission dialog timed out, denying command for safety",
                     "??".yellow()
                 );
@@ -578,12 +579,12 @@ impl BashSecurityManager {
         match selection {
             0 => {
                 // Allow this time only
-                println!("{} Command allowed for this time only", "✅".green());
+                app_println!("{} Command allowed for this time only", "✅".green());
                 Ok(Some(false)) // Allow but don't add to allowlist
             }
             1 => {
                 // Allow and add to allowlist
-                println!("{} Command allowed and added to allowlist", "✅".green());
+                app_println!("{} Command allowed and added to allowlist", "✅".green());
                 self.add_to_allowlist(command.to_string());
                 Ok(Some(true)) // Allow and add to allowlist
             }
@@ -591,7 +592,7 @@ impl BashSecurityManager {
                 if self.has_parameters(command) {
                     // Allowlist with wildcard
                     let wildcard_pattern = self.generate_wildcard_pattern(command);
-                    println!(
+                    app_println!(
                         "{} Command wildcard pattern added to allowlist: '{}'",
                         "✅".green(),
                         wildcard_pattern.cyan()
@@ -600,17 +601,17 @@ impl BashSecurityManager {
                     Ok(Some(true)) // Allow and add wildcard to allowlist
                 } else {
                     // No wildcard option, this is the deny option
-                    println!("{} Command denied", "❌".red());
+                    app_println!("{} Command denied", "❌".red());
                     Ok(None) // Deny
                 }
             }
             3 => {
                 // Deny this command (only present when there are parameters)
-                println!("{} Command denied", "❌".red());
+                app_println!("{} Command denied", "❌".red());
                 Ok(None) // Deny
             }
             _ => {
-                println!(
+                app_println!(
                     "{} Invalid selection, denying command for safety",
                     "⚠️".yellow()
                 );
@@ -684,69 +685,71 @@ impl BashSecurityManager {
 
     /// Display current permissions
     pub fn display_permissions(&self) {
-        println!();
-        println!("{}", "🔒 Bash Security Settings".cyan().bold());
-        println!();
+        app_println!();
+        app_println!("{}", "🔒 Bash Security Settings".cyan().bold());
+        app_println!();
 
-        println!("{}", "Security Status:".green().bold());
+        app_println!("{}", "Security Status:".green().bold());
         let status = if self.security.enabled {
             "✅ Enabled".green().to_string()
         } else {
             "❌ Disabled".red().to_string()
         };
-        println!("  Security: {}", status);
+        app_println!("  Security: {}", status);
 
         let ask_status = if self.security.ask_for_permission {
             "✅ Enabled".green().to_string()
         } else {
             "❌ Disabled".red().to_string()
         };
-        println!("  Ask for permission: {}", ask_status);
-        println!();
+        app_println!("  Ask for permission: {}", ask_status);
+        app_println!();
 
-        println!(
+        app_println!(
             "{} Allowed Commands ({}):",
             "Allowed Commands".green().bold(),
             self.security.allowed_commands.len()
         );
         if self.security.allowed_commands.is_empty() {
-            println!("  {}", "<No commands allowed>".dimmed());
+            app_println!("  {}", "<No commands allowed>".dimmed());
         } else {
             let mut sorted_commands: Vec<_> = self.security.allowed_commands.iter().collect();
             sorted_commands.sort();
             for command in sorted_commands {
-                println!("  ✅ {}", command.green());
+                app_println!("  ✅ {}", command.green());
             }
         }
-        println!();
+        app_println!();
 
-        println!(
+        app_println!(
             "{} Denied Commands ({}):",
             "Denied Commands".red().bold(),
             self.security.denied_commands.len()
         );
         if self.security.denied_commands.is_empty() {
-            println!("  {}", "<No commands denied>".dimmed());
+            app_println!("  {}", "<No commands denied>".dimmed());
         } else {
             let mut sorted_commands: Vec<_> = self.security.denied_commands.iter().collect();
             sorted_commands.sort();
             for command in sorted_commands {
-                println!("  ❌ {}", command.red());
+                app_println!("  ❌ {}", command.red());
             }
         }
-        println!();
+        app_println!();
 
-        println!("{}", "Security Tips:".yellow().bold());
-        println!("  • Use wildcards: 'git *' allows all git commands");
-        println!("  • Be specific: 'cargo test' is safer than 'cargo *'");
-        println!("  • Review denied commands regularly");
-        println!("  • Enable 'ask for permission' for unknown commands");
-        println!("  • Choose 'Allow this time only' for one-off commands");
-        println!("  • Choose 'Allow and add to allowlist' for trusted commands");
-        println!("  • Choose 'Allowlist with wildcard' for commands with parameters");
-        println!(
+        app_println!("{}", "Security Tips:".yellow().bold());
+        app_println!("  • Use wildcards: 'git *' allows all git commands");
+        app_println!("  • Be specific: 'cargo test' is safer than 'cargo *'");
+        app_println!("  • Review denied commands regularly");
+        app_println!("  • Enable 'ask for permission' for unknown commands");
+        app_println!("  • Choose 'Allow this time only' for one-off commands");
+        app_println!("  • Choose 'Allow and add to allowlist' for trusted commands");
+        app_println!("  • Choose 'Allowlist with wildcard' for commands with parameters");
+        app_println!(
             "  • Wildcard patterns replace parameters with * (e.g., 'curl example.com' → 'curl *')"
         );
-        println!();
+        app_println!();
     }
 }
+
+

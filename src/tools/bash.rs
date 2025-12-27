@@ -282,3 +282,5 @@ pub fn create_bash_tool(
         metadata: None, // TODO: Add metadata for bash tool
     }
 }
+
+
