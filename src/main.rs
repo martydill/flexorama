@@ -244,6 +244,8 @@ async fn run_tui_interactive(
 
         let cancellation_flag_for_processing = Arc::new(AtomicBool::new(false));
         let cancellation_flag_listener = cancellation_flag_for_processing.clone();
+        let exit_requested = Arc::new(AtomicBool::new(false));
+        let exit_requested_listener = exit_requested.clone();
         let esc_handle = tokio::spawn(async move {
             use crossterm::event;
             loop {
@@ -254,6 +256,15 @@ async fn run_tui_interactive(
                         {
                             cancellation_flag_listener.store(true, Ordering::SeqCst);
                             app_println!("\n{} Cancelling AI conversation...", "??".yellow());
+                            break;
+                        }
+                        if key_event.code == KeyCode::Char('c')
+                            && key_event.kind == KeyEventKind::Press
+                            && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            cancellation_flag_listener.store(true, Ordering::SeqCst);
+                            exit_requested_listener.store(true, Ordering::SeqCst);
+                            app_println!("\n{} Cancelling and exiting...", "??".yellow());
                             break;
                         }
                     }
@@ -272,6 +283,11 @@ async fn run_tui_interactive(
         .await;
 
         esc_handle.abort();
+        if exit_requested.load(Ordering::SeqCst) {
+            print_usage_stats(agent);
+            app_println!("{}", "Goodbye! ??".green());
+            break;
+        }
     }
 
     Ok(())

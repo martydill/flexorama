@@ -342,6 +342,16 @@ impl Tui {
                     guard.input.insert(cursor_pos, '\n');
                     guard.cursor_pos = cursor_pos + 1;
                 } else {
+                    if let Some(extra) = drain_queued_input_after_enter()? {
+                        guard.history.reset_navigation();
+                        let extra = extra.replace("\r\n", "\n").replace('\r', "\n");
+                        let cursor_pos = guard.cursor_pos;
+                        guard.input.insert_str(cursor_pos, &extra);
+                        guard.cursor_pos = cursor_pos + extra.len();
+                        drop(guard);
+                        self.render()?;
+                        return Ok(None);
+                    }
                     let submitted = guard.input.clone();
                     if !submitted.trim().is_empty() {
                         guard.history.add_entry(submitted.clone());
@@ -927,6 +937,58 @@ fn build_permission_lines(
     }
 
     lines
+}
+
+/// When bracketed paste is unavailable, a multiline paste arrives as a burst of Key events.
+/// If Enter is pressed and more events are queued immediately, treat it as a paste newline.
+fn drain_queued_input_after_enter() -> Result<Option<String>> {
+    let mut collected = String::from("\n");
+    let mut has_non_newline = false;
+    let mut seen_paste = false;
+
+    while event::poll(Duration::from_millis(10))? {
+        match event::read()? {
+            Event::Paste(pasted) => {
+                seen_paste = true;
+                if pasted.chars().any(|c| c != '\n' && c != '\r') {
+                    has_non_newline = true;
+                }
+                collected.push_str(&pasted.replace('\r', ""));
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char(c),
+                kind: KeyEventKind::Press,
+                ..
+            }) => {
+                if seen_paste {
+                    continue;
+                }
+                if c != '\r' {
+                    if c != '\n' {
+                        has_non_newline = true;
+                    }
+                    collected.push(c);
+                }
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                kind: KeyEventKind::Press,
+                ..
+            }) => {
+                if seen_paste {
+                    continue;
+                }
+                collected.push('\n');
+            }
+            _ => {}
+        }
+    }
+
+    if has_non_newline {
+        Ok(Some(collected))
+    } else {
+        Ok(None)
+    }
 }
 
 fn wrap_ansi_line(line: &str, width: usize) -> Vec<String> {
