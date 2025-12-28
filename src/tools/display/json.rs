@@ -127,27 +127,35 @@ impl JsonDisplay {
             "content": content,
             "content_size": content.len(),
             "content_lines": content.lines().count(),
-            "truncated": content.lines().count() > 5,
+            "truncated": content.lines().count() > 3,
             "timestamp": {
                 "end": duration.as_secs_f64()
             }
         })
     }
+
+    /// Convert tool call and result to a single JSON format
+    fn combined_json(&self, content: &str, is_error: bool) -> Value {
+        let mut output = self.tool_call_to_json(&self.context.arguments);
+        output["type"] = json!("tool_event");
+        output["result"] = self.result_to_json(content, is_error);
+        output
+    }
 }
 
 impl super::ToolDisplay for JsonDisplay {
-    fn show_call_details(&self, arguments: &Value) {
-        let json_output = self.tool_call_to_json(arguments);
-        app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
+    fn show_call_details(&self, _arguments: &Value) {
+        let _ = _arguments;
+        // Tool call details are shown with the result as a single combined output.
     }
 
     fn complete_success(&mut self, result: &str) {
-        let json_output = self.result_to_json(result, false);
+        let json_output = self.combined_json(result, false);
         app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
     }
 
     fn complete_error(&mut self, error: &str) {
-        let json_output = self.result_to_json(error, true);
+        let json_output = self.combined_json(error, true);
         app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
     }
 }
