@@ -215,6 +215,16 @@ struct PermissionPendingQuery {
     conversation_id: Option<String>,
 }
 
+#[derive(Serialize)]
+struct PlanModeResponse {
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
+struct PlanModeRequest {
+    enabled: bool,
+}
+
 pub struct PermissionHub {
     pending: Mutex<HashMap<String, PermissionRequestDto>>,
     responders: Mutex<HashMap<String, oneshot::Sender<Option<usize>>>>,
@@ -395,6 +405,7 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             "/api/permissions/respond",
             post(resolve_permission_request),
         )
+        .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
         .with_state(state);
 
     axum::serve(tokio::net::TcpListener::bind(addr).await?, router).await?;
@@ -1235,6 +1246,32 @@ async fn resolve_permission_request(
         StatusCode::NO_CONTENT.into_response()
     } else {
         (StatusCode::NOT_FOUND, "Permission request not found".to_string()).into_response()
+    }
+}
+
+async fn get_plan_mode(State(state): State<WebState>) -> impl IntoResponse {
+    let agent = state.agent.lock().await;
+    Json(PlanModeResponse {
+        enabled: agent.plan_mode(),
+    })
+    .into_response()
+}
+
+async fn set_plan_mode(
+    State(state): State<WebState>,
+    Json(payload): Json<PlanModeRequest>,
+) -> impl IntoResponse {
+    let mut agent = state.agent.lock_owned().await;
+    match agent.set_plan_mode(payload.enabled).await {
+        Ok(_) => Json(PlanModeResponse {
+            enabled: payload.enabled,
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to set plan mode: {}", e),
+        )
+            .into_response(),
     }
 }
 

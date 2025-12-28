@@ -16,6 +16,7 @@ const state = {
   theme: "dark",
   activeTab: "chats",
   streaming: localStorage.getItem("aixplosion-stream") === "true",
+  planMode: false,
   pendingPermissions: new Set(),
 };
 
@@ -1126,6 +1127,44 @@ async function loadModels() {
   renderModelSelector();
 }
 
+// Plan Mode
+async function loadPlanMode() {
+  try {
+    const data = await api("/api/plan-mode");
+    state.planMode = data.enabled;
+    renderPlanModeButton();
+  } catch (err) {
+    console.error("Failed to load plan mode:", err);
+  }
+}
+
+async function togglePlanMode() {
+  try {
+    const newMode = !state.planMode;
+    await api("/api/plan-mode", {
+      method: "POST",
+      body: { enabled: newMode },
+    });
+    state.planMode = newMode;
+    renderPlanModeButton();
+    setStatus(newMode ? "Plan mode enabled" : "Plan mode disabled");
+  } catch (err) {
+    setStatus(`Failed to toggle plan mode: ${err.message}`);
+  }
+}
+
+function renderPlanModeButton() {
+  const btn = document.getElementById("plan-mode-toggle");
+  if (!btn) return;
+  if (state.planMode) {
+    btn.classList.add("plan-mode-active");
+    btn.textContent = "📋 Plan: ON";
+  } else {
+    btn.classList.remove("plan-mode-active");
+    btn.textContent = "📋 Plan: OFF";
+  }
+}
+
 function renderModelSelector() {
   const select = document.getElementById("model-selector");
   if (!select) return;
@@ -1303,6 +1342,10 @@ function bindEvents() {
   document.getElementById("context-modal").addEventListener("click", (e) => {
     if (e.target.id === "context-modal") closeContextModal();
   });
+  const planModeBtn = document.getElementById("plan-mode-toggle");
+  if (planModeBtn) {
+    planModeBtn.addEventListener("click", togglePlanMode);
+  }
 }
 
 async function bootstrap() {
@@ -1325,6 +1368,7 @@ async function bootstrap() {
     await loadPlans();
     await loadMcp();
     await loadAgents();
+    await loadPlanMode();
     await restoreSelections();
     switch (state.activeTab) {
       case "plans":

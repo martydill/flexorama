@@ -302,6 +302,12 @@
       background: var(--surface);
       color: var(--text);
     }
+    button.plan-mode-active {
+      background: var(--accent-neon);
+      color: #06101a;
+      border-color: rgba(57, 255, 20, 0.8);
+      box-shadow: 0 0 24px rgba(57, 255, 20, 0.35);
+    }
     button:hover { background: rgba(57, 255, 20, 0.16); color: var(--text); border-color: rgba(57, 255, 20, 0.5); transform: translateY(-1px); }
     button:active { opacity: 0.9; }
     .list {
@@ -719,6 +725,7 @@
               </div>
             </div>
             <div class="stack" style="gap:8px; align-items:center;">
+              <button class="secondary control-compact" id="plan-mode-toggle" title="Toggle plan mode (read-only planning)">📋 Plan Mode</button>
               <select id="agent-selector" class="control-compact" style="width:auto; min-width:160px;"></select>
               <select id="model-selector" class="control-compact" style="width:auto; min-width:190px;"></select>
               <button class="secondary control-compact" id="show-context">Context</button>

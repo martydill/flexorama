@@ -933,6 +933,11 @@ impl Agent {
         &self.model
     }
 
+    /// Get the current plan mode state
+    pub fn plan_mode(&self) -> bool {
+        self.plan_mode
+    }
+
     /// Update the active model for this session
     pub async fn set_model(&mut self, model: String) -> Result<()> {
         self.model = model.clone();
