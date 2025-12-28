@@ -325,6 +325,11 @@ async function submitPermissionSelection(id, selection, wrapper) {
   if (!id) return;
   const status = wrapper ? wrapper.querySelector(".permission-status") : null;
   const buttons = wrapper ? wrapper.querySelectorAll(".permission-option") : [];
+  let previousDisplay = null;
+  if (wrapper) {
+    previousDisplay = wrapper.style.display;
+    wrapper.style.display = "none";
+  }
   buttons.forEach((btn) => (btn.disabled = true));
   if (status) status.textContent = "Submitting response...";
   try {
@@ -334,7 +339,15 @@ async function submitPermissionSelection(id, selection, wrapper) {
     });
     if (status) status.textContent = "Response sent.";
     state.pendingPermissions.delete(id);
+    if (wrapper) {
+      const bubble = wrapper.closest(".bubble");
+      wrapper.remove();
+      if (bubble && bubble.children.length === 0) {
+        bubble.remove();
+      }
+    }
   } catch (err) {
+    if (wrapper) wrapper.style.display = previousDisplay || "";
     if (status) status.textContent = `Failed: ${err.message}`;
     buttons.forEach((btn) => (btn.disabled = false));
   }
