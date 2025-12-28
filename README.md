@@ -38,7 +38,6 @@ The optional web UI provides a ChatGPT-style browser-based interface for chats, 
  - Compacting
  - Pasting or referencing images
  - Custom slash commands
- - Tui support
  - Memory editing
  - Sandboxing 
 

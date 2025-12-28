@@ -3,12 +3,13 @@ use anyhow::Result;
 use chrono::Local;
 use clap::Parser;
 use colored::*;
-use crossterm::event::{KeyCode, KeyEventKind};
 use dialoguer::Select;
+use std::collections::VecDeque;
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -153,6 +154,11 @@ async fn run_tui_interactive(
     stream: bool,
     plan_mode: bool,
 ) -> Result<()> {
+    enum InputEvent {
+        Queued,
+        Exit,
+    }
+
     let tui_for_permissions = Arc::clone(&tui);
     agent
         .set_permission_handler(Some(Arc::new(move |prompt| {
@@ -184,23 +190,94 @@ async fn run_tui_interactive(
     );
     app_println!();
 
+    let queued_inputs = Arc::new(Mutex::new(VecDeque::new()));
+    tui.set_queue(&VecDeque::new())?;
+
+    let current_cancel_flag = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
+    let exit_requested = Arc::new(AtomicBool::new(false));
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<InputEvent>();
+
+    let tui_for_input = Arc::clone(&tui);
+    let queue_for_input = Arc::clone(&queued_inputs);
+    let cancel_for_input = Arc::clone(&current_cancel_flag);
+    let exit_for_input = Arc::clone(&exit_requested);
+    let input_thread = tokio::task::spawn_blocking(move || {
+        loop {
+            match tui_for_input.read_input() {
+                Ok(tui::InputResult::Submitted(value)) => {
+                    if value.trim().is_empty() {
+                        continue;
+                    }
+                    let snapshot = {
+                        let mut guard = queue_for_input.lock().expect("queue lock");
+                        guard.push_back(value);
+                        guard.clone()
+                    };
+                    let _ = tui_for_input.set_queue(&snapshot);
+                    if input_tx.send(InputEvent::Queued).is_err() {
+                        break;
+                    }
+                }
+                Ok(tui::InputResult::Cancelled) => {
+                    let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
+                    if let Some(flag) = cancel {
+                        flag.store(true, Ordering::SeqCst);
+                        app_println!("\n{} Cancelling AI conversation...", "??".yellow());
+                    }
+                }
+                Ok(tui::InputResult::Exit) => {
+                    exit_for_input.store(true, Ordering::SeqCst);
+                    let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
+                    if let Some(flag) = cancel {
+                        flag.store(true, Ordering::SeqCst);
+                        app_println!("\n{} Cancelling and exiting...", "??".yellow());
+                    }
+                    let _ = input_tx.send(InputEvent::Exit);
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let clear_queue = |queue: &Arc<Mutex<VecDeque<String>>>| -> Result<()> {
+        let snapshot = {
+            let mut guard = queue.lock().expect("queue lock");
+            guard.clear();
+            guard.clone()
+        };
+        tui.set_queue(&snapshot)?;
+        Ok(())
+    };
+
     loop {
-        let input_result = tui.read_input()?;
-        let input = match input_result {
-            tui::InputResult::Submitted(value) => value,
-            tui::InputResult::Cancelled => {
-                continue;
+        if exit_requested.load(Ordering::SeqCst) {
+            clear_queue(&queued_inputs)?;
+            print_usage_stats(agent);
+            app_println!("{}", "Goodbye! ??".green());
+            break;
+        }
+
+        let next_input = {
+            let mut guard = queued_inputs.lock().expect("queue lock");
+            let next = guard.pop_front();
+            let snapshot = guard.clone();
+            drop(guard);
+            if next.is_some() {
+                let _ = tui.set_queue(&snapshot);
             }
-            tui::InputResult::Exit => {
-                print_usage_stats(agent);
-                app_println!("{}", "Goodbye! ??".green());
-                break;
-            }
+            next
         };
 
-        if input.trim().is_empty() {
-            continue;
-        }
+        let input = if let Some(value) = next_input {
+            value
+        } else {
+            match input_rx.recv().await {
+                Some(InputEvent::Queued) => continue,
+                Some(InputEvent::Exit) => continue,
+                None => break,
+            }
+        };
 
         let highlighted = formatter.format_input_with_file_highlighting(&input);
         app_println!();
@@ -225,6 +302,8 @@ async fn run_tui_interactive(
                 {
                     app_eprintln!("{} Error handling command: {}", "?".red(), e);
                 }
+                let mut guard = current_cancel_flag.lock().expect("cancel lock");
+                *guard = None;
                 continue;
             }
 
@@ -232,47 +311,25 @@ async fn run_tui_interactive(
                 if let Err(e) = handle_shell_command(trimmed, agent).await {
                     app_eprintln!("{} Error executing shell command: {}", "?".red(), e);
                 }
+                let mut guard = current_cancel_flag.lock().expect("cancel lock");
+                *guard = None;
                 continue;
             }
 
             if trimmed == "exit" || trimmed == "quit" {
-                print_usage_stats(agent);
-                app_println!("{}", "Goodbye! ??".green());
-                break;
+                exit_requested.store(true, Ordering::SeqCst);
+                clear_queue(&queued_inputs)?;
+                let mut guard = current_cancel_flag.lock().expect("cancel lock");
+                *guard = None;
+                continue;
             }
         }
 
         let cancellation_flag_for_processing = Arc::new(AtomicBool::new(false));
-        let cancellation_flag_listener = cancellation_flag_for_processing.clone();
-        let exit_requested = Arc::new(AtomicBool::new(false));
-        let exit_requested_listener = exit_requested.clone();
-        let esc_handle = tokio::spawn(async move {
-            use crossterm::event;
-            loop {
-                if event::poll(std::time::Duration::from_millis(1000)).unwrap_or(false) {
-                    if let Ok(event::Event::Key(key_event)) = event::read() {
-                        if key_event.code == KeyCode::Esc
-                            && key_event.kind == KeyEventKind::Press
-                        {
-                            cancellation_flag_listener.store(true, Ordering::SeqCst);
-                            app_println!("\n{} Cancelling AI conversation...", "??".yellow());
-                            break;
-                        }
-                        if key_event.code == KeyCode::Char('c')
-                            && key_event.kind == KeyEventKind::Press
-                            && key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                        {
-                            cancellation_flag_listener.store(true, Ordering::SeqCst);
-                            exit_requested_listener.store(true, Ordering::SeqCst);
-                            app_println!("\n{} Cancelling and exiting...", "??".yellow());
-                            break;
-                        }
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            }
-        });
-
+        {
+            let mut guard = current_cancel_flag.lock().expect("cancel lock");
+            *guard = Some(cancellation_flag_for_processing.clone());
+        }
         process_input(
             &input,
             agent,
@@ -281,15 +338,13 @@ async fn run_tui_interactive(
             cancellation_flag_for_processing.clone(),
         )
         .await;
-
-        esc_handle.abort();
-        if exit_requested.load(Ordering::SeqCst) {
-            print_usage_stats(agent);
-            app_println!("{}", "Goodbye! ??".green());
-            break;
+        {
+            let mut guard = current_cancel_flag.lock().expect("cancel lock");
+            *guard = None;
         }
     }
 
+    input_thread.abort();
     Ok(())
 }
 

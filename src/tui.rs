@@ -19,6 +19,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
+use std::collections::VecDeque;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -41,6 +42,7 @@ struct TuiState {
     cursor_pos: usize,
     history: InputHistory,
     reverse_search_mode: bool,
+    queued: VecDeque<String>,
     output_dirty: bool,
     last_render: Instant,
     output_scroll: usize,
@@ -57,6 +59,7 @@ struct TuiScreen {
 
 pub struct TuiSnapshot {
     output_lines: Vec<String>,
+    queued: Vec<String>,
     input_display: String,
     input_raw: String,
     cursor_pos: usize,
@@ -130,6 +133,7 @@ impl Tui {
             cursor_pos: 0,
             history: InputHistory::new(),
             reverse_search_mode: false,
+            queued: VecDeque::new(),
             output_dirty: true,
             last_render: Instant::now(),
             output_scroll: 0,
@@ -202,6 +206,16 @@ impl Tui {
                 }
             }
         }
+    }
+
+    pub fn set_queue(&self, queued: &VecDeque<String>) -> Result<()> {
+        {
+            let mut guard = self.state.lock().expect("tui state lock");
+            guard.queued = queued.clone();
+            guard.output_dirty = true;
+        }
+        self.render()?;
+        Ok(())
     }
 
     pub fn prompt_permission(&self, prompt: &PermissionPrompt) -> Option<usize> {
@@ -481,6 +495,7 @@ impl TuiState {
 
         TuiSnapshot {
             output_lines: self.output.lines.clone(),
+            queued: self.queued.iter().cloned().collect(),
             input_display,
             input_raw,
             cursor_pos,
@@ -505,22 +520,51 @@ impl TuiScreen {
             let input_layout = build_input_layout(snapshot, size.width as usize);
             let input_lines = input_layout.lines.len().max(1);
             let input_height = (input_lines + 2).min(max_input_height as usize) as u16;
-            let output_height = size.height.saturating_sub(input_height);
+            let max_queue_height =
+                size.height.saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
+            let (queue_height, queue_lines) =
+                build_queue_layout(snapshot, size.width as usize, max_queue_height);
+            let output_height = size
+                .height
+                .saturating_sub(input_height.saturating_add(queue_height));
 
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(output_height),
-                    Constraint::Length(input_height),
-                ])
-                .split(size);
+            let chunks = if queue_height > 0 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(queue_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            } else {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            };
 
             let output_rect = chunks[0];
-            let input_rect = chunks[1];
+            let (queue_rect, input_rect) = if queue_height > 0 {
+                (Some(chunks[1]), chunks[2])
+            } else {
+                (None, chunks[1])
+            };
 
             let output_text = build_output_text(snapshot, output_rect);
             let output_para = Paragraph::new(output_text);
             frame.render_widget(output_para, output_rect);
+
+            if let Some(queue_rect) = queue_rect {
+                let queue_text = build_queue_text(&queue_lines);
+                let title = format!("Queued ({})", snapshot.queued.len());
+                let queue_block = Block::default().borders(Borders::NONE).title(title);
+                let queue_para = Paragraph::new(queue_text).block(queue_block);
+                frame.render_widget(queue_para, queue_rect);
+            }
 
             let (input_text, cursor_row_offset, cursor_col) =
                 build_input_text_with_layout(input_rect, &input_layout);
@@ -548,23 +592,52 @@ impl TuiScreen {
             let input_layout = build_input_layout(snapshot, size.width as usize);
             let input_lines = input_layout.lines.len().max(1);
             let input_height = (input_lines + 2).min(max_input_height as usize) as u16;
-            let output_height = size.height.saturating_sub(input_height);
+            let max_queue_height =
+                size.height.saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
+            let (queue_height, queue_lines) =
+                build_queue_layout(snapshot, size.width as usize, max_queue_height);
+            let output_height = size
+                .height
+                .saturating_sub(input_height.saturating_add(queue_height));
 
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(output_height),
-                    Constraint::Length(input_height),
-                ])
-                .split(size);
+            let chunks = if queue_height > 0 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(queue_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            } else {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            };
 
             let output_rect = chunks[0];
-            let input_rect = chunks[1];
+            let (queue_rect, input_rect) = if queue_height > 0 {
+                (Some(chunks[1]), chunks[2])
+            } else {
+                (None, chunks[1])
+            };
 
             let output_text =
                 build_output_text_with_prompt(snapshot, output_rect, prompt, selected, buffer);
             let output_para = Paragraph::new(output_text);
             frame.render_widget(output_para, output_rect);
+
+            if let Some(queue_rect) = queue_rect {
+                let queue_text = build_queue_text(&queue_lines);
+                let title = format!("Queued ({})", snapshot.queued.len());
+                let queue_block = Block::default().borders(Borders::NONE).title(title);
+                let queue_para = Paragraph::new(queue_text).block(queue_block);
+                frame.render_widget(queue_para, queue_rect);
+            }
 
             let (input_text, cursor_row_offset, cursor_col) =
                 build_input_text_with_layout(input_rect, &input_layout);
@@ -718,6 +791,83 @@ fn build_output_text(snapshot: &TuiSnapshot, rect: Rect) -> Text<'static> {
     let mut text = Text::default();
     for line in output_lines.into_iter().skip(scroll) {
         let line_text = line
+            .into_text()
+            .unwrap_or_else(|_| Text::from(line.clone()));
+        text.lines.extend(line_text.lines);
+    }
+    text
+}
+
+fn build_queue_layout(
+    snapshot: &TuiSnapshot,
+    width: usize,
+    max_height: u16,
+) -> (u16, Vec<String>) {
+    if snapshot.queued.is_empty() || max_height < 3 || width == 0 {
+        return (0, Vec::new());
+    }
+
+    let inner_height = max_height.saturating_sub(2) as usize;
+    if inner_height == 0 {
+        return (0, Vec::new());
+    }
+
+    let queue_lines = build_queue_lines(&snapshot.queued, width, inner_height);
+    if queue_lines.is_empty() {
+        return (0, Vec::new());
+    }
+
+    let height = (queue_lines.len() + 2).min(max_height as usize) as u16;
+    (height, queue_lines)
+}
+
+fn build_queue_lines(queue: &[String], width: usize, max_lines: usize) -> Vec<String> {
+    if width == 0 || max_lines == 0 {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut items_rendered = 0usize;
+    let mut truncated = false;
+
+    for (idx, item) in queue.iter().enumerate() {
+        let prefix = format!("{}) ", idx + 1);
+        let available = width.saturating_sub(prefix.len()).max(1);
+        let wrapped = wrap_ansi_line(item, available);
+        let padding = " ".repeat(prefix.len());
+        for (wrap_idx, segment) in wrapped.iter().enumerate() {
+            if lines.len() >= max_lines {
+                truncated = true;
+                break;
+            }
+            let prefix_used = if wrap_idx == 0 { prefix.as_str() } else { padding.as_str() };
+            lines.push(format!("{}{}", prefix_used, segment));
+        }
+        if truncated {
+            break;
+        }
+        items_rendered += 1;
+        if lines.len() >= max_lines {
+            break;
+        }
+    }
+
+    if truncated && !lines.is_empty() {
+        let remaining = queue.len().saturating_sub(items_rendered);
+        let indicator = format!("... ({} more)", remaining.max(1));
+        let trimmed: String = indicator.chars().take(width).collect();
+        let last_idx = lines.len() - 1;
+        lines[last_idx] = trimmed;
+    }
+
+    lines
+}
+
+fn build_queue_text(lines: &[String]) -> Text<'static> {
+    let mut text = Text::default();
+    for line in lines {
+        let line_text = line
+            .clone()
             .into_text()
             .unwrap_or_else(|_| Text::from(line.clone()));
         text.lines.extend(line_text.lines);
