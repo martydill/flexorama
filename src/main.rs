@@ -185,7 +185,7 @@ async fn run_tui_interactive(
     }
     app_println!(
         "{}",
-        "Ctrl+Enter submits. ESC clears input. Type '/help' for commands."
+        "Type '/help' for commands."
             .dimmed()
     );
     app_println!();

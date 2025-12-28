@@ -171,7 +171,6 @@ pub fn print_help() {
     app_println!("  ↑ / ↓ Arrow   - Navigate through input history");
     app_println!("  ← / → Arrow   - Move cursor left/right in current input");
     app_println!("  Tab           - Auto-complete file paths and commands");
-    app_println!("  Ctrl+Enter    - Submit input (TUI mode)");
     app_println!("  Ctrl+R        - Start reverse history search (like readline)");
     app_println!("  ESC           - Cancel current AI conversation (during processing)");
     app_println!("  Ctrl+C        - Exit the program immediately");
