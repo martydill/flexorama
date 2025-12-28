@@ -499,13 +499,12 @@ impl TuiScreen {
     }
 
     fn render_frame(&mut self, snapshot: &TuiSnapshot) -> Result<()> {
-        let input_lines = snapshot.input_display.split('\n').count().max(1);
-        let input_height = input_lines + 2;
-
         self.terminal.draw(|frame| {
             let size = frame.area();
             let max_input_height = size.height.saturating_sub(MIN_OUTPUT_HEIGHT as u16).max(2);
-            let input_height = input_height.min(max_input_height as usize) as u16;
+            let input_layout = build_input_layout(snapshot, size.width as usize);
+            let input_lines = input_layout.lines.len().max(1);
+            let input_height = (input_lines + 2).min(max_input_height as usize) as u16;
             let output_height = size.height.saturating_sub(input_height);
 
             let chunks = Layout::default()
@@ -524,7 +523,7 @@ impl TuiScreen {
             frame.render_widget(output_para, output_rect);
 
             let (input_text, cursor_row_offset, cursor_col) =
-                build_input_text(snapshot, input_rect);
+                build_input_text_with_layout(input_rect, &input_layout);
             let input_block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
             let input_para = Paragraph::new(input_text).block(input_block);
             frame.render_widget(input_para, input_rect);
@@ -543,13 +542,12 @@ impl TuiScreen {
         selected: usize,
         buffer: &str,
     ) -> Result<()> {
-        let input_lines = snapshot.input_display.split('\n').count().max(1);
-        let input_height = input_lines + 2;
-
         self.terminal.draw(|frame| {
             let size = frame.area();
             let max_input_height = size.height.saturating_sub(MIN_OUTPUT_HEIGHT as u16).max(2);
-            let input_height = input_height.min(max_input_height as usize) as u16;
+            let input_layout = build_input_layout(snapshot, size.width as usize);
+            let input_lines = input_layout.lines.len().max(1);
+            let input_height = (input_lines + 2).min(max_input_height as usize) as u16;
             let output_height = size.height.saturating_sub(input_height);
 
             let chunks = Layout::default()
@@ -569,7 +567,7 @@ impl TuiScreen {
             frame.render_widget(output_para, output_rect);
 
             let (input_text, cursor_row_offset, cursor_col) =
-                build_input_text(snapshot, input_rect);
+                build_input_text_with_layout(input_rect, &input_layout);
             let input_block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
             let input_para = Paragraph::new(input_text).block(input_block);
             frame.render_widget(input_para, input_rect);
@@ -758,14 +756,16 @@ fn build_output_text_with_prompt(
     text
 }
 
-fn build_input_text(snapshot: &TuiSnapshot, rect: Rect) -> (Text<'static>, u16, u16) {
+fn build_input_text_with_layout(
+    rect: Rect,
+    input_layout: &InputLayout,
+) -> (Text<'static>, u16, u16) {
     if rect.height < 2 || rect.width == 0 {
         return (Text::default(), 0, 0);
     }
 
     let width = rect.width as usize;
     let inner_height = rect.height.saturating_sub(2) as usize;
-    let input_layout = build_input_layout(snapshot, width);
 
     let mut input_scroll = if input_layout.lines.len() > inner_height {
         input_layout.lines.len() - inner_height
