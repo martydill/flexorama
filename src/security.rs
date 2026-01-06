@@ -752,4 +752,87 @@ impl BashSecurityManager {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn security_manager_with_lists(
+        allowed: &[&str],
+        denied: &[&str],
+        ask_for_permission: bool,
+    ) -> BashSecurityManager {
+        let security = BashSecurity {
+            allowed_commands: allowed.iter().map(|value| (*value).to_string()).collect(),
+            denied_commands: denied.iter().map(|value| (*value).to_string()).collect(),
+            ask_for_permission,
+            enabled: true,
+        };
+        BashSecurityManager::new(security)
+    }
+
+    #[test]
+    fn check_command_permission_denied_takes_precedence() {
+        let manager = security_manager_with_lists(&["git *"], &["git push"], true);
+
+        assert_eq!(
+            manager.check_command_permission("git push"),
+            PermissionResult::Denied
+        );
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::Allowed
+        );
+    }
+
+    #[test]
+    fn check_command_permission_base_command_match_allows_subcommands() {
+        let manager = security_manager_with_lists(&["git"], &[], true);
+
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::Allowed
+        );
+        assert_eq!(
+            manager.check_command_permission("git"),
+            PermissionResult::Allowed
+        );
+    }
+
+    #[test]
+    fn check_command_permission_wildcard_and_invalid_glob_patterns() {
+        let manager = security_manager_with_lists(&["cargo *", "git ["], &[], true);
+
+        assert_eq!(
+            manager.check_command_permission("cargo build"),
+            PermissionResult::Allowed
+        );
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::RequiresPermission
+        );
+    }
+
+    #[test]
+    fn generate_permission_options_varies_with_parameters() {
+        let manager = security_manager_with_lists(&[], &[], true);
+
+        let with_params = manager.generate_permission_options("git status");
+        assert!(with_params.iter().any(|option| option.contains("wildcard")));
+        assert_eq!(with_params.len(), 4);
+
+        let without_params = manager.generate_permission_options("git");
+        assert!(!without_params.iter().any(|option| option.contains("wildcard")));
+        assert_eq!(without_params.len(), 3);
+    }
+
+    #[test]
+    fn generate_wildcard_pattern_uses_base_command() {
+        let manager = security_manager_with_lists(&[], &[], true);
+
+        assert_eq!(
+            manager.generate_wildcard_pattern("cargo build --release"),
+            "cargo *"
+        );
+    }
+}
 
