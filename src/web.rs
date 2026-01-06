@@ -1772,6 +1772,7 @@ fn timeline_messages_to_dto(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::routing::{delete, put};
     use chrono::TimeZone;
     use http_body_util::BodyExt;
     use tempfile::tempdir;
@@ -1940,6 +1941,11 @@ mod tests {
             .route("/api/plans", get(list_plans).post(create_plan))
             .route("/api/permissions/pending", get(list_pending_permissions))
             .route("/api/permissions/respond", post(resolve_permission_request))
+            .route("/api/mcp/servers", get(list_mcp_servers).post(upsert_mcp_server))
+            .route("/api/mcp/servers/:name", get(get_mcp_server).put(upsert_mcp_server_named).delete(delete_mcp_server))
+            .route("/api/agents", get(list_agents).post(create_agent))
+            .route("/api/agents/:name", get(get_agent).put(update_agent).delete(delete_agent))
+            .route("/api/agents/active", get(get_active_agent))
             .with_state(state)
     }
 
@@ -2105,5 +2111,577 @@ mod tests {
             .expect("build request");
         let response = router.oneshot(request).await.expect("send request");
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_set_model_endpoint() {
+        let state = build_test_state().await;
+        let router = build_test_router(state.clone());
+        let request = axum::http::Request::builder()
+            .uri("/api/models")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"model":"glm-4.6"}"#))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["model"], "glm-4.6");
+    }
+
+    #[tokio::test]
+    async fn test_set_model_rejects_empty() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/models")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"model":"  "}"#))
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_get_conversation_success() {
+        let state = build_test_state().await;
+        let conversation_id = state
+            .database
+            .create_conversation(Some("Test prompt".to_string()), "test-model", None)
+            .await
+            .expect("create conversation");
+        state
+            .database
+            .add_message(&conversation_id, "user", "Hello", "test-model", 1)
+            .await
+            .expect("add message");
+
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri(&format!("/api/conversations/{}", conversation_id))
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["conversation"]["id"], conversation_id);
+        assert_eq!(body["conversation"]["system_prompt"], "Test prompt");
+        let messages = body["messages"].as_array().expect("messages array");
+        assert_eq!(messages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_plan_success() {
+        let state = build_test_state().await;
+        let plan_id = state
+            .database
+            .create_plan(None, Some("Test Plan"), "Do work", "## Step 1")
+            .await
+            .expect("create plan");
+
+        let router = Router::new()
+            .route("/api/plans/:id", get(get_plan))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri(&format!("/api/plans/{}", plan_id))
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["id"], plan_id);
+        assert_eq!(body["title"], "Test Plan");
+        assert_eq!(body["user_request"], "Do work");
+    }
+
+    #[tokio::test]
+    async fn test_get_plan_not_found() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/plans/:id", get(get_plan))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/plans/missing-plan-id")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_update_plan() {
+        let state = build_test_state().await;
+        let plan_id = state
+            .database
+            .create_plan(None, Some("Original"), "Original request", "Original plan")
+            .await
+            .expect("create plan");
+
+        let router = Router::new()
+            .route("/api/plans/:id", put(update_plan))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri(&format!("/api/plans/{}", plan_id))
+            .method("PUT")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"title":"Updated","user_request":"Updated request","plan_markdown":"Updated plan"}"#,
+            ))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["title"], "Updated");
+        assert_eq!(body["user_request"], "Updated request");
+        assert_eq!(body["plan_markdown"], "Updated plan");
+    }
+
+    #[tokio::test]
+    async fn test_delete_plan() {
+        let state = build_test_state().await;
+        let plan_id = state
+            .database
+            .create_plan(None, Some("To Delete"), "Work", "Plan")
+            .await
+            .expect("create plan");
+
+        let router = Router::new()
+            .route("/api/plans/:id", delete(delete_plan))
+            .with_state(state.clone());
+        let request = axum::http::Request::builder()
+            .uri(&format!("/api/plans/{}", plan_id))
+            .method("DELETE")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Verify plan is deleted
+        let result = state.database.get_plan(&plan_id).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_mcp_servers() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/mcp/servers", get(list_mcp_servers))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.is_array());
+    }
+
+    #[tokio::test]
+    async fn test_upsert_mcp_server() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"name":"test-server","command":"node","args":["server.js"],"enabled":false}"#,
+            ))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["name"], "test-server");
+    }
+
+    #[tokio::test]
+    async fn test_upsert_mcp_server_requires_name() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/mcp/servers", post(upsert_mcp_server))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"command":"node"}"#))
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_upsert_mcp_server_requires_command_or_url() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/mcp/servers", post(upsert_mcp_server))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"name":"test-server","enabled":true}"#))
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_get_mcp_server() {
+        let state = build_test_state().await;
+        let config = McpServerConfig {
+            name: "test-server".to_string(),
+            command: Some("node".to_string()),
+            args: Some(vec!["server.js".to_string()]),
+            url: None,
+            env: None,
+            enabled: false,
+        };
+        state
+            .mcp_manager
+            .upsert_server("test-server", config)
+            .await
+            .expect("upsert server");
+
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers/test-server")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["name"], "test-server");
+        assert_eq!(body["config"]["command"], "node");
+    }
+
+    #[tokio::test]
+    async fn test_get_mcp_server_not_found() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/mcp/servers/:name", get(get_mcp_server))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers/missing-server")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_delete_mcp_server() {
+        let state = build_test_state().await;
+        let config = McpServerConfig {
+            name: "test-server".to_string(),
+            command: Some("node".to_string()),
+            args: None,
+            url: None,
+            env: None,
+            enabled: false,
+        };
+        state
+            .mcp_manager
+            .upsert_server("test-server", config)
+            .await
+            .expect("upsert server");
+
+        let router = build_test_router(state.clone());
+        let request = axum::http::Request::builder()
+            .uri("/api/mcp/servers/test-server")
+            .method("DELETE")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Verify server is deleted
+        let result = state.mcp_manager.get_server("test-server").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_agents() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/agents", get(list_agents))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/agents")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.is_array());
+    }
+
+    #[tokio::test]
+    async fn test_create_agent() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/agents", post(create_agent))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/agents")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"name":"test-agent","system_prompt":"You are a test","allowed_tools":[],"denied_tools":[]}"#,
+            ))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["name"], "test-agent");
+    }
+
+    #[tokio::test]
+    async fn test_get_agent() {
+        let state = build_test_state().await;
+        let config = SubagentConfig {
+            name: "test-agent".to_string(),
+            system_prompt: "You are a test".to_string(),
+            allowed_tools: vec![].into_iter().collect(),
+            denied_tools: vec![].into_iter().collect(),
+            max_tokens: None,
+            temperature: None,
+            model: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let mut manager = state.subagent_manager.lock().await;
+        manager.save_subagent(&config).await.expect("save agent");
+        manager.load_all_subagents().await.expect("load agents");
+        drop(manager);
+
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/agents/test-agent")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["name"], "test-agent");
+        assert_eq!(body["system_prompt"], "You are a test");
+    }
+
+    #[tokio::test]
+    async fn test_get_agent_not_found() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/agents/:name", get(get_agent))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/agents/missing-agent")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_update_agent() {
+        let state = build_test_state().await;
+        let config = SubagentConfig {
+            name: "test-agent".to_string(),
+            system_prompt: "Original".to_string(),
+            allowed_tools: vec![].into_iter().collect(),
+            denied_tools: vec![].into_iter().collect(),
+            max_tokens: None,
+            temperature: None,
+            model: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let mut manager = state.subagent_manager.lock().await;
+        manager.save_subagent(&config).await.expect("save agent");
+        manager.load_all_subagents().await.expect("load agents");
+        drop(manager);
+
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/agents/test-agent")
+            .method("PUT")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"system_prompt":"Updated","allowed_tools":["read_file"],"denied_tools":[]}"#,
+            ))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["name"], "test-agent");
+    }
+
+    #[tokio::test]
+    async fn test_delete_agent() {
+        let state = build_test_state().await;
+        let config = SubagentConfig {
+            name: "test-agent".to_string(),
+            system_prompt: "Test".to_string(),
+            allowed_tools: vec![].into_iter().collect(),
+            denied_tools: vec![].into_iter().collect(),
+            max_tokens: None,
+            temperature: None,
+            model: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        state
+            .subagent_manager
+            .lock()
+            .await
+            .save_subagent(&config)
+            .await
+            .expect("save agent");
+
+        let router = Router::new()
+            .route("/api/agents/:name", delete(delete_agent))
+            .with_state(state.clone());
+        let request = axum::http::Request::builder()
+            .uri("/api/agents/test-agent")
+            .method("DELETE")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Verify agent is deleted
+        let manager = state.subagent_manager.lock().await;
+        assert!(manager.get_subagent("test-agent").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_active_agent() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/agents/active", get(get_active_agent))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/agents/active")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["active"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_stats_overview() {
+        let state = build_test_state().await;
+        state
+            .database
+            .create_conversation(None, "test-model", None)
+            .await
+            .expect("create conversation");
+
+        let router = Router::new()
+            .route("/api/stats/overview", get(get_stats_overview))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/stats/overview")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["total_conversations"].as_i64().is_some());
+        assert!(body["total_messages"].as_i64().is_some());
+        assert!(body["total_tokens"].as_i64().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_usage_stats() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/stats/usage", get(get_usage_stats))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/stats/usage?period=month")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["period"], "month");
+        assert!(body["data"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_model_stats() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/stats/models", get(get_model_stats))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/stats/models?period=week")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["period"], "week");
+        assert!(body["data"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_conversation_stats() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route("/api/stats/conversations", get(get_conversation_stats))
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/stats/conversations?period=day")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["period"], "day");
+        assert!(body["data"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_conversation_stats_by_provider() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route(
+                "/api/stats/conversations-by-provider",
+                get(get_conversation_stats_by_provider),
+            )
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/stats/conversations-by-provider?period=month")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["period"], "month");
+        assert!(body["data"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_conversation_stats_by_subagent() {
+        let state = build_test_state().await;
+        let router = Router::new()
+            .route(
+                "/api/stats/conversations-by-subagent",
+                get(get_conversation_stats_by_subagent),
+            )
+            .with_state(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/stats/conversations-by-subagent?period=lifetime")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["period"], "lifetime");
+        assert!(body["data"].is_array());
     }
 }
