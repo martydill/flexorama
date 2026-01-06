@@ -38,3 +38,6 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid", 
 chrono = { version = "0.4", features = ["serde"] }
 serde_yaml = "0.9"
 bytes = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -126,10 +126,7 @@ pub fn provider_default_model(provider: Provider) -> String {
 
 pub fn provider_models(provider: Provider) -> &'static [&'static str] {
     match provider {
-        Provider::Anthropic => &[
-            "claude-3-5-sonnet-20240620",
-            "claude-3-5-haiku-20241022",
-        ],
+        Provider::Anthropic => &["claude-3-5-sonnet-20240620", "claude-3-5-haiku-20241022"],
         Provider::Gemini => &[
             "gemini-flash-latest",
             "gemini-1.5-pro",
@@ -241,4 +238,119 @@ impl Config {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::sync::Mutex;
+    use tempfile::TempDir;
 
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let previous = env::var(key).ok();
+            match value {
+                Some(value) => env::set_var(key, value),
+                None => env::remove_var(key),
+            }
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => env::set_var(self.key, value),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn temp_config_path(temp_dir: &TempDir) -> String {
+        temp_dir
+            .path()
+            .join("config.toml")
+            .to_string_lossy()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn save_clears_api_key_in_toml() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_config_path(&temp_dir);
+        let mut config = Config::default();
+        config.api_key = "super-secret".to_string();
+
+        config.save(Some(&path)).await.expect("save config");
+
+        let content = fs::read_to_string(&path).await.expect("read config");
+        assert!(!content.contains("api_key"));
+        assert!(!content.contains("super-secret"));
+    }
+
+    #[tokio::test]
+    async fn load_ignores_api_key_from_file_and_uses_env() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let _api_guard = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", Some("env-key"));
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_config_path(&temp_dir);
+        let mut config = Config::default();
+        config.base_url = "https://config.example".to_string();
+        config.default_model = "config-model".to_string();
+        let content = toml::to_string_pretty(&config).expect("serialize config");
+        let content = format!("api_key = \"file-key\"\n{content}");
+        fs::write(&path, content).await.expect("write config");
+
+        let loaded = Config::load(Some(&path)).await.expect("load config");
+
+        assert_eq!(loaded.api_key, "env-key");
+        assert_ne!(loaded.api_key, "file-key");
+    }
+
+    #[tokio::test]
+    async fn load_applies_provider_defaults_when_fields_empty() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let _base_url_guard =
+            EnvVarGuard::set("ANTHROPIC_BASE_URL", Some("https://defaults.example"));
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_config_path(&temp_dir);
+        let mut config = Config::default();
+        config.base_url = String::new();
+        config.default_model = String::new();
+        let content = toml::to_string_pretty(&config).expect("serialize config");
+        fs::write(&path, content).await.expect("write config");
+
+        let loaded = Config::load(Some(&path)).await.expect("load config");
+
+        assert_eq!(loaded.base_url, "https://defaults.example");
+        assert_eq!(
+            loaded.default_model,
+            provider_default_model(Provider::Anthropic)
+        );
+    }
+
+    #[test]
+    fn set_provider_refreshes_provider_defaults() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        let _base_url_guard = EnvVarGuard::set("GEMINI_BASE_URL", Some("https://gemini.example"));
+        let _api_key_guard = EnvVarGuard::set("GEMINI_API_KEY", Some("gemini-key"));
+        let mut config = Config::default();
+        config.base_url = "https://old.example".to_string();
+        config.default_model = "old-model".to_string();
+        config.api_key = "old-key".to_string();
+
+        config.set_provider(Provider::Gemini);
+
+        assert_eq!(config.provider, Provider::Gemini);
+        assert_eq!(config.base_url, "https://gemini.example");
+        assert_eq!(config.default_model, "gemini-flash-latest");
+        assert_eq!(config.api_key, "gemini-key");
+    }
+}
