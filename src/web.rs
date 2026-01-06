@@ -1905,7 +1905,10 @@ mod tests {
 
     async fn build_test_state() -> WebState {
         let temp_dir = tempdir().expect("create tempdir");
-        let db_path = temp_dir.path().join("test.sqlite");
+        let root = temp_dir.path().to_path_buf();
+        let db_path = root.join("test.sqlite");
+        let agents_dir = root.join("agents");
+        let config_path = root.join("config.toml");
         let database = Arc::new(
             DatabaseManager::new(db_path)
                 .await
@@ -1919,13 +1922,13 @@ mod tests {
                 .with_database_manager(database.clone());
 
         let subagent_manager = Arc::new(Mutex::new(
-            SubagentManager::new().expect("create subagent manager"),
+            SubagentManager::new_with_dir(agents_dir).expect("create subagent manager"),
         ));
 
         WebState {
             agent: Arc::new(Mutex::new(agent)),
             database,
-            mcp_manager: Arc::new(McpManager::new()),
+            mcp_manager: Arc::new(McpManager::new_with_config_path(config_path)),
             subagent_manager,
             permission_hub: Arc::new(PermissionHub::new()),
         }

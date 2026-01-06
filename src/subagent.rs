@@ -51,7 +51,10 @@ impl SubagentManager {
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".aixplosion")
             .join("agents");
+        Self::new_with_dir(agents_dir)
+    }
 
+    pub fn new_with_dir(agents_dir: PathBuf) -> Result<Self> {
         // Create directory if it doesn't exist
         std::fs::create_dir_all(&agents_dir)?;
 

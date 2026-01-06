@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -861,6 +861,7 @@ impl McpConnection {
 pub struct McpManager {
     connections: Arc<RwLock<HashMap<String, McpConnection>>>,
     config: Arc<RwLock<McpConfig>>,
+    config_path: Option<PathBuf>,
 }
 
 impl McpManager {
@@ -868,6 +869,15 @@ impl McpManager {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(RwLock::new(McpConfig::default())),
+            config_path: None,
+        }
+    }
+
+    pub fn new_with_config_path(config_path: PathBuf) -> Self {
+        Self {
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            config: Arc::new(RwLock::new(McpConfig::default())),
+            config_path: Some(config_path),
         }
     }
 
@@ -885,15 +895,20 @@ impl McpManager {
     pub async fn save_to_config_file(&self) -> Result<()> {
         use crate::config::Config;
 
+        let config_path = self
+            .config_path
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string());
+
         // Load existing unified config to preserve other settings
-        let mut unified_config = Config::load(None).await?;
+        let mut unified_config = Config::load(config_path.as_deref()).await?;
 
         // Update MCP configuration
         let current_mcp_config = self.config.read().await.clone();
         unified_config.mcp = current_mcp_config;
 
         // Save unified config
-        unified_config.save(None).await?;
+        unified_config.save(config_path.as_deref()).await?;
         info!("Saved MCP configuration to unified config file");
         Ok(())
     }

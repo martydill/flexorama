@@ -900,7 +900,11 @@ impl CodeFormatter {
             result.push_str(&text[last_end..full_match.start()]);
 
             // Add highlighted file reference with background color
-            let highlighted_file = format!("@{}", file_path.on_bright_blue().white().bold());
+            let highlighted_file = format!("@{file_path}")
+                .on_bright_blue()
+                .white()
+                .bold()
+                .to_string();
             result.push_str(&highlighted_file);
 
             last_end = full_match.end();
