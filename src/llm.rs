@@ -1,6 +1,7 @@
 use crate::anthropic::{AnthropicClient, AnthropicResponse, ContentBlock, Message};
 use crate::config::Provider;
 use crate::gemini::GeminiClient;
+use crate::openai::OpenAIClient;
 use crate::tools::{Tool, ToolCall};
 use anyhow::Result;
 use serde_json::Value;
@@ -13,6 +14,7 @@ pub struct LlmClient {
     provider: Provider,
     anthropic: Option<AnthropicClient>,
     gemini: Option<GeminiClient>,
+    openai: Option<OpenAIClient>,
 }
 
 impl LlmClient {
@@ -22,21 +24,25 @@ impl LlmClient {
                 provider,
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
                 gemini: None,
+                openai: None,
             },
             Provider::Gemini => Self {
                 provider,
                 anthropic: None,
                 gemini: Some(GeminiClient::new(api_key, base_url)),
+                openai: None,
             },
             Provider::OpenAI => Self {
                 provider,
-                anthropic: Some(AnthropicClient::new(api_key, base_url)),
+                anthropic: None,
                 gemini: None,
+                openai: Some(OpenAIClient::new(api_key, base_url)),
             },
             Provider::Zai => Self {
                 provider,
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
                 gemini: None,
+                openai: None,
             },
         }
     }
@@ -87,7 +93,7 @@ impl LlmClient {
                     .await
             }
             Provider::OpenAI => {
-                self.anthropic
+                self.openai
                     .as_ref()
                     .expect("OpenAI client should be initialized")
                     .create_message(
@@ -164,7 +170,7 @@ impl LlmClient {
                     .await
             }
             Provider::OpenAI => {
-                self.anthropic
+                self.openai
                     .as_ref()
                     .expect("OpenAI client should be initialized")
                     .create_message_stream(
@@ -331,6 +337,22 @@ mod tests {
         }))
     }
 
+    async fn openai_handler(
+        State(log): State<RequestLog>,
+        OriginalUri(uri): OriginalUri,
+        Json(_payload): Json<serde_json::Value>,
+    ) -> impl IntoResponse {
+        log.record(uri.path().to_string());
+        Json(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "ok"
+                }
+            }]
+        }))
+    }
+
     #[tokio::test]
     async fn provider_returns_expected_variant() {
         let providers = [
@@ -360,7 +382,7 @@ mod tests {
         configure_no_proxy();
         let base_url = spawn_server(app).await;
 
-        let providers = [Provider::Anthropic, Provider::OpenAI, Provider::Zai];
+        let providers = [Provider::Anthropic, Provider::Zai];
         for provider in providers {
             let client = LlmClient::new(provider, "test-key".to_string(), base_url.clone());
             let messages = vec![Message {
@@ -397,9 +419,58 @@ mod tests {
                 .expect("create_message_stream");
         }
 
-        assert_eq!(log.hit_count(), 6);
+        assert_eq!(log.hit_count(), 4);
         for path in log.recorded_paths() {
             assert_eq!(path, "/v1/messages");
+        }
+    }
+
+    #[tokio::test]
+    async fn routes_openai_provider() {
+        let log = RequestLog::default();
+        let app = Router::new()
+            .route("/*path", post(openai_handler))
+            .with_state(log.clone());
+        configure_no_proxy();
+        let base_url = spawn_server(app).await;
+
+        let client = LlmClient::new(Provider::OpenAI, "test-key".to_string(), base_url);
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("ping".to_string())],
+        }];
+        let cancellation_flag = Arc::new(AtomicBool::new(false));
+
+        client
+            .create_message(
+                "test-model",
+                messages.clone(),
+                &[],
+                16,
+                0.0,
+                None,
+                cancellation_flag.clone(),
+            )
+            .await
+            .expect("create_message");
+
+        client
+            .create_message_stream(
+                "test-model",
+                messages,
+                &[],
+                16,
+                0.0,
+                None,
+                Arc::new(|_chunk| {}),
+                cancellation_flag,
+            )
+            .await
+            .expect("create_message_stream");
+
+        assert_eq!(log.hit_count(), 2);
+        for path in log.recorded_paths() {
+            assert_eq!(path, "/chat/completions");
         }
     }
 

@@ -30,6 +30,7 @@ mod help;
 mod input;
 mod logo;
 mod mcp;
+mod openai;
 mod security;
 mod subagent;
 mod tui;
