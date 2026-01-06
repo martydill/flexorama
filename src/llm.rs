@@ -238,3 +238,217 @@ pub fn create_response_content(content_blocks: &[ContentBlock]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::{OriginalUri, State};
+    use axum::http::header;
+    use axum::response::IntoResponse;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use tokio::net::TcpListener;
+
+    #[derive(Clone, Default)]
+    struct RequestLog {
+        hits: Arc<AtomicUsize>,
+        paths: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RequestLog {
+        fn record(&self, path: String) {
+            self.hits.fetch_add(1, Ordering::SeqCst);
+            self.paths.lock().expect("paths lock").push(path);
+        }
+
+        fn hit_count(&self) -> usize {
+            self.hits.load(Ordering::SeqCst)
+        }
+
+        fn recorded_paths(&self) -> Vec<String> {
+            self.paths.lock().expect("paths lock").clone()
+        }
+    }
+
+    async fn spawn_server(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test server");
+        let addr = listener.local_addr().expect("local addr");
+        let base_url = format!("http://{}", addr);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve test server");
+        });
+        base_url
+    }
+
+    fn configure_no_proxy() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+    }
+
+    async fn anthropic_handler(
+        State(log): State<RequestLog>,
+        OriginalUri(uri): OriginalUri,
+        Json(payload): Json<serde_json::Value>,
+    ) -> impl IntoResponse {
+        log.record(uri.path().to_string());
+        let is_stream = payload
+            .get("stream")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+
+        if is_stream {
+            let sse_body = concat!(
+                "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\"}}\n\n",
+                "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n",
+                "data: {\"type\":\"content_block_stop\"}\n\n",
+                "data: {\"type\":\"message_stop\"}\n\n",
+                "data: [DONE]\n\n"
+            );
+            ([(header::CONTENT_TYPE, "text/event-stream")], sse_body).into_response()
+        } else {
+            Json(json!({"content":[{"type":"text","text":"ok"}]})).into_response()
+        }
+    }
+
+    async fn gemini_handler(
+        State(log): State<RequestLog>,
+        OriginalUri(uri): OriginalUri,
+        Json(_payload): Json<serde_json::Value>,
+    ) -> impl IntoResponse {
+        log.record(uri.path().to_string());
+        Json(json!({
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": "ok"}]
+                }
+            }]
+        }))
+    }
+
+    #[tokio::test]
+    async fn provider_returns_expected_variant() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::Gemini,
+            Provider::OpenAI,
+            Provider::Zai,
+        ];
+
+        for provider in providers {
+            configure_no_proxy();
+            let client = LlmClient::new(
+                provider,
+                "test-key".to_string(),
+                "http://localhost".to_string(),
+            );
+            assert_eq!(client.provider(), provider);
+        }
+    }
+
+    #[tokio::test]
+    async fn routes_anthropic_based_providers() {
+        let log = RequestLog::default();
+        let app = Router::new()
+            .route("/*path", post(anthropic_handler))
+            .with_state(log.clone());
+        configure_no_proxy();
+        let base_url = spawn_server(app).await;
+
+        let providers = [Provider::Anthropic, Provider::OpenAI, Provider::Zai];
+        for provider in providers {
+            let client = LlmClient::new(provider, "test-key".to_string(), base_url.clone());
+            let messages = vec![Message {
+                role: "user".to_string(),
+                content: vec![ContentBlock::text("ping".to_string())],
+            }];
+            let cancellation_flag = Arc::new(AtomicBool::new(false));
+
+            client
+                .create_message(
+                    "test-model",
+                    messages.clone(),
+                    &[],
+                    16,
+                    0.0,
+                    None,
+                    cancellation_flag.clone(),
+                )
+                .await
+                .expect("create_message");
+
+            client
+                .create_message_stream(
+                    "test-model",
+                    messages.clone(),
+                    &[],
+                    16,
+                    0.0,
+                    None,
+                    Arc::new(|_chunk| {}),
+                    cancellation_flag.clone(),
+                )
+                .await
+                .expect("create_message_stream");
+        }
+
+        assert_eq!(log.hit_count(), 6);
+        for path in log.recorded_paths() {
+            assert_eq!(path, "/v1/messages");
+        }
+    }
+
+    #[tokio::test]
+    async fn routes_gemini_provider() {
+        let log = RequestLog::default();
+        let app = Router::new()
+            .route("/*path", post(gemini_handler))
+            .with_state(log.clone());
+        configure_no_proxy();
+        let base_url = spawn_server(app).await;
+
+        let client = LlmClient::new(Provider::Gemini, "test-key".to_string(), base_url);
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("ping".to_string())],
+        }];
+        let cancellation_flag = Arc::new(AtomicBool::new(false));
+
+        client
+            .create_message(
+                "test-model",
+                messages.clone(),
+                &[],
+                16,
+                0.0,
+                None,
+                cancellation_flag.clone(),
+            )
+            .await
+            .expect("create_message");
+
+        client
+            .create_message_stream(
+                "test-model",
+                messages.clone(),
+                &[],
+                16,
+                0.0,
+                None,
+                Arc::new(|_chunk| {}),
+                cancellation_flag,
+            )
+            .await
+            .expect("create_message_stream");
+
+        assert_eq!(log.hit_count(), 2);
+        for path in log.recorded_paths() {
+            assert_eq!(path, "/models/test-model:generateContent");
+        }
+    }
+}
