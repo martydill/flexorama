@@ -1768,3 +1768,342 @@ fn timeline_messages_to_dto(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use http_body_util::BodyExt;
+    use tempfile::tempdir;
+    use tower::util::ServiceExt;
+
+    #[test]
+    fn test_extract_provider_from_model() {
+        assert_eq!(extract_provider_from_model("claude-3-opus"), "Anthropic");
+        assert_eq!(extract_provider_from_model("gpt-4o"), "OpenAI");
+        assert_eq!(extract_provider_from_model("gemini-1.5-pro"), "Gemini");
+        assert_eq!(extract_provider_from_model("glm-4.6"), "Z.AI");
+        assert_eq!(extract_provider_from_model("local-model"), "Other");
+    }
+
+    #[test]
+    fn test_calculate_date_range_with_custom_dates() {
+        let params = StatsQueryParams {
+            period: Some("week".to_string()),
+            start_date: Some("2024-01-01".to_string()),
+            end_date: Some("2024-01-31".to_string()),
+        };
+        let (start, end) = calculate_date_range(&params);
+        assert_eq!(
+            start,
+            Some(chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap())
+        );
+        assert_eq!(
+            end,
+            Some(chrono::NaiveDate::from_ymd_opt(2024, 1, 31).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_calculate_date_range_with_period() {
+        let params = StatsQueryParams {
+            period: Some("week".to_string()),
+            start_date: None,
+            end_date: None,
+        };
+        let (start, end) = calculate_date_range(&params);
+        let now = Utc::now().naive_utc().date();
+        assert_eq!(start, Some(now - Duration::days(7)));
+        assert_eq!(end, Some(now));
+    }
+
+    #[test]
+    fn test_parse_tool_arguments() {
+        let parsed = parse_tool_arguments("{\"key\": 1}");
+        assert_eq!(parsed, serde_json::json!({"key": 1}));
+
+        let fallback = parse_tool_arguments("not-json");
+        assert_eq!(fallback, serde_json::Value::String("not-json".to_string()));
+    }
+
+    #[test]
+    fn test_build_visible_message_dto_filters_context_blocks() {
+        let context_block = ContentBlock::text("Context from file 'foo.txt': example".to_string());
+        let regular_block = ContentBlock::text("Hello there".to_string());
+        let visible = build_visible_message_dto(
+            "id-1".to_string(),
+            "assistant".to_string(),
+            "2024-01-01T00:00:00Z".to_string(),
+            vec![context_block.clone(), regular_block.clone()],
+        )
+        .expect("expected visible message");
+        assert_eq!(visible.blocks.len(), 1);
+        assert_eq!(visible.content, "Hello there");
+
+        let hidden = build_visible_message_dto(
+            "id-2".to_string(),
+            "assistant".to_string(),
+            "2024-01-01T00:00:00Z".to_string(),
+            vec![context_block],
+        );
+        assert!(hidden.is_none());
+    }
+
+    #[test]
+    fn test_extract_context_files_from_messages() {
+        let message = build_message_dto(
+            "msg-1".to_string(),
+            "assistant".to_string(),
+            "2024-01-01T00:00:00Z".to_string(),
+            vec![ContentBlock::text(
+                "Context from file 'foo.txt': example content".to_string(),
+            )],
+        );
+        let message_two = build_message_dto(
+            "msg-2".to_string(),
+            "assistant".to_string(),
+            "2024-01-02T00:00:00Z".to_string(),
+            vec![ContentBlock::text(
+                "Context from file 'bar.md': details".to_string(),
+            )],
+        );
+        let files = extract_context_files_from_messages(&[message, message_two]);
+        assert_eq!(files, vec!["foo.txt".to_string(), "bar.md".to_string()]);
+    }
+
+    #[test]
+    fn test_timeline_messages_to_dto_includes_tool_calls() {
+        let created_at = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let message = crate::database::Message {
+            id: "msg-1".to_string(),
+            conversation_id: "conv-1".to_string(),
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+            model: "test".to_string(),
+            tokens: 1,
+            created_at,
+        };
+        let tool_call = ToolCallRecord {
+            id: "tool-1".to_string(),
+            conversation_id: "conv-1".to_string(),
+            message_id: Some("msg-1".to_string()),
+            tool_name: "read_file".to_string(),
+            tool_arguments: "{\"path\":\"/tmp/file.txt\"}".to_string(),
+            result_content: Some("Not found".to_string()),
+            is_error: true,
+            created_at: created_at + Duration::seconds(1),
+        };
+
+        let timeline = timeline_messages_to_dto(vec![message], vec![tool_call]);
+        assert_eq!(timeline.len(), 3);
+        assert_eq!(timeline[0].content, "Hello");
+        assert!(timeline[1].content.contains("Tool call: read_file"));
+        assert!(timeline[2].content.contains("(error) Not found"));
+        assert_eq!(timeline[2].id, "tool-1-result");
+    }
+
+    async fn build_test_state() -> WebState {
+        let temp_dir = tempdir().expect("create tempdir");
+        let db_path = temp_dir.path().join("test.sqlite");
+        let database = Arc::new(
+            DatabaseManager::new(db_path)
+                .await
+                .expect("create database"),
+        );
+        std::mem::forget(temp_dir);
+        let config = config::Config::default();
+        let agent =
+            Agent::new_with_plan_mode(config.clone(), config.default_model.clone(), false, false)
+                .await
+                .with_database_manager(database.clone());
+
+        let subagent_manager = Arc::new(Mutex::new(
+            SubagentManager::new().expect("create subagent manager"),
+        ));
+
+        WebState {
+            agent: Arc::new(Mutex::new(agent)),
+            database,
+            mcp_manager: Arc::new(McpManager::new()),
+            subagent_manager,
+            permission_hub: Arc::new(PermissionHub::new()),
+        }
+    }
+
+    fn build_test_router(state: WebState) -> Router {
+        Router::new()
+            .route("/api/health", get(health))
+            .route("/api/models", get(get_models).post(set_model))
+            .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
+            .route("/api/conversations", get(list_conversations))
+            .route("/api/conversations/:id", get(get_conversation))
+            .route("/api/plans", get(list_plans).post(create_plan))
+            .route("/api/permissions/pending", get(list_pending_permissions))
+            .route("/api/permissions/respond", post(resolve_permission_request))
+            .with_state(state)
+    }
+
+    async fn json_response(
+        router: &Router,
+        request: axum::http::Request<Body>,
+    ) -> (StatusCode, serde_json::Value) {
+        let response = router.clone().oneshot(request).await.expect("send request");
+        let status = response.status();
+        let body = response.into_body().collect().await.expect("read body");
+        let value = serde_json::from_slice(&body.to_bytes()).expect("parse json");
+        (status, value)
+    }
+
+    #[tokio::test]
+    async fn test_health_endpoint() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/health")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn test_models_endpoint() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/models")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let active_model = body["active_model"].as_str().expect("active model");
+        let models = body["models"].as_array().expect("models array");
+        assert!(models.iter().any(|m| m.as_str() == Some(active_model)));
+        assert!(body["provider"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_plan_mode_endpoint() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/plan-mode")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"enabled":true}"#))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["enabled"], true);
+
+        let request = axum::http::Request::builder()
+            .uri("/api/plan-mode")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["enabled"], true);
+    }
+
+    #[tokio::test]
+    async fn test_list_conversations_endpoint() {
+        let state = build_test_state().await;
+        let conversation_id = state
+            .database
+            .create_conversation(None, "test-model", None)
+            .await
+            .expect("create conversation");
+        state
+            .database
+            .add_message(&conversation_id, "user", "Hello", "test-model", 1)
+            .await
+            .expect("add message");
+
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/conversations")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let items = body.as_array().expect("expected list");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["message_count"], 1);
+        assert_eq!(items[0]["last_message"], "Hello");
+    }
+
+    #[tokio::test]
+    async fn test_get_conversation_not_found() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/conversations/missing")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_create_plan_and_list_plans() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/plans")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"title":"Plan A","user_request":"Do work","plan_markdown":"Step 1"}"#,
+            ))
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["id"].as_str().is_some());
+
+        let request = axum::http::Request::builder()
+            .uri("/api/plans")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let plans = body.as_array().expect("plans array");
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0]["title"], "Plan A");
+    }
+
+    #[tokio::test]
+    async fn test_permissions_pending_empty() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/permissions/pending")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let pending = body.as_array().expect("pending array");
+        assert!(pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_permissions_respond_requires_id() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/permissions/respond")
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"id":""}"#))
+            .expect("build request");
+        let response = router.oneshot(request).await.expect("send request");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+}
