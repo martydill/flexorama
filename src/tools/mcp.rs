@@ -132,3 +132,208 @@ pub fn create_mcp_tool(server_name: &str, mcp_tool: McpTool, mcp_manager: Arc<Mc
         metadata: None, // TODO: Add proper metadata for MCP tools
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::{McpManager, McpTool};
+    use serde_json::json;
+    use std::sync::Arc;
+
+    fn create_test_mcp_tool(name: &str, description: Option<String>, input_schema: Value) -> McpTool {
+        McpTool {
+            name: name.to_string(),
+            description,
+            input_schema,
+        }
+    }
+
+    #[test]
+    fn test_create_mcp_tool_with_valid_schema() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path"
+                }
+            },
+            "required": ["path"]
+        });
+
+        let mcp_tool = create_test_mcp_tool(
+            "read_file",
+            Some("Read a file".to_string()),
+            schema.clone(),
+        );
+
+        let tool = create_mcp_tool("test_server", mcp_tool, mcp_manager);
+
+        assert_eq!(tool.name, "mcp_test_server_read_file");
+        assert!(tool.description.contains("Read a file"));
+        assert!(tool.description.contains("(MCP: test_server)"));
+        assert_eq!(tool.input_schema, schema);
+    }
+
+    #[test]
+    fn test_create_mcp_tool_with_null_schema() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let mcp_tool = create_test_mcp_tool(
+            "no_schema_tool",
+            Some("Tool with no schema".to_string()),
+            Value::Null,
+        );
+
+        let tool = create_mcp_tool("test_server", mcp_tool, mcp_manager);
+
+        assert_eq!(tool.name, "mcp_test_server_no_schema_tool");
+
+        // Should have default schema when input_schema is null
+        let expected_default_schema = json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        });
+        assert_eq!(tool.input_schema, expected_default_schema);
+    }
+
+    #[test]
+    fn test_create_mcp_tool_without_description() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({
+            "type": "object",
+            "properties": {},
+        });
+
+        let mcp_tool = create_test_mcp_tool("unnamed_tool", None, schema);
+
+        let tool = create_mcp_tool("my_server", mcp_tool, mcp_manager);
+
+        assert_eq!(tool.name, "mcp_my_server_unnamed_tool");
+        // Should use default description when None is provided
+        assert!(tool.description.contains("MCP tool from server: my_server"));
+        assert!(tool.description.contains("(MCP: my_server)"));
+    }
+
+    #[test]
+    fn test_create_mcp_tool_name_formatting() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({"type": "object"});
+
+        let mcp_tool = create_test_mcp_tool("my_tool", None, schema);
+        let tool = create_mcp_tool("server_name", mcp_tool, mcp_manager);
+
+        // Verify the name format is mcp_{server}_{tool}
+        assert_eq!(tool.name, "mcp_server_name_my_tool");
+    }
+
+    #[test]
+    fn test_create_mcp_tool_with_complex_schema() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name parameter"
+                },
+                "age": {
+                    "type": "number",
+                    "description": "Age parameter"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": ["name", "age"]
+        });
+
+        let mcp_tool = create_test_mcp_tool(
+            "complex_tool",
+            Some("A complex tool".to_string()),
+            schema.clone(),
+        );
+
+        let tool = create_mcp_tool("advanced_server", mcp_tool, mcp_manager);
+
+        assert_eq!(tool.name, "mcp_advanced_server_complex_tool");
+        assert_eq!(tool.input_schema, schema);
+
+        // Verify schema structure is preserved
+        let properties = tool.input_schema["properties"].as_object().unwrap();
+        assert!(properties.contains_key("name"));
+        assert!(properties.contains_key("age"));
+        assert!(properties.contains_key("tags"));
+
+        let required = tool.input_schema["required"].as_array().unwrap();
+        assert_eq!(required.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_handler_with_server_not_connected() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({"type": "object"});
+
+        let mcp_tool = create_test_mcp_tool("test_tool", None, schema);
+        let tool = create_mcp_tool("nonexistent_server", mcp_tool, mcp_manager);
+
+        // Create a test tool call
+        let call = crate::tools::types::ToolCall {
+            id: "test-call-1".to_string(),
+            name: "mcp_nonexistent_server_test_tool".to_string(),
+            arguments: json!({}),
+        };
+
+        // Call the handler
+        let result = (tool.handler)(call).await.unwrap();
+
+        // Should return an error since server is not connected
+        assert!(result.is_error);
+        assert!(result.content.contains("not connected") || result.content.contains("failed"));
+    }
+
+    #[test]
+    fn test_create_mcp_tool_with_empty_object_schema() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({});
+
+        let mcp_tool = create_test_mcp_tool("empty_schema_tool", None, schema.clone());
+        let tool = create_mcp_tool("test_server", mcp_tool, mcp_manager);
+
+        // Empty object schema should be preserved (not replaced with default)
+        assert_eq!(tool.input_schema, schema);
+        assert!(!tool.input_schema.is_null());
+    }
+
+    #[test]
+    fn test_create_mcp_tool_description_concatenation() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({"type": "object"});
+
+        let mcp_tool = create_test_mcp_tool(
+            "my_tool",
+            Some("Custom description".to_string()),
+            schema,
+        );
+        let tool = create_mcp_tool("my_server", mcp_tool, mcp_manager);
+
+        // Verify description format: "{description} (MCP: {server})"
+        assert_eq!(tool.description, "Custom description (MCP: my_server)");
+    }
+
+    #[test]
+    fn test_create_mcp_tool_metadata_is_none() {
+        let mcp_manager = Arc::new(McpManager::new());
+        let schema = json!({"type": "object"});
+
+        let mcp_tool = create_test_mcp_tool("test_tool", None, schema);
+        let tool = create_mcp_tool("test_server", mcp_tool, mcp_manager);
+
+        // Verify metadata is None (as indicated by the TODO comment)
+        assert!(tool.metadata.is_none());
+    }
+}
