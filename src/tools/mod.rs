@@ -17,6 +17,9 @@ pub mod write_file;
 pub mod display;
 pub mod registry;
 
+#[cfg(test)]
+mod tests;
+
 // Re-export all public types and functions for backward compatibility
 pub use builtin::*;
 pub use mcp::*;
