@@ -168,7 +168,7 @@ mod tests {
         let prev = previous_char_boundary(text, cursor_end);
         let next = next_char_boundary(text, 0);
 
-        assert_eq!(prev, '│'.len_utf8()); // moving left from end lands after the first char
+        assert_eq!(prev, text.len() - 'a'.len_utf8()); // moving left from end lands after the last char
         assert_eq!(next, '│'.len_utf8()); // moving right from start skips the full multibyte char
     }
 }
@@ -1012,5 +1012,4 @@ fn highlight_search_in_text(text: &str, query: &str) -> String {
 
     result
 }
-
 
