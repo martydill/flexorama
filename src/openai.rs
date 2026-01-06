@@ -284,8 +284,7 @@ impl OpenAIClient {
                                                     Some(index) => index,
                                                     None => continue,
                                                 };
-                                                let entry =
-                                                    tool_calls.entry(index).or_default();
+                                                let entry = tool_calls.entry(index).or_default();
                                                 if let Some(id) = &delta.id {
                                                     entry.id = Some(id.clone());
                                                 }
@@ -402,11 +401,7 @@ impl OpenAIClient {
             if let Some(tool_calls) = choice.message.tool_calls {
                 for call in tool_calls {
                     let input = parse_arguments(&call.function.arguments);
-                    content_blocks.push(ContentBlock::tool_use(
-                        call.id,
-                        call.function.name,
-                        input,
-                    ));
+                    content_blocks.push(ContentBlock::tool_use(call.id, call.function.name, input));
                 }
             }
         }
@@ -458,13 +453,18 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
                         .as_ref()
                         .map(|value| match value {
                             Value::String(text) => text.clone(),
-                            other => serde_json::to_string(other).unwrap_or_else(|_| "{}".to_string()),
+                            other => {
+                                serde_json::to_string(other).unwrap_or_else(|_| "{}".to_string())
+                            }
                         })
                         .unwrap_or_else(|| "{}".to_string());
                     tool_calls.push(OpenAIToolCall {
                         id,
                         call_type: "function".to_string(),
-                        function: OpenAIFunctionCall { name, arguments: input },
+                        function: OpenAIFunctionCall {
+                            name,
+                            arguments: input,
+                        },
                     });
                 }
                 "tool_result" => {
@@ -510,6 +510,5 @@ fn parse_arguments(arguments: &str) -> Value {
         return Value::Object(Map::new());
     }
 
-    serde_json::from_str::<Value>(trimmed)
-        .unwrap_or_else(|_| Value::String(arguments.to_string()))
+    serde_json::from_str::<Value>(trimmed).unwrap_or_else(|_| Value::String(arguments.to_string()))
 }

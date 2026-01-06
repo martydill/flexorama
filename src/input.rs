@@ -237,4 +237,3 @@ impl InputHistory {
         self.temp_input.clone()
     }
 }
-

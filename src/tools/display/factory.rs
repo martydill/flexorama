@@ -42,5 +42,4 @@ impl DisplayFactory {
         // - Output redirection
         OutputMode::Pretty
     }
-
 }

@@ -140,7 +140,11 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
 
-    fn create_test_mcp_tool(name: &str, description: Option<String>, input_schema: Value) -> McpTool {
+    fn create_test_mcp_tool(
+        name: &str,
+        description: Option<String>,
+        input_schema: Value,
+    ) -> McpTool {
         McpTool {
             name: name.to_string(),
             description,
@@ -162,11 +166,8 @@ mod tests {
             "required": ["path"]
         });
 
-        let mcp_tool = create_test_mcp_tool(
-            "read_file",
-            Some("Read a file".to_string()),
-            schema.clone(),
-        );
+        let mcp_tool =
+            create_test_mcp_tool("read_file", Some("Read a file".to_string()), schema.clone());
 
         let tool = create_mcp_tool("test_server", mcp_tool, mcp_manager);
 
@@ -314,11 +315,8 @@ mod tests {
         let mcp_manager = Arc::new(McpManager::new());
         let schema = json!({"type": "object"});
 
-        let mcp_tool = create_test_mcp_tool(
-            "my_tool",
-            Some("Custom description".to_string()),
-            schema,
-        );
+        let mcp_tool =
+            create_test_mcp_tool("my_tool", Some("Custom description".to_string()), schema);
         let tool = create_mcp_tool("my_server", mcp_tool, mcp_manager);
 
         // Verify description format: "{description} (MCP: {server})"

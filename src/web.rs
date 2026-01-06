@@ -1939,10 +1939,21 @@ mod tests {
             .route("/api/plans", get(list_plans).post(create_plan))
             .route("/api/permissions/pending", get(list_pending_permissions))
             .route("/api/permissions/respond", post(resolve_permission_request))
-            .route("/api/mcp/servers", get(list_mcp_servers).post(upsert_mcp_server))
-            .route("/api/mcp/servers/:name", get(get_mcp_server).put(upsert_mcp_server_named).delete(delete_mcp_server))
+            .route(
+                "/api/mcp/servers",
+                get(list_mcp_servers).post(upsert_mcp_server),
+            )
+            .route(
+                "/api/mcp/servers/:name",
+                get(get_mcp_server)
+                    .put(upsert_mcp_server_named)
+                    .delete(delete_mcp_server),
+            )
             .route("/api/agents", get(list_agents).post(create_agent))
-            .route("/api/agents/:name", get(get_agent).put(update_agent).delete(delete_agent))
+            .route(
+                "/api/agents/:name",
+                get(get_agent).put(update_agent).delete(delete_agent),
+            )
             .route("/api/agents/active", get(get_active_agent))
             .with_state(state)
     }
