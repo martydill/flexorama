@@ -1335,3 +1335,87 @@ impl Agent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_usage_tracks_and_resets() {
+        let mut usage_tracker = TokenUsage::new();
+        let usage = Usage {
+            input_tokens: 12,
+            output_tokens: 34,
+        };
+
+        usage_tracker.add_usage(&usage);
+
+        assert_eq!(usage_tracker.request_count, 1);
+        assert_eq!(usage_tracker.total_input_tokens, 12);
+        assert_eq!(usage_tracker.total_output_tokens, 34);
+        assert_eq!(usage_tracker.total_tokens(), 46);
+
+        usage_tracker.reset();
+
+        assert_eq!(usage_tracker.request_count, 0);
+        assert_eq!(usage_tracker.total_input_tokens, 0);
+        assert_eq!(usage_tracker.total_output_tokens, 0);
+        assert_eq!(usage_tracker.total_tokens(), 0);
+    }
+
+    #[tokio::test]
+    async fn new_with_plan_mode_controls_bash_tool() {
+        let config = Config::default();
+
+        let agent_with_bash =
+            Agent::new_with_plan_mode(config.clone(), "test-model".to_string(), false, false).await;
+        let tools_with_bash = agent_with_bash.tools.read().await;
+        assert!(tools_with_bash.contains_key("bash"));
+
+        let agent_without_bash =
+            Agent::new_with_plan_mode(config, "test-model".to_string(), false, true).await;
+        let tools_without_bash = agent_without_bash.tools.read().await;
+        assert!(!tools_without_bash.contains_key("bash"));
+    }
+
+    #[test]
+    fn snapshot_conversation_includes_seeded_state() {
+        let mut agent = Agent::new(
+            Config::default(),
+            "snapshot-model".to_string(),
+            false,
+            false,
+        );
+
+        agent.conversation_manager.conversation = vec![
+            Message {
+                role: "user".to_string(),
+                content: vec![ContentBlock::text("Hello".to_string())],
+            },
+            Message {
+                role: "assistant".to_string(),
+                content: vec![ContentBlock::text("Hi there".to_string())],
+            },
+        ];
+        agent.conversation_manager.current_conversation_id = Some("conv-123".to_string());
+        agent.conversation_manager.system_prompt = Some("System prompt".to_string());
+        agent.conversation_manager.model = "snapshot-model".to_string();
+
+        let snapshot = agent.snapshot_conversation();
+
+        assert_eq!(snapshot.id.as_deref(), Some("conv-123"));
+        assert_eq!(snapshot.system_prompt.as_deref(), Some("System prompt"));
+        assert_eq!(snapshot.model, "snapshot-model");
+        assert_eq!(snapshot.messages.len(), 2);
+        assert_eq!(snapshot.messages[0].role, "user");
+        assert_eq!(
+            snapshot.messages[0].content[0].text.as_deref(),
+            Some("Hello")
+        );
+        assert_eq!(snapshot.messages[1].role, "assistant");
+        assert_eq!(
+            snapshot.messages[1].content[0].text.as_deref(),
+            Some("Hi there")
+        );
+    }
+}
