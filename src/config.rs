@@ -133,10 +133,7 @@ pub fn provider_default_model(provider: Provider) -> String {
 
 pub fn provider_models(provider: Provider) -> &'static [&'static str] {
     match provider {
-        Provider::Anthropic => &[
-            "claude-3-5-sonnet-20240620",
-            "claude-3-5-haiku-20241022",
-        ],
+        Provider::Anthropic => &["claude-3-5-sonnet-20240620", "claude-3-5-haiku-20241022"],
         Provider::Gemini => &[
             "gemini-flash-latest",
             "gemini-1.5-pro",

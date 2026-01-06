@@ -22,5 +22,3 @@ pub mod simple;
 
 // Re-export for convenience
 pub use factory::DisplayFactory;
-
-

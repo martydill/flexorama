@@ -133,5 +133,3 @@ macro_rules! app_eprint {
         $crate::output::write(&format!($($arg)*), true)
     };
 }
-
-

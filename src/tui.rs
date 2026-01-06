@@ -2,6 +2,7 @@ use crate::formatter;
 use crate::input::InputHistory;
 use crate::output::{self, OutputSink};
 use crate::security::PermissionPrompt;
+use ansi_to_tui::IntoText;
 use anyhow::Result;
 use crossterm::{
     event::{
@@ -23,7 +24,6 @@ use std::collections::VecDeque;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use ansi_to_tui::IntoText;
 
 const MIN_OUTPUT_HEIGHT: usize = 3;
 const INPUT_PREFIX_MAIN: &str = "> ";
@@ -230,8 +230,7 @@ impl Tui {
             };
 
             if let Ok(mut screen) = self.screen.lock() {
-                let _ =
-                    screen.render_permission_in_output(&snapshot, prompt, selected, &buffer);
+                let _ = screen.render_permission_in_output(&snapshot, prompt, selected, &buffer);
             }
 
             let event = event::read().ok()?;
@@ -378,8 +377,7 @@ impl Tui {
                 }
             }
             KeyEvent {
-                code: KeyCode::Tab,
-                ..
+                code: KeyCode::Tab, ..
             } => {
                 if let Some(completion) =
                     crate::autocomplete::handle_tab_completion(&guard.input, guard.cursor_pos)
@@ -413,8 +411,7 @@ impl Tui {
                 guard.cursor_pos = next_char_boundary(&guard.input, guard.cursor_pos);
             }
             KeyEvent {
-                code: KeyCode::Up,
-                ..
+                code: KeyCode::Up, ..
             } => {
                 let current_input = guard.input.clone();
                 if let Some(new_input) = guard.history.navigate_up(&current_input) {
@@ -432,8 +429,7 @@ impl Tui {
                 }
             }
             KeyEvent {
-                code: KeyCode::Esc,
-                ..
+                code: KeyCode::Esc, ..
             } => {
                 guard.input.clear();
                 guard.cursor_pos = 0;
@@ -520,8 +516,9 @@ impl TuiScreen {
             let input_layout = build_input_layout(snapshot, size.width as usize);
             let input_lines = input_layout.lines.len().max(1);
             let input_height = (input_lines + 2).min(max_input_height as usize) as u16;
-            let max_queue_height =
-                size.height.saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
+            let max_queue_height = size
+                .height
+                .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
             let (queue_height, queue_lines) =
                 build_queue_layout(snapshot, size.width as usize, max_queue_height);
             let output_height = size
@@ -592,8 +589,9 @@ impl TuiScreen {
             let input_layout = build_input_layout(snapshot, size.width as usize);
             let input_lines = input_layout.lines.len().max(1);
             let input_height = (input_lines + 2).min(max_input_height as usize) as u16;
-            let max_queue_height =
-                size.height.saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
+            let max_queue_height = size
+                .height
+                .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
             let (queue_height, queue_lines) =
                 build_queue_layout(snapshot, size.width as usize, max_queue_height);
             let output_height = size
@@ -694,10 +692,7 @@ impl OutputSink for TuiOutputSink {
     }
 }
 
-fn handle_reverse_search_key(
-    guard: &mut TuiState,
-    key_event: KeyEvent,
-) -> Option<InputResult> {
+fn handle_reverse_search_key(guard: &mut TuiState, key_event: KeyEvent) -> Option<InputResult> {
     match key_event {
         KeyEvent {
             code: KeyCode::Enter,
@@ -711,8 +706,7 @@ fn handle_reverse_search_key(
             None
         }
         KeyEvent {
-            code: KeyCode::Esc,
-            ..
+            code: KeyCode::Esc, ..
         } => {
             guard.input = guard.history.cancel_reverse_search();
             guard.cursor_pos = guard.input.len();
@@ -744,8 +738,7 @@ fn handle_reverse_search_key(
             None
         }
         KeyEvent {
-            code: KeyCode::Up,
-            ..
+            code: KeyCode::Up, ..
         } => {
             guard.history.reverse_search_prev();
             None
@@ -798,11 +791,7 @@ fn build_output_text(snapshot: &TuiSnapshot, rect: Rect) -> Text<'static> {
     text
 }
 
-fn build_queue_layout(
-    snapshot: &TuiSnapshot,
-    width: usize,
-    max_height: u16,
-) -> (u16, Vec<String>) {
+fn build_queue_layout(snapshot: &TuiSnapshot, width: usize, max_height: u16) -> (u16, Vec<String>) {
     if snapshot.queued.is_empty() || max_height < 3 || width == 0 {
         return (0, Vec::new());
     }
@@ -840,7 +829,11 @@ fn build_queue_lines(queue: &[String], width: usize, max_lines: usize) -> Vec<St
                 truncated = true;
                 break;
             }
-            let prefix_used = if wrap_idx == 0 { prefix.as_str() } else { padding.as_str() };
+            let prefix_used = if wrap_idx == 0 {
+                prefix.as_str()
+            } else {
+                padding.as_str()
+            };
             lines.push(format!("{}{}", prefix_used, segment));
         }
         if truncated {
@@ -949,9 +942,7 @@ fn build_input_text_with_layout(
         .cursor_row
         .saturating_sub(input_scroll)
         .min(inner_height.saturating_sub(1)) as u16;
-    let cursor_col = input_layout
-        .cursor_col
-        .min(width.saturating_sub(1)) as u16;
+    let cursor_col = input_layout.cursor_col.min(width.saturating_sub(1)) as u16;
 
     (visible_text, cursor_row_offset, cursor_col)
 }
@@ -964,18 +955,27 @@ fn build_input_layout(snapshot: &TuiSnapshot, width: usize) -> InputLayout {
     let input_lines: Vec<&str> = snapshot.input_display.split('\n').collect();
     let raw_lines: Vec<&str> = snapshot.input_raw.split('\n').collect();
 
-    let (cursor_line_idx, cursor_col_in_line) = cursor_position_in_lines(&snapshot.input_raw, snapshot.cursor_pos);
+    let (cursor_line_idx, cursor_col_in_line) =
+        cursor_position_in_lines(&snapshot.input_raw, snapshot.cursor_pos);
 
     let mut total_rows = 0usize;
 
     for (idx, line) in input_lines.iter().enumerate() {
-        let prefix = if idx == 0 { INPUT_PREFIX_MAIN } else { INPUT_PREFIX_CONT };
+        let prefix = if idx == 0 {
+            INPUT_PREFIX_MAIN
+        } else {
+            INPUT_PREFIX_CONT
+        };
         let available = width.saturating_sub(prefix.len()).max(1);
 
         let wrapped = wrap_ansi_line(line, available);
         let padding = " ".repeat(prefix.len());
         for (wrap_idx, segment) in wrapped.iter().enumerate() {
-            let prefix_used = if wrap_idx == 0 { prefix } else { padding.as_str() };
+            let prefix_used = if wrap_idx == 0 {
+                prefix
+            } else {
+                padding.as_str()
+            };
             lines.push(format!("{}{}", prefix_used, segment));
         }
 
@@ -1075,7 +1075,11 @@ fn build_permission_lines(
         };
         let padding = " ".repeat(prefix.len());
         for (wrap_idx, segment) in wrapped.iter().enumerate() {
-            let prefix_used = if wrap_idx == 0 { prefix } else { padding.as_str() };
+            let prefix_used = if wrap_idx == 0 {
+                prefix
+            } else {
+                padding.as_str()
+            };
             let text = format!("{}{}", prefix_used, segment);
             lines.push(Line::from(Span::styled(text, style)));
         }
@@ -1183,7 +1187,6 @@ fn wrap_ansi_line(line: &str, width: usize) -> Vec<String> {
     segments
 }
 
-
 fn normalize_cursor_pos(text: &str, cursor_pos: usize) -> usize {
     if cursor_pos > text.len() {
         return text.len();
@@ -1233,7 +1236,3 @@ pub fn init_tui_output(formatter: &formatter::CodeFormatter) -> Result<Tui> {
     tui.render()?;
     Ok(tui)
 }
-
-
-
-

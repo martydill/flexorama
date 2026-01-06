@@ -199,5 +199,3 @@ impl ToolRegistry {
 pub trait ToolMetadataProvider {
     fn get_metadata() -> ToolMetadata;
 }
-
-

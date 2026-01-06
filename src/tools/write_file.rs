@@ -173,5 +173,3 @@ pub fn create_write_file_tool(
         metadata: None, // TODO: Add proper metadata
     }
 }
-
-

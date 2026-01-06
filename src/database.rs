@@ -108,7 +108,6 @@ impl DatabaseManager {
         .await
         .ok(); // Ignore error if column already exists
 
-
         // Create messages table
         sqlx::query(
             r#"
@@ -900,9 +899,8 @@ impl DatabaseManager {
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<UsageStats>> {
-        let start = start_date.unwrap_or_else(|| {
-            Utc::now().naive_utc().date() - chrono::Duration::days(30)
-        });
+        let start = start_date
+            .unwrap_or_else(|| Utc::now().naive_utc().date() - chrono::Duration::days(30));
         let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
 
         let rows = sqlx::query(
@@ -938,9 +936,8 @@ impl DatabaseManager {
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<ModelStats>> {
-        let start = start_date.unwrap_or_else(|| {
-            Utc::now().naive_utc().date() - chrono::Duration::days(30)
-        });
+        let start = start_date
+            .unwrap_or_else(|| Utc::now().naive_utc().date() - chrono::Duration::days(30));
         let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
 
         let rows = sqlx::query(
@@ -1008,9 +1005,8 @@ impl DatabaseManager {
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<(String, i32)>> {
-        let start = start_date.unwrap_or_else(|| {
-            Utc::now().naive_utc().date() - chrono::Duration::days(30)
-        });
+        let start = start_date
+            .unwrap_or_else(|| Utc::now().naive_utc().date() - chrono::Duration::days(30));
         let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
 
         let rows = sqlx::query(
@@ -1041,9 +1037,8 @@ impl DatabaseManager {
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<(String, String, i32)>> {
-        let start = start_date.unwrap_or_else(|| {
-            Utc::now().naive_utc().date() - chrono::Duration::days(30)
-        });
+        let start = start_date
+            .unwrap_or_else(|| Utc::now().naive_utc().date() - chrono::Duration::days(30));
         let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
 
         let rows = sqlx::query(
@@ -1062,11 +1057,13 @@ impl DatabaseManager {
 
         let counts = rows
             .iter()
-            .map(|row| (
-                row.get::<String, _>("date"),
-                row.get::<String, _>("model"),
-                row.get::<i32, _>("count")
-            ))
+            .map(|row| {
+                (
+                    row.get::<String, _>("date"),
+                    row.get::<String, _>("model"),
+                    row.get::<i32, _>("count"),
+                )
+            })
             .collect();
 
         Ok(counts)
@@ -1078,9 +1075,8 @@ impl DatabaseManager {
         start_date: Option<NaiveDate>,
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<(String, String, i32)>> {
-        let start = start_date.unwrap_or_else(|| {
-            Utc::now().naive_utc().date() - chrono::Duration::days(30)
-        });
+        let start = start_date
+            .unwrap_or_else(|| Utc::now().naive_utc().date() - chrono::Duration::days(30));
         let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
 
         let rows = sqlx::query(
@@ -1101,11 +1097,13 @@ impl DatabaseManager {
 
         let counts = rows
             .iter()
-            .map(|row| (
-                row.get::<String, _>("date"),
-                row.get::<String, _>("subagent"),
-                row.get::<i32, _>("count"),
-            ))
+            .map(|row| {
+                (
+                    row.get::<String, _>("date"),
+                    row.get::<String, _>("subagent"),
+                    row.get::<i32, _>("count"),
+                )
+            })
             .collect();
 
         Ok(counts)
@@ -1176,5 +1174,3 @@ mod tests {
         assert!(slug.len() <= 100);
     }
 }
-
-

@@ -87,7 +87,9 @@ pub fn print_file_permissions_help() {
     app_println!("  • Enable 'ask for permission' for better security");
     app_println!("  • Use 'Allow this operation only' for one-off edits");
     app_println!("  • Use 'Allow all file operations this session' for trusted sessions");
-    app_println!("  • File operations include: write_file, edit_file, create_directory, delete_file");
+    app_println!(
+        "  • File operations include: write_file, edit_file, create_directory, delete_file"
+    );
     app_println!("  • Read operations (read_file, list_directory) are always allowed");
     app_println!("  • Session permissions are reset when you restart the agent");
     app_println!();
@@ -364,5 +366,3 @@ pub fn display_mcp_yolo_warning() {
     );
     app_println!();
 }
-
-

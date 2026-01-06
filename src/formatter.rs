@@ -1033,5 +1033,3 @@ impl StreamingResponseFormatter {
         self.in_code_block = true;
     }
 }
-
-

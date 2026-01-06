@@ -167,7 +167,9 @@ impl PrettyDisplay {
                     }
                 }
             }
-            DisplayFormat::Command { show_working_dir: _ } => {
+            DisplayFormat::Command {
+                show_working_dir: _,
+            } => {
                 if let Some(command) = arguments.get("command").and_then(|v| v.as_str()) {
                     parts.push(format!("cmd={}", truncate(command.to_string())));
                 }
@@ -268,7 +270,11 @@ impl super::ToolDisplay for PrettyDisplay {
             "--------------------------------------------------".dimmed()
         );
         let call_summary = match self.format_inline_params() {
-            Some(params) => format!("Tool Call: {} {}", self.context.tool_name.cyan().bold(), params),
+            Some(params) => format!(
+                "Tool Call: {} {}",
+                self.context.tool_name.cyan().bold(),
+                params
+            ),
             None => format!("Tool Call: {}", self.context.tool_name.cyan().bold()),
         };
 
@@ -313,7 +319,11 @@ impl super::ToolDisplay for PrettyDisplay {
             "--------------------------------------------------".dimmed()
         );
         let call_summary = match self.format_inline_params() {
-            Some(params) => format!("Tool Call: {} {}", self.context.tool_name.cyan().bold(), params),
+            Some(params) => format!(
+                "Tool Call: {} {}",
+                self.context.tool_name.cyan().bold(),
+                params
+            ),
             None => format!("Tool Call: {}", self.context.tool_name.cyan().bold()),
         };
 
@@ -348,4 +358,3 @@ impl super::ToolDisplay for PrettyDisplay {
         crate::output::flush();
     }
 }
-

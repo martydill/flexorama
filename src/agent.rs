@@ -4,8 +4,8 @@ use crate::tools::display::DisplayFactory;
 use anyhow::{anyhow, Result};
 use colored::*;
 use log::{debug, error, info, warn};
-use serde_json::json;
 use serde::Serialize;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -752,18 +752,10 @@ impl Agent {
                         self.conversation_manager.database_manager.clone(),
                         self.conversation_manager.current_conversation_id.clone(),
                     ) {
-                        let args_str =
-                            serde_json::to_string(&call.arguments).unwrap_or_else(|_| {
-                                call.arguments.to_string()
-                            });
+                        let args_str = serde_json::to_string(&call.arguments)
+                            .unwrap_or_else(|_| call.arguments.to_string());
                         if let Err(e) = db
-                            .add_tool_call(
-                                &conversation_id,
-                                None,
-                                &call.id,
-                                &call.name,
-                                &args_str,
-                            )
+                            .add_tool_call(&conversation_id, None, &call.id, &call.name, &args_str)
                             .await
                         {
                             warn!("Failed to record tool call {}: {}", call.name, e);
@@ -948,7 +940,9 @@ impl Agent {
     /// Update the active model for this session
     pub async fn set_model(&mut self, model: String) -> Result<()> {
         self.model = model.clone();
-        self.conversation_manager.update_conversation_model(model).await
+        self.conversation_manager
+            .update_conversation_model(model)
+            .await
     }
 
     fn set_model_local(&mut self, model: String) {
@@ -1341,5 +1335,3 @@ impl Agent {
         }
     }
 }
-
-

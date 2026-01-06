@@ -187,5 +187,3 @@ pub fn create_delete_file_tool(
         metadata: None, // TODO: Add proper metadata
     }
 }
-
-

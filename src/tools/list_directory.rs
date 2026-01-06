@@ -87,5 +87,3 @@ pub fn create_list_directory_tool() -> Tool {
         metadata: None, // TODO: Add metadata for list_directory tool
     }
 }
-
-

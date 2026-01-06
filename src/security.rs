@@ -152,7 +152,6 @@ pub struct PermissionPrompt {
 pub type PermissionHandler =
     Arc<dyn Fn(PermissionPrompt) -> BoxFuture<'static, Option<usize>> + Send + Sync>;
 
-
 impl FileSecurityManager {
     pub fn new(security: FileSecurity) -> Self {
         Self {
@@ -216,16 +215,16 @@ impl FileSecurityManager {
             let prompt = PermissionPrompt {
                 kind: PermissionKind::File,
                 summary: "File operation requires permission".to_string(),
-                detail: format!("Operation: {}
-Path: {}", operation, path),
+                detail: format!(
+                    "Operation: {}
+Path: {}",
+                    operation, path
+                ),
                 options,
             };
             let handler = handler.clone();
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                (handler)(prompt),
-            )
-            .await;
+            let result =
+                tokio::time::timeout(std::time::Duration::from_secs(30), (handler)(prompt)).await;
 
             return match result {
                 Ok(selection) => match selection {
@@ -467,11 +466,8 @@ impl BashSecurityManager {
                 options,
             };
             let handler = handler.clone();
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                (handler)(prompt),
-            )
-            .await;
+            let result =
+                tokio::time::timeout(std::time::Duration::from_secs(30), (handler)(prompt)).await;
 
             return match result {
                 Ok(selection) => match selection {
@@ -821,7 +817,9 @@ mod tests {
         assert_eq!(with_params.len(), 4);
 
         let without_params = manager.generate_permission_options("git");
-        assert!(!without_params.iter().any(|option| option.contains("wildcard")));
+        assert!(!without_params
+            .iter()
+            .any(|option| option.contains("wildcard")));
         assert_eq!(without_params.len(), 3);
     }
 
@@ -835,4 +833,3 @@ mod tests {
         );
     }
 }
-

@@ -4,8 +4,8 @@ use crate::gemini::GeminiClient;
 use crate::tools::{Tool, ToolCall};
 use anyhow::Result;
 use serde_json::Value;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 pub type LlmResponse = AnthropicResponse;
 

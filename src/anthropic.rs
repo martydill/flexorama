@@ -684,5 +684,3 @@ impl AnthropicClient {
             .join("\n")
     }
 }
-
-

@@ -85,7 +85,9 @@ impl SimpleDisplay {
                     }
                 }
             }
-            DisplayFormat::Command { show_working_dir: _ } => {
+            DisplayFormat::Command {
+                show_working_dir: _,
+            } => {
                 if let Some(command) = arguments.get("command").and_then(|v| v.as_str()) {
                     parts.push(format!("cmd={}", truncate(command.to_string())));
                 }
@@ -199,4 +201,3 @@ impl super::ToolDisplay for SimpleDisplay {
         }
     }
 }
-

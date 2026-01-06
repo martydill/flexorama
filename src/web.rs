@@ -328,10 +328,7 @@ impl PermissionHub {
         rx
     }
 
-    async fn list_pending(
-        &self,
-        conversation_id: Option<&str>,
-    ) -> Vec<PermissionRequestDto> {
+    async fn list_pending(&self, conversation_id: Option<&str>) -> Vec<PermissionRequestDto> {
         let pending = self.pending.lock().await;
         pending
             .values()
@@ -421,10 +418,7 @@ fn build_permission_handler(
 
 pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    app_println!(
-        "?? Web UI starting on http://{} (Ctrl+C to stop)",
-        addr
-    );
+    app_println!("?? Web UI starting on http://{} (Ctrl+C to stop)", addr);
 
     let router = Router::new()
         .route("/", get(serve_index))
@@ -459,10 +453,7 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
                 .put(upsert_mcp_server_named)
                 .delete(delete_mcp_server),
         )
-        .route(
-            "/api/mcp/servers/:name/connect",
-            post(connect_mcp_server),
-        )
+        .route("/api/mcp/servers/:name/connect", post(connect_mcp_server))
         .route(
             "/api/mcp/servers/:name/disconnect",
             post(disconnect_mcp_server),
@@ -472,21 +463,21 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             "/api/agents/:name",
             get(get_agent).put(update_agent).delete(delete_agent),
         )
-        .route("/api/agents/active", get(get_active_agent).post(set_active_agent))
         .route(
-            "/api/permissions/pending",
-            get(list_pending_permissions),
+            "/api/agents/active",
+            get(get_active_agent).post(set_active_agent),
         )
-        .route(
-            "/api/permissions/respond",
-            post(resolve_permission_request),
-        )
+        .route("/api/permissions/pending", get(list_pending_permissions))
+        .route("/api/permissions/respond", post(resolve_permission_request))
         .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
         .route("/api/stats/overview", get(get_stats_overview))
         .route("/api/stats/usage", get(get_usage_stats))
         .route("/api/stats/models", get(get_model_stats))
         .route("/api/stats/conversations", get(get_conversation_stats))
-        .route("/api/stats/conversations-by-provider", get(get_conversation_stats_by_provider))
+        .route(
+            "/api/stats/conversations-by-provider",
+            get(get_conversation_stats_by_provider),
+        )
         .route(
             "/api/stats/conversations-by-subagent",
             get(get_conversation_stats_by_subagent),
@@ -502,10 +493,7 @@ async fn serve_index() -> impl IntoResponse {
 }
 
 async fn serve_app_js() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "application/javascript")],
-        APP_JS,
-    )
+    ([(header::CONTENT_TYPE, "application/javascript")], APP_JS)
 }
 
 async fn health() -> impl IntoResponse {
@@ -528,7 +516,8 @@ async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse 
                     .iter()
                     .find(|m| m.role == "user")
                     .map(|m| m.content.clone());
-                let last_message = first_user.or_else(|| messages.last().map(|m| m.content.clone()));
+                let last_message =
+                    first_user.or_else(|| messages.last().map(|m| m.content.clone()));
                 let item = ConversationListItem {
                     id: conversation.id.clone(),
                     created_at: conversation.created_at.to_rfc3339(),
@@ -544,13 +533,11 @@ async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse 
             }
             Json(items).into_response()
         }
-        Err(e) => {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to list conversations: {}", e),
-            )
-                .into_response()
-        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list conversations: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -616,21 +603,17 @@ async fn get_conversation(
                 timeline_messages_to_dto(raw_messages.clone(), tool_calls)
             };
 
-            let raw_context_messages: Vec<MessageDto> = match db.get_conversation_messages(&id).await {
-                Ok(msgs) => msgs
-                    .into_iter()
-                    .map(|m| {
-                        let blocks = vec![ContentBlock::text(m.content.clone())];
-                        build_message_dto(
-                            m.id,
-                            m.role,
-                            m.created_at.to_rfc3339(),
-                            blocks,
-                        )
-                    })
-                    .collect(),
-                Err(_) => Vec::new(),
-            };
+            let raw_context_messages: Vec<MessageDto> =
+                match db.get_conversation_messages(&id).await {
+                    Ok(msgs) => msgs
+                        .into_iter()
+                        .map(|m| {
+                            let blocks = vec![ContentBlock::text(m.content.clone())];
+                            build_message_dto(m.id, m.role, m.created_at.to_rfc3339(), blocks)
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                };
 
             let mut context_files = extract_context_files_from_messages(&raw_context_messages);
             for f in ConversationManager::default_agents_files() {
@@ -742,11 +725,7 @@ async fn set_model(
 ) -> impl IntoResponse {
     let model = payload.model.trim().to_string();
     if model.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            "Model is required".to_string(),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, "Model is required".to_string()).into_response();
     }
     let mut agent = state.agent.lock_owned().await;
     match agent.set_model(model.clone()).await {
@@ -787,12 +766,12 @@ async fn stream_message_to_conversation(
         let stream_sender = tx.clone();
         let tool_sender = stream_sender.clone();
 
-        let send_json =
-            |sender: &mpsc::Sender<Result<Bytes, Infallible>>, value: serde_json::Value| {
-                if let Ok(text) = serde_json::to_string(&value) {
-                    let _ = sender.try_send(Ok(Bytes::from(text + "\n")));
-                }
-            };
+        let send_json = |sender: &mpsc::Sender<Result<Bytes, Infallible>>,
+                         value: serde_json::Value| {
+            if let Ok(text) = serde_json::to_string(&value) {
+                let _ = sender.try_send(Ok(Bytes::from(text + "\n")));
+            }
+        };
 
         let on_stream = {
             let sender = tx.clone();
@@ -915,7 +894,12 @@ async fn update_plan(
 ) -> impl IntoResponse {
     match state
         .database
-        .update_plan(&id, payload.title, payload.user_request, payload.plan_markdown)
+        .update_plan(
+            &id,
+            payload.title,
+            payload.user_request,
+            payload.plan_markdown,
+        )
         .await
     {
         Ok(plan) => Json(PlanDto {
@@ -930,8 +914,8 @@ async fn update_plan(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to update plan: {}", e),
-            )
-                .into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -1330,7 +1314,11 @@ async fn resolve_permission_request(
     if resolved {
         StatusCode::NO_CONTENT.into_response()
     } else {
-        (StatusCode::NOT_FOUND, "Permission request not found".to_string()).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            "Permission request not found".to_string(),
+        )
+            .into_response()
     }
 }
 
@@ -1378,17 +1366,24 @@ async fn get_usage_stats(
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
 
-    match state.database.get_usage_stats_range(start_date, end_date).await {
+    match state
+        .database
+        .get_usage_stats_range(start_date, end_date)
+        .await
+    {
         Ok(stats) => {
             let response = UsageStatsResponse {
                 period: params.period.unwrap_or_else(|| "month".to_string()),
-                data: stats.into_iter().map(|s| UsageStatsPoint {
-                    date: s.date,
-                    total_requests: s.total_requests,
-                    total_input_tokens: s.total_input_tokens,
-                    total_output_tokens: s.total_output_tokens,
-                    total_tokens: s.total_tokens,
-                }).collect(),
+                data: stats
+                    .into_iter()
+                    .map(|s| UsageStatsPoint {
+                        date: s.date,
+                        total_requests: s.total_requests,
+                        total_input_tokens: s.total_input_tokens,
+                        total_output_tokens: s.total_output_tokens,
+                        total_tokens: s.total_tokens,
+                    })
+                    .collect(),
             };
             Json(response).into_response()
         }
@@ -1406,17 +1401,24 @@ async fn get_model_stats(
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
 
-    match state.database.get_stats_by_model(start_date, end_date).await {
+    match state
+        .database
+        .get_stats_by_model(start_date, end_date)
+        .await
+    {
         Ok(stats) => {
             let response = ModelStatsResponse {
                 period: params.period.unwrap_or_else(|| "month".to_string()),
-                data: stats.into_iter().map(|s| ModelStatsPoint {
-                    model: s.model.clone(),
-                    provider: extract_provider_from_model(&s.model),
-                    total_conversations: s.total_conversations,
-                    total_tokens: s.total_tokens,
-                    request_count: s.request_count,
-                }).collect(),
+                data: stats
+                    .into_iter()
+                    .map(|s| ModelStatsPoint {
+                        model: s.model.clone(),
+                        provider: extract_provider_from_model(&s.model),
+                        total_conversations: s.total_conversations,
+                        total_tokens: s.total_tokens,
+                        request_count: s.request_count,
+                    })
+                    .collect(),
             };
             Json(response).into_response()
         }
@@ -1434,14 +1436,18 @@ async fn get_conversation_stats(
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
 
-    match state.database.get_conversation_counts_by_date(start_date, end_date).await {
+    match state
+        .database
+        .get_conversation_counts_by_date(start_date, end_date)
+        .await
+    {
         Ok(counts) => {
             let response = ConversationStatsResponse {
                 period: params.period.unwrap_or_else(|| "month".to_string()),
-                data: counts.into_iter().map(|(date, count)| ConversationStatsPoint {
-                    date,
-                    count,
-                }).collect(),
+                data: counts
+                    .into_iter()
+                    .map(|(date, count)| ConversationStatsPoint { date, count })
+                    .collect(),
             };
             Json(response).into_response()
         }
@@ -1459,7 +1465,11 @@ async fn get_conversation_stats_by_provider(
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
 
-    match state.database.get_conversation_counts_by_date_and_model(start_date, end_date).await {
+    match state
+        .database
+        .get_conversation_counts_by_date_and_model(start_date, end_date)
+        .await
+    {
         Ok(counts) => {
             // Aggregate by (date, provider) since multiple models can map to the same provider
             let mut aggregated: HashMap<(String, String), i32> = HashMap::new();
@@ -1543,7 +1553,9 @@ fn extract_provider_from_model(model: &str) -> String {
     }
 }
 
-fn calculate_date_range(params: &StatsQueryParams) -> (Option<chrono::NaiveDate>, Option<chrono::NaiveDate>) {
+fn calculate_date_range(
+    params: &StatsQueryParams,
+) -> (Option<chrono::NaiveDate>, Option<chrono::NaiveDate>) {
     use chrono::NaiveDate;
 
     // If custom dates are provided, use them
@@ -1595,7 +1607,10 @@ fn block_text_summary(block: &ContentBlockDto) -> String {
             block.name.as_deref().unwrap_or("unknown tool")
         ),
         "tool_result" => {
-            let base = block.content.clone().unwrap_or_else(|| "Tool result".to_string());
+            let base = block
+                .content
+                .clone()
+                .unwrap_or_else(|| "Tool result".to_string());
             if block.is_error.unwrap_or(false) {
                 format!("(error) {}", base)
             } else {
@@ -1644,12 +1659,7 @@ fn build_visible_message_dto(
     if filtered_blocks.is_empty() {
         None
     } else {
-        Some(build_message_dto(
-            id,
-            role,
-            created_at,
-            filtered_blocks,
-        ))
+        Some(build_message_dto(id, role, created_at, filtered_blocks))
     }
 }
 
@@ -1693,7 +1703,8 @@ fn snapshot_messages_to_dto(snapshot: &ConversationSnapshot) -> Vec<MessageDto> 
 }
 
 fn parse_tool_arguments(arg_text: &str) -> serde_json::Value {
-    serde_json::from_str(arg_text).unwrap_or_else(|_| serde_json::Value::String(arg_text.to_string()))
+    serde_json::from_str(arg_text)
+        .unwrap_or_else(|_| serde_json::Value::String(arg_text.to_string()))
 }
 
 fn timeline_messages_to_dto(
@@ -1757,5 +1768,3 @@ fn timeline_messages_to_dto(
         })
         .collect()
 }
-
-

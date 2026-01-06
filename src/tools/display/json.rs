@@ -159,5 +159,3 @@ impl super::ToolDisplay for JsonDisplay {
         app_println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
     }
 }
-
-

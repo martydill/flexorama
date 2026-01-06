@@ -1012,4 +1012,3 @@ fn highlight_search_in_text(text: &str, query: &str) -> String {
 
     result
 }
-

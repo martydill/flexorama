@@ -30,5 +30,3 @@ mod tests {
         assert!(highlighted.contains("@src/main.rs"));
     }
 }
-
-

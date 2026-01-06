@@ -124,13 +124,7 @@ impl GeminiClient {
             return Err(anyhow::anyhow!("CANCELLED"));
         }
 
-        let request = self.build_request(
-            messages,
-            tools,
-            max_tokens,
-            temperature,
-            system_prompt,
-        );
+        let request = self.build_request(messages, tools, max_tokens, temperature, system_prompt);
 
         let endpoint = format!(
             "{}/models/{}:generateContent?key={}",
@@ -138,12 +132,7 @@ impl GeminiClient {
         );
 
         debug!("Sending Gemini request to {}", endpoint);
-        let response = self
-            .client
-            .post(&endpoint)
-            .json(&request)
-            .send()
-            .await?;
+        let response = self.client.post(&endpoint).json(&request).send().await?;
 
         let status = response.status();
         let response_text = response.text().await?;
@@ -236,20 +225,14 @@ impl GeminiClient {
                             }
                         }
                         "tool_use" => {
-                            let args = block
-                                .input
-                                .clone()
-                                .unwrap_or(Value::Null);
+                            let args = block.input.clone().unwrap_or(Value::Null);
                             if let (Some(id), Some(name)) = (&block.id, &block.name) {
                                 tool_name_by_id.insert(id.clone(), name.clone());
                             }
                             parts.push(GeminiPart {
                                 text: None,
                                 function_call: Some(GeminiFunctionCall {
-                                    name: block
-                                        .name
-                                        .clone()
-                                        .unwrap_or_else(|| "tool".to_string()),
+                                    name: block.name.clone().unwrap_or_else(|| "tool".to_string()),
                                     arguments: Some(args),
                                 }),
                                 function_response: None,
@@ -393,5 +376,3 @@ fn normalize_args(args: Option<Value>) -> Value {
         None => Value::Object(Map::new()),
     }
 }
-
-

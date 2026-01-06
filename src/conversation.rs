@@ -278,10 +278,8 @@ impl ConversationManager {
                     });
                 }
                 TimelineEntry::ToolCall(tc) => {
-                    let input_value: serde_json::Value =
-                        serde_json::from_str(&tc.tool_arguments).unwrap_or_else(|_| {
-                            serde_json::Value::String(tc.tool_arguments.clone())
-                        });
+                    let input_value: serde_json::Value = serde_json::from_str(&tc.tool_arguments)
+                        .unwrap_or_else(|_| serde_json::Value::String(tc.tool_arguments.clone()));
                     self.conversation.push(crate::anthropic::Message {
                         role: "assistant".to_string(),
                         content: vec![ContentBlock::tool_use(
@@ -428,7 +426,11 @@ impl ConversationManager {
                             } else {
                                 content.clone()
                             };
-                            app_println!("    {} {}", "Content:".dimmed(), preview.replace('\n', " "));
+                            app_println!(
+                                "    {} {}",
+                                "Content:".dimmed(),
+                                preview.replace('\n', " ")
+                            );
                         }
                     }
                     _ => {
@@ -456,5 +458,3 @@ impl ConversationManager {
         app_println!();
     }
 }
-
-

@@ -132,5 +132,3 @@ pub fn create_mcp_tool(server_name: &str, mcp_tool: McpTool, mcp_manager: Arc<Mc
         metadata: None, // TODO: Add proper metadata for MCP tools
     }
 }
-
-

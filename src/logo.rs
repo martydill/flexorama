@@ -64,10 +64,7 @@ pub fn display_logo() {
                 let t = (progress - 0.5) / 0.5;
                 (255, (165.0 * (1.0 - t) + 255.0 * t) as u8, 0)
             };
-            colored_subtitle.push_str(&format!(
-                "\x1b[38;2;{};{};{}m{}\x1b[0m",
-                r, g, b, ch
-            ));
+            colored_subtitle.push_str(&format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, ch));
         }
         app_println!("{}", colored_subtitle);
         app_println!();
@@ -145,5 +142,3 @@ pub fn display_logo() {
     queue!(stdout, ResetColor, Print("\n\n")).ok();
     stdout.flush().ok();
 }
-
-

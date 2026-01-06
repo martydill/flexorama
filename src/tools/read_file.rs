@@ -76,5 +76,3 @@ pub fn create_read_file_tool() -> Tool {
         metadata: None,
     }
 }
-
-

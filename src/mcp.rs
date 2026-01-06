@@ -933,7 +933,9 @@ impl McpManager {
     pub async fn upsert_server(&self, name: &str, server_config: McpServerConfig) -> Result<()> {
         {
             let mut config = self.config.write().await;
-            config.servers.insert(name.to_string(), server_config.clone());
+            config
+                .servers
+                .insert(name.to_string(), server_config.clone());
         }
         self.save_to_config_file().await?;
 
@@ -1182,5 +1184,3 @@ impl Default for McpManager {
         Self::new()
     }
 }
-
-

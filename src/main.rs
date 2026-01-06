@@ -24,8 +24,8 @@ mod autocomplete;
 mod config;
 mod conversation;
 mod database;
-mod gemini;
 mod formatter;
+mod gemini;
 mod help;
 mod input;
 mod logo;
@@ -183,11 +183,7 @@ async fn run_tui_interactive(
                 .bold()
         );
     }
-    app_println!(
-        "{}",
-        "Type '/help' for commands."
-            .dimmed()
-    );
+    app_println!("{}", "Type '/help' for commands.".dimmed());
     app_println!();
 
     let queued_inputs = Arc::new(Mutex::new(VecDeque::new()));
@@ -201,42 +197,40 @@ async fn run_tui_interactive(
     let queue_for_input = Arc::clone(&queued_inputs);
     let cancel_for_input = Arc::clone(&current_cancel_flag);
     let exit_for_input = Arc::clone(&exit_requested);
-    let input_thread = tokio::task::spawn_blocking(move || {
-        loop {
-            match tui_for_input.read_input() {
-                Ok(tui::InputResult::Submitted(value)) => {
-                    if value.trim().is_empty() {
-                        continue;
-                    }
-                    let snapshot = {
-                        let mut guard = queue_for_input.lock().expect("queue lock");
-                        guard.push_back(value);
-                        guard.clone()
-                    };
-                    let _ = tui_for_input.set_queue(&snapshot);
-                    if input_tx.send(InputEvent::Queued).is_err() {
-                        break;
-                    }
+    let input_thread = tokio::task::spawn_blocking(move || loop {
+        match tui_for_input.read_input() {
+            Ok(tui::InputResult::Submitted(value)) => {
+                if value.trim().is_empty() {
+                    continue;
                 }
-                Ok(tui::InputResult::Cancelled) => {
-                    let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
-                    if let Some(flag) = cancel {
-                        flag.store(true, Ordering::SeqCst);
-                        app_println!("\n{} Cancelling AI conversation...", "??".yellow());
-                    }
-                }
-                Ok(tui::InputResult::Exit) => {
-                    exit_for_input.store(true, Ordering::SeqCst);
-                    let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
-                    if let Some(flag) = cancel {
-                        flag.store(true, Ordering::SeqCst);
-                        app_println!("\n{} Cancelling and exiting...", "??".yellow());
-                    }
-                    let _ = input_tx.send(InputEvent::Exit);
+                let snapshot = {
+                    let mut guard = queue_for_input.lock().expect("queue lock");
+                    guard.push_back(value);
+                    guard.clone()
+                };
+                let _ = tui_for_input.set_queue(&snapshot);
+                if input_tx.send(InputEvent::Queued).is_err() {
                     break;
                 }
-                Err(_) => break,
             }
+            Ok(tui::InputResult::Cancelled) => {
+                let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
+                if let Some(flag) = cancel {
+                    flag.store(true, Ordering::SeqCst);
+                    app_println!("\n{} Cancelling AI conversation...", "??".yellow());
+                }
+            }
+            Ok(tui::InputResult::Exit) => {
+                exit_for_input.store(true, Ordering::SeqCst);
+                let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
+                if let Some(flag) = cancel {
+                    flag.store(true, Ordering::SeqCst);
+                    app_println!("\n{} Cancelling and exiting...", "??".yellow());
+                }
+                let _ = input_tx.send(InputEvent::Exit);
+                break;
+            }
+            Err(_) => break,
         }
     });
 
@@ -527,11 +521,19 @@ async fn handle_agent_command(
                         // Clear conversation context when switching to subagent
                         match agent.clear_conversation_keep_agents_md().await {
                             Ok(_) => {
-                                app_println!("{} Switched to subagent: {}", "✅".green(), name.cyan());
+                                app_println!(
+                                    "{} Switched to subagent: {}",
+                                    "✅".green(),
+                                    name.cyan()
+                                );
                                 app_println!("{} Conversation context cleared", "🗑️".blue());
                             }
                             Err(e) => {
-                                app_println!("{} Switched to subagent: {}", "✅".green(), name.cyan());
+                                app_println!(
+                                    "{} Switched to subagent: {}",
+                                    "✅".green(),
+                                    name.cyan()
+                                );
                                 app_eprintln!(
                                     "{} Failed to clear conversation context: {}",
                                     "⚠️".yellow(),
@@ -1135,15 +1137,23 @@ async fn handle_slash_command(
                 }
                 "pick" => {
                     if available.is_empty() {
-                        app_println!("{} No default models configured for {}", "??".yellow(), provider);
+                        app_println!(
+                            "{} No default models configured for {}",
+                            "??".yellow(),
+                            provider
+                        );
                         return Ok(true);
                     }
                     if let Some(tui) = tui {
                         let options: Vec<String> =
                             available.iter().map(|model| model.to_string()).collect();
-                        if let Some(index) =
-                            select_index_with_tui(tui, "Select a model", &options, "Model pick cancelled.")
-                                .await
+                        if let Some(index) = select_index_with_tui(
+                            tui,
+                            "Select a model",
+                            &options,
+                            "Model pick cancelled.",
+                        )
+                        .await
                         {
                             let new_model = options[index].clone();
                             agent.set_model(new_model.clone()).await?;
@@ -1390,7 +1400,11 @@ async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Result<(
                                 .filter(|(server_name, _)| server_name == args[1])
                                 .collect();
                             if !server_tools.is_empty() {
-                                app_println!("{} Available tools: {}", "🛠️".blue(), server_tools.len());
+                                app_println!(
+                                    "{} Available tools: {}",
+                                    "🛠️".blue(),
+                                    server_tools.len()
+                                );
                                 for (_, tool) in server_tools {
                                     app_println!(
                                         "  - {} {}",
@@ -2180,7 +2194,9 @@ async fn handle_file_permissions_command(args: &[&str], agent: &mut Agent) -> Re
             app_println!("{} Available commands:", "💡".yellow());
             app_println!("  /file-permissions                - Show current file permissions");
             app_println!("  /file-permissions help          - Show file permissions help");
-            app_println!("  /file-permissions test <op> <path> - Test if file operation is allowed");
+            app_println!(
+                "  /file-permissions test <op> <path> - Test if file operation is allowed"
+            );
             app_println!("  /file-permissions enable        - Enable file security");
             app_println!("  /file-permissions disable       - Disable file security");
             app_println!("  /file-permissions ask-on        - Enable asking for permission");
@@ -2614,7 +2630,7 @@ async fn main() -> Result<()> {
             return Err(anyhow!("Interactive mode requires TUI initialization"));
         }
     }
-// Print final usage stats before exiting (only for interactive mode)
+    // Print final usage stats before exiting (only for interactive mode)
     if is_interactive {
         print_usage_stats(&agent);
     }
@@ -2629,6 +2645,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-
-
-
