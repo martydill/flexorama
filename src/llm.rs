@@ -47,8 +47,24 @@ impl LlmClient {
         }
     }
 
-    pub fn provider(&self) -> Provider {
+    #[cfg(test)]
+    pub(crate) fn provider(&self) -> Provider {
         self.provider
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_anthropic_client(&self) -> bool {
+        self.anthropic.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_gemini_client(&self) -> bool {
+        self.gemini.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_openai_client(&self) -> bool {
+        self.openai.is_some()
     }
 
     pub async fn create_message(
@@ -355,22 +371,51 @@ mod tests {
 
     #[tokio::test]
     async fn provider_returns_expected_variant() {
-        let providers = [
-            Provider::Anthropic,
-            Provider::Gemini,
-            Provider::OpenAI,
-            Provider::Zai,
-        ];
+        configure_no_proxy();
 
-        for provider in providers {
-            configure_no_proxy();
-            let client = LlmClient::new(
-                provider,
-                "test-key".to_string(),
-                "http://localhost".to_string(),
-            );
-            assert_eq!(client.provider(), provider);
-        }
+        // Test Anthropic provider
+        let client = LlmClient::new(
+            Provider::Anthropic,
+            "test-key".to_string(),
+            "http://localhost".to_string(),
+        );
+        assert_eq!(client.provider(), Provider::Anthropic);
+        assert!(client.has_anthropic_client());
+        assert!(!client.has_gemini_client());
+        assert!(!client.has_openai_client());
+
+        // Test Gemini provider
+        let client = LlmClient::new(
+            Provider::Gemini,
+            "test-key".to_string(),
+            "http://localhost".to_string(),
+        );
+        assert_eq!(client.provider(), Provider::Gemini);
+        assert!(!client.has_anthropic_client());
+        assert!(client.has_gemini_client());
+        assert!(!client.has_openai_client());
+
+        // Test OpenAI provider
+        let client = LlmClient::new(
+            Provider::OpenAI,
+            "test-key".to_string(),
+            "http://localhost".to_string(),
+        );
+        assert_eq!(client.provider(), Provider::OpenAI);
+        assert!(!client.has_anthropic_client());
+        assert!(!client.has_gemini_client());
+        assert!(client.has_openai_client());
+
+        // Test Zai provider (uses Anthropic client)
+        let client = LlmClient::new(
+            Provider::Zai,
+            "test-key".to_string(),
+            "http://localhost".to_string(),
+        );
+        assert_eq!(client.provider(), Provider::Zai);
+        assert!(client.has_anthropic_client());
+        assert!(!client.has_gemini_client());
+        assert!(!client.has_openai_client());
     }
 
     #[tokio::test]

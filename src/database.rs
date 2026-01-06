@@ -245,11 +245,6 @@ impl DatabaseManager {
         Ok(())
     }
 
-    /// Get the database connection pool
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
-    }
-
     /// Get the database path
     pub fn path(&self) -> &PathBuf {
         &self.db_path
@@ -331,11 +326,8 @@ pub struct Conversation {
 #[derive(Debug, Clone)]
 pub struct Message {
     pub id: String,
-    pub conversation_id: String,
     pub role: String,
     pub content: String,
-    pub model: String,
-    pub tokens: i32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -343,8 +335,6 @@ pub struct Message {
 #[derive(Debug, Clone)]
 pub struct ToolCallRecord {
     pub id: String,
-    pub conversation_id: String,
-    pub message_id: Option<String>,
     pub tool_name: String,
     pub tool_arguments: String,
     pub result_content: Option<String>,
@@ -666,11 +656,8 @@ impl DatabaseManager {
             .into_iter()
             .map(|row| Message {
                 id: row.get("id"),
-                conversation_id: row.get("conversation_id"),
                 role: row.get("role"),
                 content: row.get("content"),
-                model: row.get("model"),
-                tokens: row.get("tokens"),
                 created_at: row.get("created_at"),
             })
             .collect();
@@ -748,8 +735,6 @@ impl DatabaseManager {
             .into_iter()
             .map(|row| ToolCallRecord {
                 id: row.get("id"),
-                conversation_id: row.get("conversation_id"),
-                message_id: row.get("message_id"),
                 tool_name: row.get("tool_name"),
                 tool_arguments: row.get("tool_arguments"),
                 result_content: row.get("result_content"),

@@ -792,7 +792,7 @@ impl Agent {
 
                     // Use the new display system and execute tool
                     let result = self.execute_tool_with_display(call).await;
-                    if let (Some(db), Some(conversation_id)) = (
+                    if let (Some(db), Some(_conversation_id)) = (
                         self.conversation_manager.database_manager.clone(),
                         self.conversation_manager.current_conversation_id.clone(),
                     ) {
@@ -1046,29 +1046,6 @@ impl Agent {
     /// Start a new conversation
     pub async fn start_new_conversation(&mut self) -> Result<String> {
         self.conversation_manager.start_new_conversation().await
-    }
-
-    /// Save a message to the current conversation in the database
-    pub async fn save_message_to_conversation(
-        &mut self,
-        role: &str,
-        content: &str,
-        tokens: i32,
-    ) -> Result<()> {
-        self.conversation_manager
-            .save_message_to_conversation(role, content, tokens)
-            .await
-    }
-
-    /// Update usage statistics in the database
-    pub async fn update_database_usage_stats(
-        &mut self,
-        input_tokens: i32,
-        output_tokens: i32,
-    ) -> Result<()> {
-        self.conversation_manager
-            .update_database_usage_stats(input_tokens, output_tokens)
-            .await
     }
 
     pub async fn switch_to_subagent(

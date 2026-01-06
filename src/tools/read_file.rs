@@ -1,4 +1,3 @@
-use crate::tools::registry::{DisplayFormat, ToolMetadata, ToolMetadataProvider};
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::debug;
@@ -8,8 +7,6 @@ use shellexpand;
 use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
-// Dummy struct for metadata implementation
-pub struct ReadFileTool;
 
 pub async fn read_file(call: &ToolCall) -> Result<ToolResult> {
     let path = call

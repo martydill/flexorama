@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::tools::{Tool, ToolCall};
+use crate::tools::Tool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -98,7 +98,6 @@ pub struct AnthropicResponse {
 pub struct StreamEvent {
     #[serde(rename = "type")]
     pub event_type: String,
-    pub index: Option<u32>,
     pub delta: Option<StreamDelta>,
     pub content_block: Option<ContentBlock>,
     pub usage: Option<Usage>,
@@ -645,42 +644,4 @@ impl AnthropicClient {
         })
     }
 
-    pub fn convert_tool_calls(&self, content_blocks: &[ContentBlock]) -> Vec<ToolCall> {
-        debug!(
-            "Converting tool calls from {} content blocks",
-            content_blocks.len()
-        );
-        let tool_calls: Vec<ToolCall> = content_blocks
-            .iter()
-            .filter_map(|block| {
-                if block.block_type == "tool_use" {
-                    debug!("Found tool_use block: {:?}", block);
-                    let tool_call = ToolCall {
-                        id: block.id.as_ref().unwrap_or(&String::new()).clone(),
-                        name: block.name.as_ref().unwrap_or(&String::new()).clone(),
-                        arguments: block.input.as_ref().unwrap_or(&Value::Null).clone(),
-                    };
-                    debug!("Converted to tool call: {:?}", tool_call);
-                    Some(tool_call)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        tool_calls
-    }
-
-    pub fn create_response_content(&self, content_blocks: &[ContentBlock]) -> String {
-        content_blocks
-            .iter()
-            .filter_map(|block| {
-                if block.block_type == "text" {
-                    block.text.clone()
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
 }

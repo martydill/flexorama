@@ -1877,17 +1877,12 @@ mod tests {
         let created_at = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         let message = crate::database::Message {
             id: "msg-1".to_string(),
-            conversation_id: "conv-1".to_string(),
             role: "user".to_string(),
             content: "Hello".to_string(),
-            model: "test".to_string(),
-            tokens: 1,
             created_at,
         };
         let tool_call = ToolCallRecord {
             id: "tool-1".to_string(),
-            conversation_id: "conv-1".to_string(),
-            message_id: Some("msg-1".to_string()),
             tool_name: "read_file".to_string(),
             tool_arguments: "{\"path\":\"/tmp/file.txt\"}".to_string(),
             result_content: Some("Not found".to_string()),
@@ -1928,7 +1923,7 @@ mod tests {
         WebState {
             agent: Arc::new(Mutex::new(agent)),
             database,
-            mcp_manager: Arc::new(McpManager::new_with_config_path(config_path)),
+            mcp_manager: Arc::new(McpManager::new()),
             subagent_manager,
             permission_hub: Arc::new(PermissionHub::new()),
         }

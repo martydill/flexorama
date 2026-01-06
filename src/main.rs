@@ -500,7 +500,7 @@ async fn handle_agent_command(
                 .create_subagent(name, &system_prompt, allowed_tools, vec![])
                 .await
             {
-                Ok(config) => {
+                Ok(_config) => {
                     app_println!("{} Created subagent: {}", "✅".green(), name.cyan());
                     app_println!("  Config file: ~/.aixplosion/agents/{}.md", name);
                 }

@@ -27,115 +27,6 @@ impl PrettyDisplay {
         }
     }
 
-    /// Format tool call details based on display format
-    fn format_tool_details(&self) -> Vec<String> {
-        let mut lines = Vec::new();
-        let arguments = &self.context.arguments;
-
-        match &self.context.metadata.display_format {
-            DisplayFormat::File { show_size } => {
-                if let Some(path) = arguments.get("path").and_then(|v| v.as_str()) {
-                    lines.push(format!(
-                        "{} {} {} {}",
-                        "|".dimmed(),
-                        "📄".yellow(),
-                        "File:".bold(),
-                        path.green()
-                    ));
-
-                    if *show_size {
-                        // Try to get content size for write operations
-                        if let Some(content) = arguments.get("content").and_then(|v| v.as_str()) {
-                            lines.push(format!(
-                                "{} {} {} {} bytes",
-                                "|".dimmed(),
-                                "📝".yellow(),
-                                "Size:".bold(),
-                                content.len().to_string().green()
-                            ));
-                        }
-
-                        // For edit operations, show old/new sizes
-                        if let Some(old_text) = arguments.get("old_text").and_then(|v| v.as_str()) {
-                            lines.push(format!(
-                                "{} {} {} {} bytes",
-                                "|".dimmed(),
-                                "📝".yellow(),
-                                "Old:".bold(),
-                                old_text.len().to_string().yellow()
-                            ));
-                        }
-                        if let Some(new_text) = arguments.get("new_text").and_then(|v| v.as_str()) {
-                            lines.push(format!(
-                                "{} {} {} {} bytes",
-                                "|".dimmed(),
-                                "📝".yellow(),
-                                "New:".bold(),
-                                new_text.len().to_string().green()
-                            ));
-                        }
-                    }
-                }
-            }
-            DisplayFormat::Command { show_working_dir } => {
-                if let Some(command) = arguments.get("command").and_then(|v| v.as_str()) {
-                    lines.push(format!(
-                        "{} {} {} {}",
-                        "|".dimmed(),
-                        "💻".yellow(),
-                        "Command:".bold(),
-                        command.green()
-                    ));
-
-                    if *show_working_dir {
-                        // Add current working directory info
-                        if let Ok(current_dir) = std::env::current_dir() {
-                            lines.push(format!(
-                                "{} {} {} {}",
-                                "|".dimmed(),
-                                "📍".yellow(),
-                                "Working Dir:".bold(),
-                                current_dir.display().to_string().blue()
-                            ));
-                        }
-                    }
-                }
-            }
-            DisplayFormat::Directory { show_item_count } => {
-                if let Some(path) = arguments.get("path").and_then(|v| v.as_str()) {
-                    lines.push(format!(
-                        "{} {} {} {}",
-                        "|".dimmed(),
-                        "📍".yellow(),
-                        "Path:".bold(),
-                        path.green()
-                    ));
-                }
-                // Item count would be shown after execution
-            }
-            DisplayFormat::Generic => {
-                // Show all arguments for generic tools
-                for (key, value) in arguments.as_object().unwrap_or(&serde_json::Map::new()) {
-                    let value_str = if value.is_string() {
-                        value.as_str().unwrap_or("").to_string()
-                    } else {
-                        serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
-                    };
-
-                    lines.push(format!(
-                        "{} {} {} {}",
-                        "|".dimmed(),
-                        "⚙️".yellow(),
-                        format!("{}:", key).bold(),
-                        value_str.green()
-                    ));
-                }
-            }
-        }
-
-        lines
-    }
-
     /// Format tool call parameters for the header line
     fn format_inline_params(&self) -> Option<String> {
         let mut parts = Vec::new();
@@ -167,14 +58,12 @@ impl PrettyDisplay {
                     }
                 }
             }
-            DisplayFormat::Command {
-                show_working_dir: _,
-            } => {
+            DisplayFormat::Command => {
                 if let Some(command) = arguments.get("command").and_then(|v| v.as_str()) {
                     parts.push(format!("cmd={}", truncate(command.to_string())));
                 }
             }
-            DisplayFormat::Directory { show_item_count: _ } => {
+            DisplayFormat::Directory => {
                 if let Some(path) = arguments.get("path").and_then(|v| v.as_str()) {
                     parts.push(format!("path={}", truncate(path.to_string())));
                 }

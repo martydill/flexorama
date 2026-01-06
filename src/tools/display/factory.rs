@@ -29,8 +29,6 @@ impl DisplayFactory {
 
         match context.output_mode {
             OutputMode::Pretty => Box::new(super::pretty::PrettyDisplay::new(context)),
-            OutputMode::Simple => Box::new(super::simple::SimpleDisplay::new(context)),
-            OutputMode::Json => Box::new(super::json::JsonDisplay::new(context)),
         }
     }
 
@@ -45,32 +43,4 @@ impl DisplayFactory {
         OutputMode::Pretty
     }
 
-    /// Create a display with a specific output mode (for testing or forced modes)
-    pub fn create_display_with_mode(
-        tool_name: &str,
-        arguments: &Value,
-        registry: &crate::tools::registry::ToolRegistry,
-        output_mode: OutputMode,
-    ) -> Box<dyn super::ToolDisplay> {
-        let metadata = registry
-            .get_metadata(tool_name)
-            .cloned()
-            .unwrap_or_else(|| {
-                crate::tools::registry::ToolRegistry::get_default_metadata(tool_name)
-            });
-
-        let context = DisplayContext {
-            tool_name: tool_name.to_string(),
-            arguments: arguments.clone(),
-            start_time: Instant::now(),
-            metadata,
-            output_mode: output_mode.clone(),
-        };
-
-        match output_mode {
-            OutputMode::Pretty => Box::new(super::pretty::PrettyDisplay::new(context)),
-            OutputMode::Simple => Box::new(super::simple::SimpleDisplay::new(context)),
-            OutputMode::Json => Box::new(super::json::JsonDisplay::new(context)),
-        }
-    }
 }

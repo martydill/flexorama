@@ -32,13 +32,6 @@ pub struct SubagentConfig {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Subagent {
-    pub config: SubagentConfig,
-    // Note: Agent and ConversationManager don't implement Clone/Debug
-    // We'll handle this differently when needed
-}
-
 pub struct SubagentManager {
     agents_dir: PathBuf,
     active_subagent: Option<String>,
@@ -244,13 +237,5 @@ impl SubagentManager {
 
     pub fn set_active_subagent(&mut self, name: Option<String>) {
         self.active_subagent = name;
-    }
-
-    pub fn get_active_subagent(&self) -> Option<&String> {
-        self.active_subagent.as_ref()
-    }
-
-    pub fn get_agents_dir(&self) -> &PathBuf {
-        &self.agents_dir
     }
 }
