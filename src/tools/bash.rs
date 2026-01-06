@@ -282,3 +282,53 @@ pub fn create_bash_tool(
         metadata: None, // TODO: Add metadata for bash tool
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn make_call(command: serde_json::Value) -> ToolCall {
+        ToolCall {
+            id: "test-id".to_string(),
+            name: "bash".to_string(),
+            arguments: command,
+        }
+    }
+
+    #[test]
+    fn convert_unix_separators_preserves_quoted_segments() {
+        let input = "echo 'a && b' && echo c || echo d; echo \"x || y\"";
+        let converted = convert_unix_separators_to_windows(input);
+        assert_eq!(
+            converted,
+            "echo 'a && b' ; echo c ; echo d; echo \"x || y\""
+        );
+    }
+
+    #[tokio::test]
+    async fn bash_returns_output_for_successful_command() {
+        let call = make_call(json!({ "command": "echo hello" }));
+        let mut security_manager =
+            BashSecurityManager::new(crate::security::BashSecurity::default());
+        let result = bash(&call, &mut security_manager, true)
+            .await
+            .expect("bash tool call");
+
+        assert!(!result.is_error);
+        assert!(result.content.contains("Exit code: 0"));
+        assert!(result.content.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn bash_rejects_missing_command_argument() {
+        let call = make_call(json!({}));
+        let mut security_manager =
+            BashSecurityManager::new(crate::security::BashSecurity::default());
+        let result = bash(&call, &mut security_manager, true).await;
+
+        assert!(result.is_err());
+        let error = result.expect_err("expected missing command error");
+        assert!(error.to_string().contains("Missing 'command' argument"));
+    }
+}
