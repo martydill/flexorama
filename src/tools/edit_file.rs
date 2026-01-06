@@ -225,4 +225,98 @@ pub fn create_edit_file_tool(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
+    fn temp_file_path(prefix: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{}_{}_{}.txt", prefix, std::process::id(), nanos))
+    }
+
+    #[test]
+    fn detect_line_ending_prefers_crlf() {
+        assert_eq!(detect_line_ending("one\r\ntwo\r\n"), "\r\n");
+        assert_eq!(detect_line_ending("one\ntwo\n"), "\n");
+    }
+
+    #[test]
+    fn normalize_line_endings_converts_mixed_input() {
+        let input = "one\r\ntwo\nthree\r\n";
+        let normalized = normalize_line_endings(input, "\r\n");
+        assert_eq!(normalized, "one\r\ntwo\r\nthree\r\n");
+    }
+
+    #[tokio::test]
+    async fn edit_file_replaces_with_windows_line_endings() {
+        let path = temp_file_path("edit_file_windows");
+        let original = "first\r\nsecond\r\nthird\r\n";
+        tokio::fs::write(&path, original)
+            .await
+            .expect("write temp file");
+
+        let call = ToolCall {
+            id: "test_edit".to_string(),
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "path": path.to_string_lossy(),
+                "old_text": "second\nthird",
+                "new_text": "alpha\nbeta"
+            }),
+        };
+
+        let mut file_security_manager =
+            FileSecurityManager::new(crate::security::FileSecurity::default());
+        let result = edit_file(&call, &mut file_security_manager, true)
+            .await
+            .expect("edit file result");
+
+        assert!(!result.is_error);
+        assert!(result.content.contains("Successfully edited file"));
+
+        let updated = tokio::fs::read_to_string(&path)
+            .await
+            .expect("read updated file");
+        assert_eq!(updated, "first\r\nalpha\r\nbeta\r\n");
+
+        tokio::fs::remove_file(&path)
+            .await
+            .expect("cleanup temp file");
+    }
+
+    #[tokio::test]
+    async fn edit_file_reports_text_not_found() {
+        let path = temp_file_path("edit_file_missing");
+        tokio::fs::write(&path, "alpha\r\nbeta\r\n")
+            .await
+            .expect("write temp file");
+
+        let call = ToolCall {
+            id: "test_missing".to_string(),
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "path": path.to_string_lossy(),
+                "old_text": "missing",
+                "new_text": "gamma"
+            }),
+        };
+
+        let mut file_security_manager =
+            FileSecurityManager::new(crate::security::FileSecurity::default());
+        let result = edit_file(&call, &mut file_security_manager, true)
+            .await
+            .expect("edit file result");
+
+        assert!(result.is_error);
+        assert!(result.content.contains("Text not found in file"));
+
+        tokio::fs::remove_file(&path)
+            .await
+            .expect("cleanup temp file");
+    }
+}
