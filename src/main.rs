@@ -2303,10 +2303,11 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let mut config = Config::load(cli.config.as_deref()).await?;
+
+    // If provider is specified on command line, always apply its defaults
+    // This overrides any custom base_url or model settings from the config file
     if let Some(provider) = cli.provider {
-        if provider != config.provider {
-            config.set_provider(provider);
-        }
+        config.set_provider(provider);
     }
 
     // Initialize database
@@ -2349,6 +2350,7 @@ async fn main() -> Result<()> {
         let env_hint = match config.provider {
             Provider::Anthropic => "ANTHROPIC_AUTH_TOKEN",
             Provider::Gemini => "GEMINI_API_KEY or GOOGLE_API_KEY",
+            Provider::OpenAI => "OPENAI_API_KEY",
             Provider::Zai => "ZAI_API_KEY",
         };
         app_eprintln!(

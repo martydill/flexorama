@@ -11,6 +11,7 @@ use tokio::fs;
 pub enum Provider {
     Anthropic,
     Gemini,
+    OpenAI,
     #[serde(rename = "z.ai")]
     Zai,
 }
@@ -28,6 +29,7 @@ impl std::str::FromStr for Provider {
         match s.to_lowercase().as_str() {
             "anthropic" => Ok(Provider::Anthropic),
             "gemini" => Ok(Provider::Gemini),
+            "openai" => Ok(Provider::OpenAI),
             "z.ai" | "zai" => Ok(Provider::Zai),
             other => Err(format!("Unsupported provider '{}'", other)),
         }
@@ -39,6 +41,7 @@ impl std::fmt::Display for Provider {
         match self {
             Provider::Anthropic => write!(f, "anthropic"),
             Provider::Gemini => write!(f, "gemini"),
+            Provider::OpenAI => write!(f, "openai"),
             Provider::Zai => write!(f, "z.ai"),
         }
     }
@@ -101,6 +104,7 @@ pub fn provider_default_api_key(provider: Provider) -> String {
         Provider::Gemini => std::env::var("GEMINI_API_KEY")
             .or_else(|_| std::env::var("GOOGLE_API_KEY"))
             .unwrap_or_default(),
+        Provider::OpenAI => std::env::var("OPENAI_API_KEY").unwrap_or_default(),
         Provider::Zai => std::env::var("ZAI_API_KEY").unwrap_or_default(),
     }
 }
@@ -111,6 +115,8 @@ pub fn provider_default_base_url(provider: Provider) -> String {
             .unwrap_or_else(|_| "https://api.anthropic.com/v1".to_string()),
         Provider::Gemini => std::env::var("GEMINI_BASE_URL")
             .unwrap_or_else(|_| "https://generativelanguage.googleapis.com/v1beta".to_string()),
+        Provider::OpenAI => std::env::var("OPENAI_BASE_URL")
+            .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
         Provider::Zai => std::env::var("ZAI_BASE_URL")
             .unwrap_or_else(|_| "https://api.z.ai/api/anthropic".to_string()),
     }
@@ -120,6 +126,7 @@ pub fn provider_default_model(provider: Provider) -> String {
     match provider {
         Provider::Anthropic => "claude-3-5-sonnet-20240620".to_string(),
         Provider::Gemini => "gemini-flash-latest".to_string(),
+        Provider::OpenAI => "gpt-5.2".to_string(),
         Provider::Zai => "glm-4.7".to_string(),
     }
 }
@@ -138,6 +145,31 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
             "gemini-3-flash-preview",
             "gemini-2.5-flash-lite",
             "gemini-2.5-pro",
+        ],
+        Provider::OpenAI => &[
+            "gpt-5.2",
+            "gpt-5.1-codex-max",
+            "gpt-5.1",
+            "gpt-5.1-chat",
+            "gpt-5.1-codex",
+            "gpt-5.1-codex-mini",
+            "gpt-5-pro",
+            "gpt-5-codex",
+            "gpt-5",
+            "gpt-5-mini",
+            "gpt-5-nano",
+            "o3-pro",
+            "codex-mini",
+            "o4-mini",
+            "o3",
+            "o3-mini",
+            "o1",
+            "o1-mini",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "gpt-4",
+            "gpt-3.5-turbo",
         ],
         Provider::Zai => &["glm-4.7", "glm-4.6", "glm-4.5"],
     }
@@ -240,5 +272,3 @@ impl Config {
         self.api_key = provider_default_api_key(provider);
     }
 }
-
-

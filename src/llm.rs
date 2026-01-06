@@ -28,6 +28,11 @@ impl LlmClient {
                 anthropic: None,
                 gemini: Some(GeminiClient::new(api_key, base_url)),
             },
+            Provider::OpenAI => Self {
+                provider,
+                anthropic: Some(AnthropicClient::new(api_key, base_url)),
+                gemini: None,
+            },
             Provider::Zai => Self {
                 provider,
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
@@ -70,6 +75,21 @@ impl LlmClient {
                 self.gemini
                     .as_ref()
                     .expect("Gemini client should be initialized")
+                    .create_message(
+                        model,
+                        messages,
+                        tools,
+                        max_tokens,
+                        temperature,
+                        system_prompt,
+                        cancellation_flag,
+                    )
+                    .await
+            }
+            Provider::OpenAI => {
+                self.anthropic
+                    .as_ref()
+                    .expect("OpenAI client should be initialized")
                     .create_message(
                         model,
                         messages,
@@ -143,6 +163,22 @@ impl LlmClient {
                     )
                     .await
             }
+            Provider::OpenAI => {
+                self.anthropic
+                    .as_ref()
+                    .expect("OpenAI client should be initialized")
+                    .create_message_stream(
+                        model,
+                        messages,
+                        tools,
+                        max_tokens,
+                        temperature,
+                        system_prompt,
+                        on_content,
+                        cancellation_flag,
+                    )
+                    .await
+            }
             Provider::Zai => {
                 self.anthropic
                     .as_ref()
@@ -202,5 +238,3 @@ pub fn create_response_content(content_blocks: &[ContentBlock]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
-
-
