@@ -1,5 +1,60 @@
 const READONLY_TOOLS = ["search_in_files", "glob"];
 
+const CHART_COLORS = {
+  neonGreen: '#39ff14',
+  blue: '#6b7cff',
+  pink: '#ff4fd8',
+  cyan: '#7cffb2',
+  purple: '#a855f7',
+  orange: '#fb923c',
+  yellow: '#fbbf24',
+};
+
+function getChartDefaults() {
+  const isLight = state.theme === 'light';
+  return {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: {
+      legend: {
+        labels: {
+          color: isLight ? '#1a1a1a' : '#e6eaff',
+          font: {
+            family: "'Chakra Petch', sans-serif",
+            size: 11,
+          },
+        },
+      },
+      tooltip: {
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(11, 16, 26, 0.95)',
+        titleColor: isLight ? '#1a1a1a' : '#e6eaff',
+        bodyColor: isLight ? '#1a1a1a' : '#e6eaff',
+        borderColor: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.22)',
+        borderWidth: 1,
+        padding: 10,
+        titleFont: {
+          family: "'Chakra Petch', sans-serif",
+          size: 12,
+        },
+        bodyFont: {
+          family: "'JetBrains Mono', monospace",
+          size: 11,
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { color: isLight ? '#333333' : 'rgba(226, 232, 240, 0.68)' },
+        grid: { color: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.12)' },
+      },
+      y: {
+        ticks: { color: isLight ? '#333333' : 'rgba(226, 232, 240, 0.68)' },
+        grid: { color: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.12)' },
+      },
+    },
+  };
+}
+
 const state = {
   conversations: [],
   activeConversationId: localStorage.getItem("aixplosion-active-conversation"),
@@ -18,6 +73,28 @@ const state = {
   streaming: localStorage.getItem("aixplosion-stream") === "true",
   planMode: false,
   pendingPermissions: new Set(),
+  statsCharts: {
+    tokens: null,
+    conversations: null,
+    models: null,
+    providers: null,
+    conversationsByProvider: null,
+    conversationsTimeByProvider: null,
+    subagents: null,
+    conversationsTimeBySubagent: null,
+  },
+  statsData: {
+    overview: null,
+    usage: null,
+    models: null,
+    conversations: null,
+    conversationsByProvider: null,
+    conversationsBySubagent: null,
+  },
+  statsPeriod: localStorage.getItem("aixplosion-stats-period") || "month",
+  lastNonCustomPeriod: localStorage.getItem("aixplosion-stats-last-period") || "month",
+  statsStartDate: null,
+  statsEndDate: null,
 };
 
 function setPlanForm(plan) {
@@ -43,6 +120,11 @@ function applyTheme(theme) {
     btn.setAttribute("aria-label", btn.title);
   }
   localStorage.setItem("aixplosion-theme", theme);
+
+  // Update stats charts if on stats tab
+  if (state.activeTab === "stats" && state.statsData.overview) {
+    updateStatsCharts();
+  }
 }
 
 function setStatus(text) {
@@ -355,6 +437,64 @@ async function submitPermissionSelection(id, selection, wrapper) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatDateInput(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getDateRangeForPeriod(period) {
+  const now = new Date();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let start;
+
+  switch (period) {
+    case "day":
+      start = new Date(end);
+      start.setUTCDate(start.getUTCDate() - 1);
+      break;
+    case "week":
+      start = new Date(end);
+      start.setUTCDate(start.getUTCDate() - 7);
+      break;
+    case "month":
+      start = new Date(end);
+      start.setUTCDate(start.getUTCDate() - 30);
+      break;
+    case "lifetime":
+      start = new Date(Date.UTC(2025, 0, 1));
+      break;
+    default:
+      start = new Date(end);
+      start.setUTCDate(start.getUTCDate() - 30);
+      break;
+  }
+
+  return {
+    startDate: formatDateInput(start),
+    endDate: formatDateInput(end),
+  };
+}
+
+function setCustomDatesFromPeriod(period) {
+  const range = getDateRangeForPeriod(period);
+  state.statsStartDate = range.startDate;
+  state.statsEndDate = range.endDate;
+
+  const startInput = document.getElementById("stats-start-date");
+  const endInput = document.getElementById("stats-end-date");
+  if (startInput) startInput.value = range.startDate;
+  if (endInput) endInput.value = range.endDate;
+}
+
+function ensureStatsDateRange() {
+  if (state.statsPeriod === "custom") {
+    if (!state.statsStartDate || !state.statsEndDate) {
+      setCustomDatesFromPeriod(state.lastNonCustomPeriod || "month");
+    }
+  } else {
+    setCustomDatesFromPeriod(state.statsPeriod);
+  }
 }
 
 function startPermissionPolling() {
@@ -1251,6 +1391,9 @@ function initTabs() {
         case "agents":
           selectFirstAgent();
           break;
+        case "stats":
+          loadStats();
+          break;
         default:
           selectFirstConversation();
           break;
@@ -1359,6 +1502,421 @@ function bindEvents() {
   if (planModeBtn) {
     planModeBtn.addEventListener("click", togglePlanMode);
   }
+
+  // Stats event handlers
+  const statsPeriodSelect = document.getElementById("stats-period");
+  const statsStartDate = document.getElementById("stats-start-date");
+  const statsEndDate = document.getElementById("stats-end-date");
+
+  if (statsPeriodSelect) {
+    statsPeriodSelect.addEventListener("change", (e) => {
+      const previousPeriod = state.statsPeriod;
+      state.statsPeriod = e.target.value;
+      localStorage.setItem("aixplosion-stats-period", state.statsPeriod);
+
+      if (state.statsPeriod === "custom") {
+        const basePeriod =
+          previousPeriod === "custom" ? state.lastNonCustomPeriod : previousPeriod;
+        setCustomDatesFromPeriod(basePeriod || "month");
+        loadStats();
+      } else {
+        state.lastNonCustomPeriod = state.statsPeriod;
+        localStorage.setItem("aixplosion-stats-last-period", state.lastNonCustomPeriod);
+        setCustomDatesFromPeriod(state.statsPeriod);
+        loadStats();
+      }
+    });
+  }
+
+  if (statsStartDate) {
+    statsStartDate.addEventListener("change", (e) => {
+      state.statsStartDate = e.target.value;
+      if (state.statsPeriod !== "custom") {
+        state.statsPeriod = "custom";
+        localStorage.setItem("aixplosion-stats-period", state.statsPeriod);
+        if (statsPeriodSelect) statsPeriodSelect.value = "custom";
+      }
+      if (state.statsStartDate && state.statsEndDate) loadStats();
+    });
+  }
+
+  if (statsEndDate) {
+    statsEndDate.addEventListener("change", (e) => {
+      state.statsEndDate = e.target.value;
+      if (state.statsPeriod !== "custom") {
+        state.statsPeriod = "custom";
+        localStorage.setItem("aixplosion-stats-period", state.statsPeriod);
+        if (statsPeriodSelect) statsPeriodSelect.value = "custom";
+      }
+      if (state.statsStartDate && state.statsEndDate) loadStats();
+    });
+  }
+
+  const refreshStatsBtn = document.getElementById("refresh-stats");
+  if (refreshStatsBtn) {
+    refreshStatsBtn.addEventListener("click", () => {
+      loadStats();
+    });
+  }
+}
+
+// Stats functions
+function createTokenUsageChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [
+        {
+          label: 'Input Tokens',
+          data: data.map(d => d.total_input_tokens),
+          borderColor: CHART_COLORS.blue,
+          backgroundColor: 'rgba(107, 124, 255, 0.1)',
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: 'Output Tokens',
+          data: data.map(d => d.total_output_tokens),
+          borderColor: CHART_COLORS.neonGreen,
+          backgroundColor: 'rgba(57, 255, 20, 0.1)',
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: 'Total Tokens',
+          data: data.map(d => d.total_tokens),
+          borderColor: CHART_COLORS.pink,
+          backgroundColor: 'rgba(255, 77, 216, 0.1)',
+          fill: false,
+          tension: 0.4,
+          borderDash: [5, 5],
+        },
+      ],
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
+function createConversationsChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [{
+        label: 'Conversations',
+        data: data.map(d => d.count),
+        backgroundColor: CHART_COLORS.neonGreen,
+        borderColor: CHART_COLORS.neonGreen,
+        borderWidth: 1,
+      }],
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
+function createModelsChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+  const colors = Object.values(CHART_COLORS);
+  return new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: data.map(d => d.model),
+      datasets: [{
+        data: data.map(d => d.total_tokens),
+        backgroundColor: data.map((_, i) => colors[i % colors.length]),
+        borderColor: '#0b101a',
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      ...getChartDefaults(),
+      scales: undefined,
+    },
+  });
+}
+
+function createProvidersChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+  return new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: data.map(d => d.provider),
+      datasets: [{
+        data: data.map(d => d.total_tokens),
+        backgroundColor: [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange],
+        borderColor: '#0b101a',
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      ...getChartDefaults(),
+      scales: undefined,
+      cutout: '60%',
+    },
+  });
+}
+
+function createConversationsByProviderChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+
+  // Aggregate data by provider
+  const providerMap = new Map();
+  data.forEach(item => {
+    const current = providerMap.get(item.provider) || 0;
+    providerMap.set(item.provider, current + item.count);
+  });
+
+  const providers = Array.from(providerMap.keys());
+  const counts = Array.from(providerMap.values());
+
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: providers,
+      datasets: [{
+        label: 'Conversations',
+        data: counts,
+        backgroundColor: [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange],
+        borderColor: [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange],
+        borderWidth: 1,
+      }],
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
+function createConversationsTimeByProviderChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+
+  // Get unique dates and providers
+  const dates = [...new Set(data.map(d => d.date))].sort();
+  const providers = [...new Set(data.map(d => d.provider))];
+
+  // Create datasets for each provider
+  const colors = [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange, CHART_COLORS.cyan, CHART_COLORS.purple];
+  const datasets = providers.map((provider, idx) => {
+    const providerData = dates.map(date => {
+      const entry = data.find(d => d.date === date && d.provider === provider);
+      return entry ? entry.count : 0;
+    });
+
+    return {
+      label: provider,
+      data: providerData,
+      borderColor: colors[idx % colors.length],
+      backgroundColor: colors[idx % colors.length] + '20',
+      fill: false,
+      tension: 0.4,
+    };
+  });
+
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: datasets,
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
+function createConversationsBySubagentChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+
+  const subagentMap = new Map();
+  data.forEach(item => {
+    const current = subagentMap.get(item.subagent) || 0;
+    subagentMap.set(item.subagent, current + item.count);
+  });
+
+  const subagents = Array.from(subagentMap.keys());
+  const counts = Array.from(subagentMap.values());
+  const colors = [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange, CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.yellow];
+
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: subagents,
+      datasets: [{
+        label: 'Conversations',
+        data: counts,
+        backgroundColor: subagents.map((_, i) => colors[i % colors.length]),
+        borderColor: subagents.map((_, i) => colors[i % colors.length]),
+        borderWidth: 1,
+      }],
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
+function createConversationsTimeBySubagentChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+
+  const dates = [...new Set(data.map(d => d.date))].sort();
+  const subagents = [...new Set(data.map(d => d.subagent))];
+  const colors = [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange, CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.yellow];
+
+  const datasets = subagents.map((subagent, idx) => {
+    const subagentData = dates.map(date => {
+      const entry = data.find(d => d.date === date && d.subagent === subagent);
+      return entry ? entry.count : 0;
+    });
+
+    return {
+      label: subagent,
+      data: subagentData,
+      borderColor: colors[idx % colors.length],
+      backgroundColor: colors[idx % colors.length] + '20',
+      fill: false,
+      tension: 0.4,
+    };
+  });
+
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: datasets,
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
+function aggregateByProvider(modelStats) {
+  const providerMap = new Map();
+
+  modelStats.forEach(stat => {
+    const provider = stat.provider;
+    if (!providerMap.has(provider)) {
+      providerMap.set(provider, { provider, total_tokens: 0 });
+    }
+    providerMap.get(provider).total_tokens += stat.total_tokens;
+  });
+
+  return Array.from(providerMap.values());
+}
+
+function extractProvider(model) {
+  const lower = model.toLowerCase();
+  if (lower.includes('claude')) return 'Anthropic';
+  if (lower.includes('gpt')) return 'OpenAI';
+  if (lower.includes('gemini')) return 'Gemini';
+  if (lower.includes('glm')) return 'Z.AI';
+  return 'Other';
+}
+
+function updateStatCards(overview) {
+  document.getElementById('stat-conversations').textContent = overview.total_conversations.toLocaleString();
+  document.getElementById('stat-messages').textContent = overview.total_messages.toLocaleString();
+  document.getElementById('stat-tokens').textContent = overview.total_tokens.toLocaleString();
+  document.getElementById('stat-requests').textContent = overview.total_requests.toLocaleString();
+}
+
+function updateStatsCharts() {
+  // Destroy existing charts
+  Object.values(state.statsCharts).forEach(chart => {
+    if (chart) chart.destroy();
+  });
+
+  // Create new charts if we have data
+  if (state.statsData.usage) {
+    state.statsCharts.tokens = createTokenUsageChart(
+      document.getElementById('chart-tokens')?.getContext('2d'),
+      state.statsData.usage
+    );
+  }
+
+  if (state.statsData.conversations) {
+    state.statsCharts.conversations = createConversationsChart(
+      document.getElementById('chart-conversations')?.getContext('2d'),
+      state.statsData.conversations
+    );
+  }
+
+  if (state.statsData.models) {
+    state.statsCharts.models = createModelsChart(
+      document.getElementById('chart-models')?.getContext('2d'),
+      state.statsData.models
+    );
+
+    // Aggregate by provider
+    const providerData = aggregateByProvider(state.statsData.models);
+    state.statsCharts.providers = createProvidersChart(
+      document.getElementById('chart-providers')?.getContext('2d'),
+      providerData
+    );
+  }
+
+  if (state.statsData.conversationsByProvider) {
+    state.statsCharts.conversationsByProvider = createConversationsByProviderChart(
+      document.getElementById('chart-conversations-by-provider')?.getContext('2d'),
+      state.statsData.conversationsByProvider
+    );
+
+    state.statsCharts.conversationsTimeByProvider = createConversationsTimeByProviderChart(
+      document.getElementById('chart-conversations-time-by-provider')?.getContext('2d'),
+      state.statsData.conversationsByProvider
+    );
+  }
+
+  if (state.statsData.conversationsBySubagent) {
+    state.statsCharts.subagents = createConversationsBySubagentChart(
+      document.getElementById('chart-conversations-by-subagent')?.getContext('2d'),
+      state.statsData.conversationsBySubagent
+    );
+
+    state.statsCharts.conversationsTimeBySubagent = createConversationsTimeBySubagentChart(
+      document.getElementById('chart-conversations-time-by-subagent')?.getContext('2d'),
+      state.statsData.conversationsBySubagent
+    );
+  }
+}
+
+async function loadStats() {
+  const period = state.statsPeriod;
+
+  try {
+    // Load overview
+    const overview = await api('/api/stats/overview');
+    state.statsData.overview = overview;
+    updateStatCards(overview);
+
+    // Build query string based on period or custom dates
+    let queryParams;
+    if (period === 'custom' && state.statsStartDate && state.statsEndDate) {
+      queryParams = `start_date=${state.statsStartDate}&end_date=${state.statsEndDate}`;
+    } else {
+      queryParams = `period=${period}`;
+    }
+
+    // Load usage data
+    const usage = await api(`/api/stats/usage?${queryParams}`);
+    state.statsData.usage = usage.data;
+
+    // Load model stats
+    const models = await api(`/api/stats/models?${queryParams}`);
+    state.statsData.models = models.data;
+
+    // Load conversation counts
+    const conversations = await api(`/api/stats/conversations?${queryParams}`);
+    state.statsData.conversations = conversations.data;
+
+    // Load conversations by provider
+    const conversationsByProvider = await api(`/api/stats/conversations-by-provider?${queryParams}`);
+    state.statsData.conversationsByProvider = conversationsByProvider.data;
+
+    // Load conversations by subagent
+    const conversationsBySubagent = await api(`/api/stats/conversations-by-subagent?${queryParams}`);
+    state.statsData.conversationsBySubagent = conversationsBySubagent.data;
+
+    // Update charts
+    updateStatsCharts();
+  } catch (err) {
+    console.error('Failed to load stats:', err);
+  }
 }
 
 async function bootstrap() {
@@ -1376,6 +1934,9 @@ async function bootstrap() {
   initTabs();
   initTheme();
   bindEvents();
+  ensureStatsDateRange();
+  const statsPeriodSelect = document.getElementById("stats-period");
+  if (statsPeriodSelect) statsPeriodSelect.value = state.statsPeriod;
   try {
     await loadConversations();
     await loadPlans();
@@ -1392,6 +1953,9 @@ async function bootstrap() {
         break;
       case "agents":
         selectFirstAgent();
+        break;
+      case "stats":
+        await loadStats();
         break;
       default:
         selectFirstConversation();

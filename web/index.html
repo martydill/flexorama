@@ -588,6 +588,10 @@
       outline: none;
       transition: border-color 0.15s ease, background 0.15s ease;
     }
+    :root:not(.light) input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1) brightness(1.1);
+      opacity: 0.9;
+    }
     .control-compact {
       padding: 6px 10px;
       height: 34px;
@@ -598,6 +602,11 @@
       border-color: rgba(107, 124, 255, 0.4);
       color: var(--text);
       cursor: pointer;
+    }
+    :root:not(.light) select.control-compact:hover {
+      background: rgba(18, 24, 38, 0.98);
+      border-color: rgba(124, 255, 178, 0.55);
+      color: var(--text);
     }
     input:focus, select:focus, textarea:focus {
       border-color: rgba(124, 255, 178, 0.6);
@@ -685,6 +694,112 @@
       .chat { order: 1; }
       .top-tabs { max-width: 100%; }
     }
+
+    /* Stats Tab Styles */
+    .stats-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .stats-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .control-compact {
+      padding: 8px 12px;
+      font-size: 13px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--input-bg);
+      color: var(--text);
+    }
+
+    .stats-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--accent-neon);
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .stats-charts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 16px;
+    }
+
+    .chart-container {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 350px;
+    }
+
+    .chart-container h3 {
+      margin: 0 0 16px 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .chart-container canvas {
+      max-height: 300px;
+      width: 100% !important;
+      height: auto !important;
+    }
+
+    @media (max-width: 1400px) {
+      .stats-charts {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .stats-cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .stat-value {
+        font-size: 24px;
+      }
+      .chart-container {
+        min-height: 300px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -698,6 +813,7 @@
         <button class="top-tab" data-tab="plans">Plans</button>
         <button class="top-tab" data-tab="mcp">MCP Servers</button>
         <button class="top-tab" data-tab="agents">Agents</button>
+        <button class="top-tab" data-tab="stats">Stats</button>
       </div>
       <div class="top-actions">
         <button class="mode-toggle" id="mode-toggle" aria-label="Toggle color mode">☾</button>
@@ -839,6 +955,80 @@
       </div>
     </div>
 
+    <div class="tab-content" id="tab-stats">
+      <div class="stats-layout">
+        <!-- Filter Controls -->
+        <div class="stats-controls">
+          <select id="stats-period" class="control-compact">
+            <option value="day">Last 24 Hours</option>
+            <option value="week">Last 7 Days</option>
+            <option value="month" selected>Last 30 Days</option>
+            <option value="lifetime">All Time</option>
+            <option value="custom">Custom Range</option>
+          </select>
+          <input type="date" id="stats-start-date" class="control-compact">
+          <input type="date" id="stats-end-date" class="control-compact">
+          <button class="secondary control-compact" id="refresh-stats">Refresh</button>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="stats-cards">
+          <div class="stat-card">
+            <div class="stat-label">Total Conversations</div>
+            <div class="stat-value" id="stat-conversations">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Messages</div>
+            <div class="stat-value" id="stat-messages">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Tokens</div>
+            <div class="stat-value" id="stat-tokens">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Requests</div>
+            <div class="stat-value" id="stat-requests">-</div>
+          </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="stats-charts">
+          <div class="chart-container">
+            <h3>Token Usage Over Time</h3>
+            <canvas id="chart-tokens"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Conversations Over Time</h3>
+            <canvas id="chart-conversations"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Token Usage by Model</h3>
+            <canvas id="chart-models"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Token Usage by Provider</h3>
+            <canvas id="chart-providers"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Conversations by Provider</h3>
+            <canvas id="chart-conversations-by-provider"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Conversations Over Time by Provider</h3>
+            <canvas id="chart-conversations-time-by-provider"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Conversations by Subagent</h3>
+            <canvas id="chart-conversations-by-subagent"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>Conversations Over Time by Subagent</h3>
+            <canvas id="chart-conversations-time-by-subagent"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop" id="context-modal">
       <div class="modal">
         <div class="modal-header">
@@ -852,6 +1042,7 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

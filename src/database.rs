@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use log::{debug, info};
+use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -361,6 +362,34 @@ pub struct Plan {
     pub user_request: String,
     pub plan_markdown: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// Usage statistics for a specific date
+#[derive(Debug, Serialize)]
+pub struct UsageStats {
+    pub date: String,
+    pub total_requests: i32,
+    pub total_input_tokens: i32,
+    pub total_output_tokens: i32,
+    pub total_tokens: i32,
+}
+
+/// Statistics grouped by model
+#[derive(Debug, Serialize)]
+pub struct ModelStats {
+    pub model: String,
+    pub total_conversations: i32,
+    pub total_tokens: i32,
+    pub request_count: i32,
+}
+
+/// Overview of all statistics
+#[derive(Debug, Serialize)]
+pub struct StatsOverview {
+    pub total_conversations: i32,
+    pub total_messages: i32,
+    pub total_tokens: i64,
+    pub total_requests: i32,
 }
 
 impl DatabaseManager {
@@ -863,6 +892,223 @@ impl DatabaseManager {
         }
 
         Ok(())
+    }
+
+    /// Get usage statistics within a date range
+    pub async fn get_usage_stats_range(
+        &self,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<UsageStats>> {
+        let start = start_date.unwrap_or_else(|| {
+            Utc::now().naive_utc().date() - chrono::Duration::days(30)
+        });
+        let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
+
+        let rows = sqlx::query(
+            r#"
+            SELECT date, total_requests, total_input_tokens, total_output_tokens, total_tokens
+            FROM usage_stats
+            WHERE date BETWEEN ? AND ?
+            ORDER BY date
+            "#,
+        )
+        .bind(start.to_string())
+        .bind(end.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let stats = rows
+            .iter()
+            .map(|row| UsageStats {
+                date: row.get("date"),
+                total_requests: row.get("total_requests"),
+                total_input_tokens: row.get("total_input_tokens"),
+                total_output_tokens: row.get("total_output_tokens"),
+                total_tokens: row.get("total_tokens"),
+            })
+            .collect();
+
+        Ok(stats)
+    }
+
+    /// Get statistics grouped by model
+    pub async fn get_stats_by_model(
+        &self,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<ModelStats>> {
+        let start = start_date.unwrap_or_else(|| {
+            Utc::now().naive_utc().date() - chrono::Duration::days(30)
+        });
+        let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                model,
+                COUNT(DISTINCT conversation_id) as total_conversations,
+                COALESCE(SUM(tokens), 0) as total_tokens,
+                COALESCE(SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END), 0) as request_count
+            FROM messages
+            WHERE DATE(created_at) BETWEEN ? AND ?
+            GROUP BY model
+            ORDER BY total_tokens DESC
+            "#,
+        )
+        .bind(start.to_string())
+        .bind(end.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let stats = rows
+            .iter()
+            .map(|row| ModelStats {
+                model: row.get("model"),
+                total_conversations: row.get("total_conversations"),
+                total_tokens: row.get::<i64, _>("total_tokens") as i32,
+                request_count: row.get::<i64, _>("request_count") as i32,
+            })
+            .collect();
+
+        Ok(stats)
+    }
+
+    /// Get overall statistics overview
+    pub async fn get_stats_overview(&self) -> Result<StatsOverview> {
+        let total_conversations: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM conversations")
+            .fetch_one(&self.pool)
+            .await?;
+
+        let total_messages: i32 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+            .fetch_one(&self.pool)
+            .await?;
+
+        let total_tokens: i64 =
+            sqlx::query_scalar("SELECT COALESCE(SUM(total_tokens), 0) FROM usage_stats")
+                .fetch_one(&self.pool)
+                .await?;
+
+        let total_requests: i32 =
+            sqlx::query_scalar("SELECT COALESCE(SUM(total_requests), 0) FROM usage_stats")
+                .fetch_one(&self.pool)
+                .await?;
+
+        Ok(StatsOverview {
+            total_conversations,
+            total_messages,
+            total_tokens,
+            total_requests,
+        })
+    }
+
+    /// Get conversation counts grouped by date
+    pub async fn get_conversation_counts_by_date(
+        &self,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<(String, i32)>> {
+        let start = start_date.unwrap_or_else(|| {
+            Utc::now().naive_utc().date() - chrono::Duration::days(30)
+        });
+        let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
+
+        let rows = sqlx::query(
+            r#"
+            SELECT DATE(created_at) as date, COUNT(*) as count
+            FROM conversations
+            WHERE DATE(created_at) BETWEEN ? AND ?
+            GROUP BY DATE(created_at)
+            ORDER BY date
+            "#,
+        )
+        .bind(start.to_string())
+        .bind(end.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let counts = rows
+            .iter()
+            .map(|row| (row.get::<String, _>("date"), row.get::<i32, _>("count")))
+            .collect();
+
+        Ok(counts)
+    }
+
+    /// Get conversation counts grouped by date and model
+    pub async fn get_conversation_counts_by_date_and_model(
+        &self,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<(String, String, i32)>> {
+        let start = start_date.unwrap_or_else(|| {
+            Utc::now().naive_utc().date() - chrono::Duration::days(30)
+        });
+        let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
+
+        let rows = sqlx::query(
+            r#"
+            SELECT DATE(created_at) as date, model, COUNT(*) as count
+            FROM conversations
+            WHERE DATE(created_at) BETWEEN ? AND ?
+            GROUP BY DATE(created_at), model
+            ORDER BY date, model
+            "#,
+        )
+        .bind(start.to_string())
+        .bind(end.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let counts = rows
+            .iter()
+            .map(|row| (
+                row.get::<String, _>("date"),
+                row.get::<String, _>("model"),
+                row.get::<i32, _>("count")
+            ))
+            .collect();
+
+        Ok(counts)
+    }
+
+    /// Get conversation counts grouped by date and subagent
+    pub async fn get_conversation_counts_by_date_and_subagent(
+        &self,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<(String, String, i32)>> {
+        let start = start_date.unwrap_or_else(|| {
+            Utc::now().naive_utc().date() - chrono::Duration::days(30)
+        });
+        let end = end_date.unwrap_or_else(|| Utc::now().naive_utc().date());
+
+        let rows = sqlx::query(
+            r#"
+            SELECT DATE(created_at) as date,
+                   COALESCE(NULLIF(subagent, ''), 'default') as subagent,
+                   COUNT(*) as count
+            FROM conversations
+            WHERE DATE(created_at) BETWEEN ? AND ?
+            GROUP BY DATE(created_at), COALESCE(NULLIF(subagent, ''), 'default')
+            ORDER BY date, subagent
+            "#,
+        )
+        .bind(start.to_string())
+        .bind(end.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let counts = rows
+            .iter()
+            .map(|row| (
+                row.get::<String, _>("date"),
+                row.get::<String, _>("subagent"),
+                row.get::<i32, _>("count"),
+            ))
+            .collect();
+
+        Ok(counts)
     }
 }
 

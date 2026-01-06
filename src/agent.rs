@@ -621,6 +621,7 @@ impl Agent {
             error!("MCP tools may not be available - some tool calls might fail");
         }
         let mut final_response = String::new();
+        let mut final_response_tokens: Option<i32> = None;
         let max_iterations = 500;
         let mut iteration = 0;
 
@@ -672,6 +673,11 @@ impl Agent {
                     .await?
             };
             // Track token usage
+            let response_total_tokens = response
+                .usage
+                .as_ref()
+                .map(|u| (u.input_tokens + u.output_tokens) as i32)
+                .unwrap_or(0);
             if let Some(usage) = &response.usage {
                 self.token_usage.add_usage(usage);
                 debug!(
@@ -714,6 +720,7 @@ impl Agent {
                 if final_response.is_empty() {
                     final_response = "(No response received from assistant)".to_string();
                 }
+                final_response_tokens = Some(response_total_tokens);
 
                 if self.plan_mode && !final_response.is_empty() {
                     match self.persist_plan(&cleaned_message, &final_response).await {
@@ -834,11 +841,7 @@ impl Agent {
                 .save_message_to_conversation(
                     "assistant",
                     &self.client.create_response_content(&assistant_content),
-                    response
-                        .usage
-                        .as_ref()
-                        .map(|u| u.output_tokens)
-                        .unwrap_or(0) as i32,
+                    response_total_tokens,
                 )
                 .await
             {
@@ -872,7 +875,11 @@ impl Agent {
             // Save final assistant response to database
             if let Err(e) = self
                 .conversation_manager
-                .save_message_to_conversation("assistant", &final_response, 0)
+                .save_message_to_conversation(
+                    "assistant",
+                    &final_response,
+                    final_response_tokens.unwrap_or(0),
+                )
                 .await
             {
                 warn!("Failed to save final assistant message to database: {}", e);
