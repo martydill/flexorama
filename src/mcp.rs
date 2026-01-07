@@ -873,6 +873,15 @@ impl McpManager {
         }
     }
 
+    /// Create a new MCP manager with a specific config path (useful for testing)
+    pub fn new_with_config_path(config_path: PathBuf) -> Self {
+        Self {
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            config: Arc::new(RwLock::new(McpConfig::default())),
+            config_path: Some(config_path),
+        }
+    }
+
     /// Initialize with MCP configuration from unified config
     pub async fn initialize(&self, mcp_config: McpConfig) -> Result<()> {
         *self.config.write().await = mcp_config;

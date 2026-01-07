@@ -2146,6 +2146,7 @@ mod tests {
         let root = temp_dir.path().to_path_buf();
         let db_path = root.join("test.sqlite");
         let agents_dir = root.join("agents");
+        let config_path = root.join("config.toml");
         let database = Arc::new(
             DatabaseManager::new(db_path)
                 .await
@@ -2174,7 +2175,7 @@ mod tests {
         WebState {
             agent: Arc::new(Mutex::new(agent)),
             database,
-            mcp_manager: Arc::new(McpManager::new()),
+            mcp_manager: Arc::new(McpManager::new_with_config_path(config_path)),
             subagent_manager,
             permission_hub: Arc::new(PermissionHub::new()),
             skill_manager,
