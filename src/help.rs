@@ -101,6 +101,27 @@ pub fn print_file_permissions_help() {
     app_println!();
 }
 
+/// Print skill help information
+pub fn print_skill_help() {
+    app_println!("{}", "?? Skill Commands".cyan().bold());
+    app_println!();
+    app_println!("{}", "Management:".green().bold());
+    app_println!("  /skill list                    - List all skills and active status");
+    app_println!("  /skill create <name> <desc>    - Create skill and SKILL.md");
+    app_println!("  /skill update <path>           - Update skill from SKILL.md");
+    app_println!("  /skill delete <name>           - Delete skill by name");
+    app_println!("  /skill deactivate <name>       - Deactivate skill by name");
+    app_println!("  /skill help                    - Show this help message");
+    app_println!();
+    app_println!("{}", "Examples:".green().bold());
+    app_println!("  /skill list");
+    app_println!("  /skill create rust \"Rust best practices\"");
+    app_println!("  /skill update C:\\\\skills\\\\rust\\\\SKILL.md");
+    app_println!("  /skill delete rust");
+    app_println!("  /skill deactivate rust");
+    app_println!();
+}
+
 /// Print permissions help information
 pub fn print_permissions_help() {
     app_println!("{}", "🔒 Permissions Commands".cyan().bold());
@@ -166,6 +187,7 @@ pub fn print_help() {
     app_println!("  /permissions  - Manage bash command security permissions");
     app_println!("  /file-permissions  - Manage file operation security permissions");
     app_println!("  /mcp          - Manage MCP (Model Context Protocol) servers");
+    app_println!("  /skill        - Manage skills (list, create, update, delete, deactivate)");
     app_println!("  /exit         - Exit the program");
     app_println!("  /quit         - Exit the program");
     app_println!();

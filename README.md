@@ -7,6 +7,7 @@ The hybrid cli/web coding agent that works your way.
 ## Features
  - Interactive and non-interactive mode
  - Built-in file editing, bash, code search, and glob tools
+ - Claude-style skills support and management with /skills
  - Syntax highlighting for code snippets
  - Direct bash command execution with !
  - Adding context files with @path_to_file_name
@@ -28,7 +29,7 @@ The hybrid cli/web coding agent that works your way.
 
 ## Web interface
 
-The optional web UI provides a ChatGPT-style browser-based interface for chats, as well as plan, agent, and MCP server management.
+The optional web UI provides a ChatGPT-style browser-based interface for chats, as well as plan, agent, MCP, skills, and stats functionality
 
 ## Todo 
  - Git worktrees
@@ -43,19 +44,32 @@ The optional web UI provides a ChatGPT-style browser-based interface for chats, 
 
 
 ## Usage
-```
-export ANTHROPIC_AUTH_TOKEN="your-api-key"
-export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic" 
-# Or switch to Gemini
-# export GEMINI_API_KEY="your-gemini-key"
-# aixplosion --provider gemini --model gemini-flash-latest
+### Provider: 
+Specify a provider on the command line with --provider. 
 
-# CLI version
-cargo run -- --stream
+Supported providers: 
+ - openapi
+ - gemini
+ - z.ai
+ - anthropic
 
-# Web version
-cargo run -- --web
-```
+### API token: 
+Specify api token on the command line with --api-key, OR set an env var for your provider
+
+Supported env vars: 
+- OPENAI_API_KEY
+- ZAI_API_KEY
+- GEMINI_API_KEY
+- ANTHROPIC_AUTH_TOKEN
+
+### CLI version
+```cargo run -- --stream --provider <provider>```
+
+### Web version
+```cargo run -- --web --provider <provider>```
+
+### Example
+``` cargo run -- --stream --provider openai --api-key ABCDasdfxxx...```
 
 
 ## License

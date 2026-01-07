@@ -4,13 +4,14 @@ use chrono::Local;
 use clap::Parser;
 use colored::*;
 use dialoguer::Select;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::fs;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, warn};
@@ -32,6 +33,7 @@ mod logo;
 mod mcp;
 mod openai;
 mod security;
+mod skill;
 mod subagent;
 mod tui;
 mod web;
@@ -51,7 +53,7 @@ use database::{
 use formatter::create_code_formatter;
 use help::{
     display_mcp_yolo_warning, display_yolo_warning, print_agent_help, print_file_permissions_help,
-    print_help, print_mcp_help, print_permissions_help,
+    print_help, print_mcp_help, print_permissions_help, print_skill_help,
 };
 use mcp::McpManager;
 
@@ -1302,6 +1304,10 @@ async fn handle_slash_command(
             handle_agent_command(&parts[1..], agent, formatter, stream).await?;
             Ok(true)
         }
+        "/skill" | "/skills" => {
+            handle_skill_command(command, agent).await?;
+            Ok(true)
+        }
         "/exit" | "/quit" => {
             // Print final stats before exiting
             print_usage_stats(agent);
@@ -1317,6 +1323,136 @@ async fn handle_slash_command(
             Ok(true) // Command was handled (as unknown)
         }
     }
+}
+
+async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
+    let mut parts = command.trim().splitn(3, ' ');
+    let _ = parts.next(); // /skill
+    let sub = parts.next().unwrap_or("").trim();
+    let rest = parts.next().unwrap_or("").trim();
+
+    if sub.is_empty() || sub == "help" {
+        print_skill_help();
+        return Ok(());
+    }
+
+    match sub {
+        "list" => {
+            let skills = agent.list_skills().await?;
+            if skills.is_empty() {
+                app_println!("{}", "No skills found.".yellow());
+                return Ok(());
+            }
+
+            let active_skills = agent.get_active_skills();
+            app_println!("{}", "?? Skills".cyan().bold());
+            app_println!();
+            let mut skills_sorted = skills;
+            skills_sorted.sort_by(|a, b| a.name.cmp(&b.name));
+            for skill in skills_sorted {
+                let status = if active_skills.contains(&skill.name) {
+                    "? Active".green().to_string()
+                } else {
+                    "?? Inactive".yellow().to_string()
+                };
+                app_println!("  {} {} ({})", "Skill:".bold(), skill.name.cyan(), status);
+                if !skill.description.is_empty() {
+                    app_println!("    {}", skill.description);
+                }
+                if !skill.tags.is_empty() {
+                    app_println!("    Tags: {}", skill.tags.join(", "));
+                }
+                app_println!();
+            }
+        }
+        "create" => {
+            if rest.is_empty() {
+                app_println!(
+                    "{} Usage: /skill create <name> <description>",
+                    "??".yellow()
+                );
+                return Ok(());
+            }
+
+            let mut args = rest.splitn(2, ' ');
+            let name = args.next().unwrap_or("").trim();
+            let description = args.next().unwrap_or("").trim();
+            if name.is_empty() || description.is_empty() {
+                app_println!(
+                    "{} Usage: /skill create <name> <description>",
+                    "??".yellow()
+                );
+                return Ok(());
+            }
+
+            let now = chrono::Utc::now();
+            let skill = crate::skill::Skill {
+                name: name.to_string(),
+                description: description.to_string(),
+                content: "## Instructions\n\nDescribe how to use this skill.\n".to_string(),
+                allowed_tools: std::collections::HashSet::new(),
+                denied_tools: std::collections::HashSet::new(),
+                model: None,
+                temperature: None,
+                max_tokens: None,
+                tags: Vec::new(),
+                references: Vec::new(),
+                created_at: now,
+                updated_at: now,
+            };
+
+            agent.create_skill(skill).await?;
+            app_println!("{} Created skill: {}", "?".green(), name.cyan());
+            if let Err(e) = agent.activate_skill(name).await {
+                warn!("Failed to activate skill '{}': {}", name, e);
+            }
+        }
+        "update" => {
+            if rest.is_empty() {
+                app_println!(
+                    "{} Usage: /skill update <path-to-SKILL.md>",
+                    "??".yellow()
+                );
+                return Ok(());
+            }
+
+            let input_path = Path::new(rest);
+            let skill_path = if input_path.is_dir() {
+                input_path.join("SKILL.md")
+            } else {
+                input_path.to_path_buf()
+            };
+
+            let content = fs::read_to_string(&skill_path).await?;
+            let skill = crate::skill::Skill::from_markdown(&content)?;
+            let skill_name = skill.name.clone();
+            agent.update_skill(skill).await?;
+            app_println!("{} Updated skill: {}", "?".green(), skill_name.cyan());
+        }
+        "delete" => {
+            if rest.is_empty() {
+                app_println!("{} Usage: /skill delete <name>", "??".yellow());
+                return Ok(());
+            }
+            agent.delete_skill(rest).await?;
+            app_println!("{} Deleted skill: {}", "?".green(), rest.cyan());
+        }
+        "deactivate" => {
+            if rest.is_empty() {
+                app_println!("{} Usage: /skill deactivate <name>", "??".yellow());
+                return Ok(());
+            }
+            agent.deactivate_skill(rest).await?;
+        }
+        _ => {
+            app_println!(
+                "{} Unknown /skill command. Use '/skill help' for options.",
+                "??".yellow()
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Handle MCP commands
@@ -2416,6 +2552,44 @@ async fn main() -> Result<()> {
     let database_manager = Arc::new(database_manager);
     agent = agent.with_database_manager(database_manager.clone());
 
+    // Initialize SkillManager
+    info!("Initializing skill manager...");
+    let config_arc = Arc::new(RwLock::new(config.clone()));
+    let skill_manager = Arc::new(AsyncMutex::new(crate::skill::SkillManager::new(config_arc.clone())?));
+    agent = agent.with_skill_manager(skill_manager.clone());
+    let (deactivated, skill_names) = {
+        let mut manager = skill_manager.lock().await;
+        manager.load_all_skills().await?;
+
+        // Activate all skills not explicitly deactivated in config
+        let config_read = config_arc.read().await;
+        let deactivated_skills = config_read.skills.deactivated_skills.clone();
+        drop(config_read);
+
+        let deactivated: HashSet<String> = deactivated_skills.into_iter().collect();
+        let skill_names: Vec<String> = manager
+            .list_skills()
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect();
+
+        (deactivated, skill_names)
+    };
+
+    for skill_name in skill_names {
+        if deactivated.contains(&skill_name) {
+            info!("Skill '{}' is explicitly deactivated; skipping activation", skill_name);
+            continue;
+        }
+        if let Err(e) = agent.activate_skill(&skill_name).await {
+            warn!("Failed to activate skill '{}': {}", skill_name, e);
+        } else {
+            info!("Activated skill: {}", skill_name);
+        }
+    }
+
+    info!("Skill manager initialized");
+
     // Connect to all enabled MCP servers
     info!("Connecting to MCP servers...");
     let mcp_connect_result = tokio::time::timeout(
@@ -2541,6 +2715,7 @@ async fn main() -> Result<()> {
             mcp_manager: mcp_manager.clone(),
             subagent_manager,
             permission_hub: Arc::new(web::PermissionHub::new()),
+            skill_manager: skill_manager.clone(),
         };
 
         web::launch_web_ui(state, cli.web_port).await?;

@@ -71,6 +71,23 @@ impl Default for McpConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillConfig {
+    #[serde(default)]
+    pub active_skills: Vec<String>,
+    #[serde(default)]
+    pub deactivated_skills: Vec<String>,
+}
+
+impl Default for SkillConfig {
+    fn default() -> Self {
+        Self {
+            active_skills: Vec::new(),
+            deactivated_skills: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(skip)]
     pub api_key: String,
@@ -85,6 +102,8 @@ pub struct Config {
     #[serde(skip)]
     pub file_security: FileSecurity,
     pub mcp: McpConfig,
+    #[serde(default)]
+    pub skills: SkillConfig,
 }
 const DEFAULT_SYSTEM_PROMPT: &str = r#"
 You are an expert in software development. Your job is to help the user build awesome software.
@@ -186,6 +205,7 @@ impl Default for Config {
             bash_security: BashSecurity::default(),
             file_security: FileSecurity::default(),
             mcp: McpConfig::default(),
+            skills: SkillConfig::default(),
         }
     }
 }

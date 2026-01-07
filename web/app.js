@@ -65,6 +65,8 @@ const state = {
   agents: [],
   activeAgent: null,
   activeAgentEditing: localStorage.getItem("aixplosion-active-agent-edit"),
+  skills: [],
+  activeSkillEditing: localStorage.getItem("aixplosion-active-skill-edit"),
   provider: null,
   models: [],
   activeModel: null,
@@ -1272,6 +1274,154 @@ function renderAgentSelector() {
   select.value = state.activeAgent || "";
 }
 
+// Skills
+async function loadSkills() {
+  state.skills = await api("/api/skills");
+  renderSkills();
+}
+
+function renderSkills() {
+  const list = document.getElementById("skill-list");
+  list.innerHTML = "";
+  state.skills.forEach((skill) => {
+    const item = document.createElement("div");
+    const activeIndicator = skill.active ? "🟢 " : "";
+    item.className = "list-item" + (skill.name === state.activeSkillEditing ? " active" : "");
+    item.innerHTML = `
+      <div style="font-weight:700;">${activeIndicator}${skill.name}</div>
+      <small class="muted">${skill.description || "No description"}</small>
+    `;
+    item.addEventListener("click", () => {
+      setSkillForm(skill);
+      renderSkills();
+    });
+    list.appendChild(item);
+  });
+}
+
+function resetSkillForm() {
+  state.activeSkillEditing = null;
+  localStorage.removeItem("aixplosion-active-skill-edit");
+  document.getElementById("skill-name").value = "";
+  document.getElementById("skill-description").value = "";
+  document.getElementById("skill-model").value = "";
+  document.getElementById("skill-temp").value = "";
+  document.getElementById("skill-max-tokens").value = "";
+  document.getElementById("skill-allowed").value = "";
+  document.getElementById("skill-denied").value = "";
+  document.getElementById("skill-tags").value = "";
+  document.getElementById("skill-content").value = "";
+  document.getElementById("skill-active").checked = false;
+  const deleteBtn = document.getElementById("delete-skill");
+  const activateBtn = document.getElementById("toggle-skill-activation");
+  if (deleteBtn) deleteBtn.style.display = "none";
+  if (activateBtn) activateBtn.style.display = "none";
+  renderSkills();
+}
+
+function setSkillForm(skill) {
+  state.activeSkillEditing = skill.name;
+  localStorage.setItem("aixplosion-active-skill-edit", skill.name);
+  document.getElementById("skill-name").value = skill.name;
+  document.getElementById("skill-description").value = skill.description || "";
+  document.getElementById("skill-model").value = skill.model || "";
+  document.getElementById("skill-temp").value = skill.temperature ?? "";
+  document.getElementById("skill-max-tokens").value = skill.max_tokens ?? "";
+  document.getElementById("skill-allowed").value = skill.allowed_tools.join(", ");
+  document.getElementById("skill-denied").value = skill.denied_tools.join(", ");
+  document.getElementById("skill-tags").value = skill.tags.join(", ");
+  document.getElementById("skill-content").value = skill.content || "";
+  document.getElementById("skill-active").checked = skill.active;
+
+  const deleteBtn = document.getElementById("delete-skill");
+  const activateBtn = document.getElementById("toggle-skill-activation");
+  if (deleteBtn) deleteBtn.style.display = "inline-block";
+  if (activateBtn) {
+    activateBtn.style.display = "inline-block";
+    activateBtn.textContent = skill.active ? "Deactivate" : "Activate";
+  }
+  renderSkills();
+}
+
+function selectFirstSkill() {
+  if (state.skills.length === 0) {
+    resetSkillForm();
+    return;
+  }
+  const saved = state.skills.find((s) => s.name === state.activeSkillEditing);
+  const target = saved || state.skills[0];
+  setSkillForm(target);
+  renderSkills();
+}
+
+async function saveSkill() {
+  const name = document.getElementById("skill-name").value.trim();
+  if (!name) return;
+
+  const payload = {
+    description: document.getElementById("skill-description").value.trim(),
+    content: document.getElementById("skill-content").value.trim(),
+    allowed_tools: splitList(document.getElementById("skill-allowed").value),
+    denied_tools: splitList(document.getElementById("skill-denied").value),
+    tags: splitList(document.getElementById("skill-tags").value),
+    max_tokens: numberOrNull(document.getElementById("skill-max-tokens").value),
+    temperature: numberOrNull(document.getElementById("skill-temp").value),
+    model: document.getElementById("skill-model").value || null,
+  };
+
+  if (state.skills.some((s) => s.name === name)) {
+    await api(`/api/skills/${name}`, { method: "PUT", body: payload });
+  } else {
+    await api("/api/skills", { method: "POST", body: { ...payload, name } });
+  }
+  state.activeSkillEditing = name;
+  await loadSkills();
+
+  // Restore form to show updated skill
+  const skill = state.skills.find((s) => s.name === name);
+  if (skill) {
+    setSkillForm(skill);
+  }
+}
+
+async function toggleSkillActivation() {
+  const name = document.getElementById("skill-name").value.trim();
+  if (!name) return;
+
+  const skill = state.skills.find((s) => s.name === name);
+  if (!skill) return;
+
+  if (skill.active) {
+    await api(`/api/skills/${name}/deactivate`, { method: "POST" });
+  } else {
+    await api(`/api/skills/${name}/activate`, { method: "POST" });
+  }
+
+  await loadSkills();
+
+  // Restore form to show updated skill
+  const updatedSkill = state.skills.find((s) => s.name === name);
+  if (updatedSkill) {
+    setSkillForm(updatedSkill);
+  }
+}
+
+async function deleteSkill() {
+  const name = document.getElementById("skill-name").value.trim();
+  if (!name) return;
+  const idx = state.skills.findIndex((s) => s.name === name);
+  await api(`/api/skills/${name}`, { method: "DELETE" });
+  state.activeSkillEditing = null;
+  await loadSkills();
+  if (state.skills.length > 0) {
+    const next = state.skills[Math.min(Math.max(idx, 0), state.skills.length - 1)];
+    setSkillForm(next);
+    renderSkills();
+  } else {
+    resetSkillForm();
+  }
+}
+
 async function loadModels() {
   const data = await api("/api/models");
   state.provider = data.provider;
@@ -1365,6 +1515,12 @@ async function restoreSelections() {
   if (agentMatch) {
     setAgentForm(agentMatch);
   }
+
+  const savedSkillEdit = localStorage.getItem("aixplosion-active-skill-edit");
+  const skillMatch = savedSkillEdit && state.skills.find((s) => s.name === savedSkillEdit);
+  if (skillMatch) {
+    setSkillForm(skillMatch);
+  }
 }
 
 // Tabs
@@ -1390,6 +1546,9 @@ function initTabs() {
           break;
         case "agents":
           selectFirstAgent();
+          break;
+        case "skills":
+          selectFirstSkill();
           break;
         case "stats":
           loadStats();
@@ -1478,6 +1637,16 @@ function bindEvents() {
     const name = e.target.value || null;
     activateAgent(name);
   });
+
+  document.getElementById("save-skill").addEventListener("click", saveSkill);
+  const deleteSkillBtn = document.getElementById("delete-skill");
+  if (deleteSkillBtn) deleteSkillBtn.addEventListener("click", deleteSkill);
+  const toggleSkillBtn = document.getElementById("toggle-skill-activation");
+  if (toggleSkillBtn) toggleSkillBtn.addEventListener("click", toggleSkillActivation);
+  const skillActiveCheckbox = document.getElementById("skill-active");
+  if (skillActiveCheckbox) skillActiveCheckbox.addEventListener("change", toggleSkillActivation);
+  document.getElementById("new-skill").addEventListener("click", resetSkillForm);
+
   document.getElementById("model-selector").addEventListener("change", async (e) => {
     const model = e.target.value;
     if (!model) return;
@@ -1942,6 +2111,7 @@ async function bootstrap() {
     await loadPlans();
     await loadMcp();
     await loadAgents();
+    await loadSkills();
     await loadPlanMode();
     await restoreSelections();
     switch (state.activeTab) {
@@ -1953,6 +2123,9 @@ async function bootstrap() {
         break;
       case "agents":
         selectFirstAgent();
+        break;
+      case "skills":
+        selectFirstSkill();
         break;
       case "stats":
         await loadStats();

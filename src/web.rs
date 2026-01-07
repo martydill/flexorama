@@ -5,6 +5,7 @@ use crate::conversation::ConversationManager;
 use crate::database::{Conversation, DatabaseManager, ToolCallRecord};
 use crate::mcp::{McpManager, McpServerConfig};
 use crate::security::{PermissionHandler, PermissionKind, PermissionPrompt};
+use crate::skill::SkillManager;
 use crate::subagent::{SubagentConfig, SubagentManager};
 use anyhow::Result;
 use axum::body::Body;
@@ -33,6 +34,7 @@ pub struct WebState {
     pub mcp_manager: Arc<McpManager>,
     pub subagent_manager: Arc<Mutex<SubagentManager>>,
     pub permission_hub: Arc<PermissionHub>,
+    pub skill_manager: Arc<Mutex<SkillManager>>,
 }
 
 #[derive(Serialize)]
@@ -218,6 +220,49 @@ struct PermissionPendingQuery {
 #[derive(Serialize)]
 struct PlanModeResponse {
     enabled: bool,
+}
+
+// Skill-related DTOs
+#[derive(Serialize)]
+struct SkillDto {
+    name: String,
+    description: String,
+    content: String,
+    allowed_tools: Vec<String>,
+    denied_tools: Vec<String>,
+    model: Option<String>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    tags: Vec<String>,
+    references: Vec<String>,
+    active: bool,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Deserialize)]
+struct NewSkillRequest {
+    name: String,
+    description: String,
+    content: String,
+    allowed_tools: Vec<String>,
+    denied_tools: Vec<String>,
+    model: Option<String>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    tags: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SkillUpdateRequest {
+    description: String,
+    content: String,
+    allowed_tools: Vec<String>,
+    denied_tools: Vec<String>,
+    model: Option<String>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    tags: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -467,6 +512,14 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             "/api/agents/active",
             get(get_active_agent).post(set_active_agent),
         )
+        .route("/api/skills", get(list_skills).post(create_skill))
+        .route(
+            "/api/skills/:name",
+            get(get_skill).put(update_skill).delete(delete_skill),
+        )
+        .route("/api/skills/:name/activate", post(activate_skill))
+        .route("/api/skills/:name/deactivate", post(deactivate_skill))
+        .route("/api/skills/active", get(get_active_skills))
         .route("/api/permissions/pending", get(list_pending_permissions))
         .route("/api/permissions/respond", post(resolve_permission_request))
         .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
@@ -1289,6 +1342,183 @@ async fn set_active_agent(
     }
 }
 
+// Skill API handlers
+async fn list_skills(State(state): State<WebState>) -> impl IntoResponse {
+    let manager = state.skill_manager.lock().await;
+    let skills = manager.list_skills();
+    let agent = state.agent.lock().await;
+    let active_skills = agent.get_active_skills();
+
+    let dtos: Vec<SkillDto> = skills
+        .iter()
+        .map(|skill| SkillDto {
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+            content: skill.content.clone(),
+            allowed_tools: skill.allowed_tools.iter().cloned().collect(),
+            denied_tools: skill.denied_tools.iter().cloned().collect(),
+            model: skill.model.clone(),
+            temperature: skill.temperature,
+            max_tokens: skill.max_tokens,
+            tags: skill.tags.clone(),
+            references: skill.references.iter().map(|r| r.path.clone()).collect(),
+            active: active_skills.contains(&skill.name),
+            created_at: skill.created_at.to_rfc3339(),
+            updated_at: skill.updated_at.to_rfc3339(),
+        })
+        .collect();
+
+    Json(dtos).into_response()
+}
+
+async fn get_skill(State(state): State<WebState>, Path(name): Path<String>) -> impl IntoResponse {
+    let manager = state.skill_manager.lock().await;
+    let agent = state.agent.lock().await;
+    let active_skills = agent.get_active_skills();
+
+    match manager.get_skill(&name) {
+        Some(skill) => Json(SkillDto {
+            name: skill.name.clone(),
+            description: skill.description.clone(),
+            content: skill.content.clone(),
+            allowed_tools: skill.allowed_tools.iter().cloned().collect(),
+            denied_tools: skill.denied_tools.iter().cloned().collect(),
+            model: skill.model.clone(),
+            temperature: skill.temperature,
+            max_tokens: skill.max_tokens,
+            tags: skill.tags.clone(),
+            references: skill.references.iter().map(|r| r.path.clone()).collect(),
+            active: active_skills.contains(&skill.name),
+            created_at: skill.created_at.to_rfc3339(),
+            updated_at: skill.updated_at.to_rfc3339(),
+        })
+        .into_response(),
+        None => (StatusCode::NOT_FOUND, "Skill not found".to_string()).into_response(),
+    }
+}
+
+async fn create_skill(
+    State(state): State<WebState>,
+    Json(payload): Json<NewSkillRequest>,
+) -> impl IntoResponse {
+    let now = chrono::Utc::now();
+    let skill = crate::skill::Skill {
+        name: payload.name.clone(),
+        description: payload.description,
+        content: payload.content,
+        allowed_tools: payload.allowed_tools.into_iter().collect(),
+        denied_tools: payload.denied_tools.into_iter().collect(),
+        model: payload.model,
+        temperature: payload.temperature,
+        max_tokens: payload.max_tokens,
+        tags: payload.tags,
+        references: vec![],
+        created_at: now,
+        updated_at: now,
+    };
+
+    let mut manager = state.skill_manager.lock().await;
+    match manager.create_skill(skill).await {
+        Ok(_) => Json(HashMap::from([("name", payload.name)])).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create skill: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn update_skill(
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+    Json(payload): Json<SkillUpdateRequest>,
+) -> impl IntoResponse {
+    let mut manager = state.skill_manager.lock().await;
+
+    let existing = match manager.get_skill(&name) {
+        Some(s) => s.clone(),
+        None => return (StatusCode::NOT_FOUND, "Skill not found".to_string()).into_response(),
+    };
+
+    let updated_skill = crate::skill::Skill {
+        name: existing.name,
+        description: payload.description,
+        content: payload.content,
+        allowed_tools: payload.allowed_tools.into_iter().collect(),
+        denied_tools: payload.denied_tools.into_iter().collect(),
+        model: payload.model,
+        temperature: payload.temperature,
+        max_tokens: payload.max_tokens,
+        tags: payload.tags,
+        references: existing.references,
+        created_at: existing.created_at,
+        updated_at: chrono::Utc::now(),
+    };
+
+    match manager.update_skill(&updated_skill).await {
+        Ok(_) => Json(HashMap::from([("name", name)])).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to update skill: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_skill(
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let mut manager = state.skill_manager.lock().await;
+
+    match manager.delete_skill(&name).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to delete skill: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn activate_skill(
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let mut agent = state.agent.lock().await;
+
+    match agent.activate_skill(&name).await {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to activate skill: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn deactivate_skill(
+    State(state): State<WebState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let mut agent = state.agent.lock().await;
+
+    match agent.deactivate_skill(&name).await {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to deactivate skill: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_active_skills(State(state): State<WebState>) -> impl IntoResponse {
+    let agent = state.agent.lock().await;
+    let active_skills = agent.get_active_skills();
+    Json(active_skills).into_response()
+}
+
 async fn list_pending_permissions(
     State(state): State<WebState>,
     axum::extract::Query(query): axum::extract::Query<PermissionPendingQuery>,
@@ -1775,6 +2005,7 @@ mod tests {
     use axum::routing::{delete, put};
     use chrono::TimeZone;
     use http_body_util::BodyExt;
+    use std::sync::OnceLock;
     use tempfile::tempdir;
     use tower::util::ServiceExt;
 
@@ -1898,23 +2129,43 @@ mod tests {
         assert_eq!(timeline[2].id, "tool-1-result");
     }
 
+    fn init_test_home() -> std::path::PathBuf {
+        static TEST_HOME: OnceLock<std::path::PathBuf> = OnceLock::new();
+        TEST_HOME
+            .get_or_init(|| {
+                let temp_dir = tempdir().expect("create tempdir");
+                let root = temp_dir.path().to_path_buf();
+                std::mem::forget(temp_dir);
+                root
+            })
+            .clone()
+    }
+
     async fn build_test_state() -> WebState {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path().to_path_buf();
         let db_path = root.join("test.sqlite");
         let agents_dir = root.join("agents");
-        let config_path = root.join("config.toml");
         let database = Arc::new(
             DatabaseManager::new(db_path)
                 .await
                 .expect("create database"),
         );
         std::mem::forget(temp_dir);
+        let test_home = init_test_home();
+        std::env::set_var("USERPROFILE", &test_home);
+        std::env::set_var("HOME", &test_home);
+
         let config = config::Config::default();
+        let config_arc = Arc::new(tokio::sync::RwLock::new(config.clone()));
+        let skill_manager = Arc::new(Mutex::new(
+            SkillManager::new(config_arc).expect("create skill manager"),
+        ));
         let agent =
             Agent::new_with_plan_mode(config.clone(), config.default_model.clone(), false, false)
                 .await
-                .with_database_manager(database.clone());
+                .with_database_manager(database.clone())
+                .with_skill_manager(skill_manager.clone());
 
         let subagent_manager = Arc::new(Mutex::new(
             SubagentManager::new_with_dir(agents_dir).expect("create subagent manager"),
@@ -1926,6 +2177,7 @@ mod tests {
             mcp_manager: Arc::new(McpManager::new()),
             subagent_manager,
             permission_hub: Arc::new(PermissionHub::new()),
+            skill_manager,
         }
     }
 
@@ -1955,6 +2207,14 @@ mod tests {
                 get(get_agent).put(update_agent).delete(delete_agent),
             )
             .route("/api/agents/active", get(get_active_agent))
+            .route("/api/skills", get(list_skills).post(create_skill))
+            .route(
+                "/api/skills/:name",
+                get(get_skill).put(update_skill).delete(delete_skill),
+            )
+            .route("/api/skills/:name/activate", post(activate_skill))
+            .route("/api/skills/:name/deactivate", post(deactivate_skill))
+            .route("/api/skills/active", get(get_active_skills))
             .with_state(state)
     }
 
@@ -2022,6 +2282,118 @@ mod tests {
         let (status, body) = json_response(&router, request).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["enabled"], true);
+    }
+
+    #[tokio::test]
+    async fn test_skills_crud_and_activation() {
+        let state = build_test_state().await;
+        let router = build_test_router(state);
+
+        let payload = serde_json::json!({
+            "name": "skill-one",
+            "description": "Example skill",
+            "content": "## Instructions\n\nDo the thing.\n",
+            "allowed_tools": [],
+            "denied_tools": [],
+            "model": null,
+            "temperature": null,
+            "max_tokens": null,
+            "tags": []
+        });
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/skills")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("name").and_then(|v| v.as_str()), Some("skill-one"));
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/skills")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let skills = body.as_array().expect("skills array");
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0]["name"], "skill-one");
+        assert_eq!(skills[0]["active"], false);
+
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/skills/skill-one/activate")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.expect("activate");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/skills/skill-one")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["active"], true);
+
+        let update = serde_json::json!({
+            "description": "Updated description",
+            "content": "## Instructions\n\nUpdated.\n",
+            "allowed_tools": ["read_file"],
+            "denied_tools": [],
+            "model": "glm-4.6",
+            "temperature": 0.5,
+            "max_tokens": 2048,
+            "tags": ["test"]
+        });
+        let request = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/skills/skill-one")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(update.to_string()))
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("name").and_then(|v| v.as_str()), Some("skill-one"));
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/skills/skill-one")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["description"], "Updated description");
+        assert_eq!(body["allowed_tools"][0], "read_file");
+
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/skills/skill-one/deactivate")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.expect("deactivate");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/skills/active")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let active = body.as_array().expect("active array");
+        assert!(active.is_empty());
+
+        let request = axum::http::Request::builder()
+            .method("DELETE")
+            .uri("/api/skills/skill-one")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.expect("delete");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
     }
 
     #[tokio::test]

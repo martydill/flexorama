@@ -150,6 +150,13 @@ impl ToolRegistry {
             readonly: true,
         });
 
+        registry.register_tool(ToolMetadata {
+            name: "use_skill".to_string(),
+            icon: "🎯",
+            display_format: DisplayFormat::Generic,
+            readonly: true,
+        });
+
         registry
     }
 }

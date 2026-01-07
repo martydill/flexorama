@@ -813,6 +813,7 @@
         <button class="top-tab" data-tab="plans">Plans</button>
         <button class="top-tab" data-tab="mcp">MCP Servers</button>
         <button class="top-tab" data-tab="agents">Agents</button>
+        <button class="top-tab" data-tab="skills">Skills</button>
         <button class="top-tab" data-tab="stats">Stats</button>
       </div>
       <div class="top-actions">
@@ -949,6 +950,44 @@
             <div class="stack" style="margin-top:8px;">
               <button class="primary" id="save-agent">Save Agent</button>
               <button class="secondary danger" id="delete-agent" style="display:none">Delete</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-skills">
+      <div class="split-layout">
+        <aside class="sidebar-panel">
+          <div class="stack" style="justify-content: space-between; align-items: center;">
+            <div class="muted" style="font-weight:600;">Skills</div>
+            <button class="secondary" id="new-skill">New</button>
+          </div>
+          <div class="list" id="skill-list"></div>
+        </aside>
+        <section class="panel">
+          <div class="tab-body">
+            <div class="section-title">Skill Details</div>
+            <div class="muted" style="margin-bottom:6px;">View, edit, and activate skills.</div>
+            <div class="form-grid">
+              <input id="skill-name" placeholder="Name">
+              <input id="skill-model" placeholder="Model (optional)">
+              <input id="skill-temp" placeholder="Temperature (optional)">
+              <input id="skill-max-tokens" placeholder="Max tokens (optional)">
+            </div>
+            <textarea id="skill-description" class="small" placeholder="Description"></textarea>
+            <label class="toggle" style="margin-bottom:8px;">
+              <input type="checkbox" id="skill-active">
+              <span>Active</span>
+            </label>
+            <input id="skill-allowed" placeholder="Allowed tools (comma separated)">
+            <input id="skill-denied" placeholder="Denied tools (comma separated)">
+            <input id="skill-tags" placeholder="Tags (comma separated)">
+            <textarea id="skill-content" style="min-height:200px;" placeholder="Skill content (markdown)"></textarea>
+            <div class="stack" style="margin-top:8px;">
+              <button class="primary" id="save-skill">Save Skill</button>
+              <button class="secondary" id="toggle-skill-activation" style="display:none">Activate</button>
+              <button class="secondary danger" id="delete-skill" style="display:none">Delete</button>
             </div>
           </div>
         </section>

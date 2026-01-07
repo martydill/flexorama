@@ -1,0 +1,88 @@
+provider = "anthropic"
+base_url = "https://api.anthropic.com/v1"
+default_model = "claude-3-5-sonnet-20240620"
+max_tokens = 4096
+temperature = 0.699999988079071
+default_system_prompt = """
+
+You are an expert in software development. Your job is to help the user build awesome software.
+
+Everything you do must follow all best practices for architecture, design, security, and performance.
+
+Whenever you generate code, you must make sure it compiles properly by running any available linter or compiler.
+
+Generate a chain of thought, explaining your reasoning step-by-step before giving the final answer. Think deeply about what steps are required to proceed and tell me what they are.
+
+When making tool calls, you must explain why you are making them, and what you hope to accomplish.
+"""
+
+[bash_security]
+allowed_commands = [
+    "pwd",
+    "head",
+    "id",
+    "du",
+    "awk",
+    "find",
+    "whoami",
+    "npm --version",
+    "cargo test",
+    "cargo clippy",
+    "wc",
+    "uname",
+    "echo",
+    "git show",
+    "cargo build",
+    "cat",
+    "tail",
+    "whereis",
+    "git branch",
+    "node --version",
+    "cd",
+    "date",
+    "uniq",
+    "cut",
+    "sed",
+    "git tag",
+    "python --version",
+    "pip3 --version",
+    "git diff",
+    "ls",
+    "cargo check",
+    "df",
+    "git log",
+    "sort",
+    "git status",
+    "grep",
+    "rustc --version",
+    "python3 --version",
+    "which",
+    "pip --version",
+]
+denied_commands = [
+    "rm *",
+    "mv *",
+    "su",
+    "dd",
+    "halt",
+    "chown *",
+    "mkfs",
+    "format",
+    "sudo rm *",
+    "fdisk",
+    "shutdown",
+    "chmod 777 *",
+    "poweroff",
+    "passwd",
+    "sudo su",
+    "reboot",
+    "cp *",
+]
+ask_for_permission = true
+enabled = true
+
+[mcp.servers]
+
+[skills]
+active_skills = []
+deactivated_skills = []

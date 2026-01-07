@@ -54,6 +54,17 @@ impl Tool {
                     })
                 })
             }
+            "use_skill" => {
+                // For use_skill tool, we need to create a handler that will be updated later
+                // with the skill manager. This is handled by the Agent's tool execution logic.
+                Box::new(|_call| {
+                    Box::pin(async move {
+                        // This should be handled by the Agent's tool execution logic
+                        // The Agent has special handling for use_skill with skill manager
+                        Err(anyhow::anyhow!("use_skill tool should be handled by Agent with skill manager. Tool recreation failed."))
+                    })
+                })
+            }
             _ if self.name.starts_with("mcp_") => {
                 // This is an MCP tool - we need to handle this differently
                 // The issue is that we can't recreate MCP handlers without the MCP manager

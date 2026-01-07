@@ -9,7 +9,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
 // Structure to save conversation context when switching to subagent
 #[derive(Debug, Clone)]
@@ -108,6 +108,9 @@ pub struct Agent {
     pub tool_registry: Arc<RwLock<ToolRegistry>>,
     provider: Provider,
     base_url: String,
+    // Skill management
+    skill_manager: Option<Arc<AsyncMutex<crate::skill::SkillManager>>>,
+    active_skills: Vec<String>,
 }
 
 impl Agent {
@@ -171,6 +174,8 @@ impl Agent {
             tool_registry,
             provider: config.provider,
             base_url,
+            skill_manager: None,
+            active_skills: Vec::new(),
         }
     }
 
@@ -226,6 +231,39 @@ impl Agent {
                         })
                     }),
                     metadata: None, // TODO: Add metadata for bash tool
+                },
+            );
+        }
+
+        // Add use_skill tool for progressive disclosure
+        {
+            let mut tools = agent.tools.write().await;
+            tools.insert(
+                "use_skill".to_string(),
+                Tool {
+                    name: "use_skill".to_string(),
+                    description: "Load the full content of an active skill to access its detailed instructions and guidelines. Use this when you need the complete skill knowledge to help with the user's request.".to_string(),
+                    input_schema: json!({
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "The name of the skill to load (must be an active skill)"
+                            }
+                        },
+                        "required": ["name"]
+                    }),
+                    handler: Box::new(|call: ToolCall| {
+                        Box::pin(async move {
+                            // This is a placeholder - actual execution happens in execute_tool_internal
+                            Ok(ToolResult {
+                                tool_use_id: call.id.clone(),
+                                content: "Skill loading is handled internally".to_string(),
+                                is_error: false,
+                            })
+                        })
+                    }),
+                    metadata: None,
                 },
             );
         }
@@ -320,6 +358,136 @@ impl Agent {
     pub fn with_database_manager(mut self, database_manager: Arc<DatabaseManager>) -> Self {
         self.conversation_manager.database_manager = Some(database_manager);
         self
+    }
+
+    pub fn with_skill_manager(mut self, skill_manager: Arc<AsyncMutex<crate::skill::SkillManager>>) -> Self {
+        self.skill_manager = Some(skill_manager);
+        self
+    }
+
+    /// List all available skills
+    pub async fn list_skills(&self) -> Result<Vec<crate::skill::Skill>> {
+        if let Some(skill_manager) = &self.skill_manager {
+            let manager = skill_manager.lock().await;
+            Ok(manager.list_skills().iter().map(|skill| (*skill).clone()).collect())
+        } else {
+            Err(anyhow!("Skill manager not initialized"))
+        }
+    }
+
+    /// Create a new skill
+    pub async fn create_skill(&mut self, skill: crate::skill::Skill) -> Result<()> {
+        if let Some(skill_manager) = &self.skill_manager {
+            let mut manager = skill_manager.lock().await;
+            manager.create_skill(skill).await?;
+            Ok(())
+        } else {
+            Err(anyhow!("Skill manager not initialized"))
+        }
+    }
+
+    /// Update an existing skill
+    pub async fn update_skill(&mut self, skill: crate::skill::Skill) -> Result<()> {
+        if let Some(skill_manager) = &self.skill_manager {
+            let mut manager = skill_manager.lock().await;
+            manager.update_skill(&skill).await?;
+            Ok(())
+        } else {
+            Err(anyhow!("Skill manager not initialized"))
+        }
+    }
+
+    /// Delete a skill
+    pub async fn delete_skill(&mut self, name: &str) -> Result<()> {
+        let is_active = self.active_skills.contains(&name.to_string());
+        if is_active {
+            self.deactivate_skill(name).await?;
+        }
+
+        if let Some(skill_manager) = &self.skill_manager {
+            let mut manager = skill_manager.lock().await;
+            manager.delete_skill(name).await?;
+            Ok(())
+        } else {
+            Err(anyhow!("Skill manager not initialized"))
+        }
+    }
+
+    /// Activate a skill
+    pub async fn activate_skill(&mut self, name: &str) -> Result<()> {
+        if let Some(skill_manager) = &self.skill_manager {
+            let mut manager = skill_manager.lock().await;
+
+            // Get the skill
+            let skill = manager.get_skill(name)
+                .ok_or_else(|| anyhow!("Skill '{}' not found", name))?
+                .clone();
+
+            // Activate in skill manager (this updates and saves config)
+            manager.activate_skill(name).await?;
+
+            // Add to active skills list
+            if !self.active_skills.contains(&name.to_string()) {
+                self.active_skills.push(name.to_string());
+            }
+
+            // Filter tools based on skill restrictions
+            let mut tools = self.tools.write().await;
+
+            // Remove denied tools
+            for tool_name in &skill.denied_tools {
+                tools.remove(tool_name);
+            }
+
+            // If allowed_tools is not empty, keep only those
+            if !skill.allowed_tools.is_empty() {
+                tools.retain(|name, _| skill.allowed_tools.contains(name));
+            }
+
+            app_println!("✅ Activated skill: {}", skill.name);
+            Ok(())
+        } else {
+            Err(anyhow!("Skill manager not initialized"))
+        }
+    }
+
+    /// Deactivate a skill
+    pub async fn deactivate_skill(&mut self, name: &str) -> Result<()> {
+        if let Some(skill_manager) = &self.skill_manager {
+            {
+                let mut manager = skill_manager.lock().await;
+
+                // Deactivate in skill manager (this updates and saves config)
+                manager.deactivate_skill(name).await?;
+            } // Drop manager lock here
+
+            // Remove from active skills list
+            self.active_skills.retain(|s| s != name);
+
+            // Restore original tools by refreshing from builtin and MCP
+            let builtin_tools = crate::tools::builtin::get_builtin_tools();
+            {
+                let mut tools = self.tools.write().await;
+                tools.clear();
+
+                for tool in builtin_tools {
+                    tools.insert(tool.name.clone(), tool);
+                }
+            } // Drop tools lock here
+
+            // Refresh MCP tools
+            self.force_refresh_mcp_tools().await?;
+
+            app_println!("❌ Deactivated skill: {}", name);
+            Ok(())
+        } else {
+            Err(anyhow!("Skill manager not initialized"))
+        }
+    }
+
+    /// Get list of active skills
+    pub fn get_active_skills(&self) -> &[String] {
+        &self.active_skills
     }
 
     /// Refresh MCP tools from connected servers (only if they have changed)
@@ -620,6 +788,20 @@ impl Agent {
             warn!("Failed to refresh MCP tools: {}", e);
             error!("MCP tools may not be available - some tool calls might fail");
         }
+
+        // Inject active skills into system prompt
+        if let Some(skill_manager) = &self.skill_manager {
+            let manager = skill_manager.lock().await;
+            let skills_content = manager.get_active_skills_content();
+
+            if !skills_content.is_empty() {
+                // Prepend skills to system prompt
+                let current_prompt = self.conversation_manager.system_prompt.clone().unwrap_or_default();
+                let enhanced_prompt = format!("{}\n\n{}", skills_content, current_prompt);
+                self.conversation_manager.system_prompt = Some(enhanced_prompt);
+            }
+        }
+
         let mut final_response = String::new();
         let mut final_response_tokens: Option<i32> = None;
         let max_iterations = 500;
@@ -970,6 +1152,7 @@ impl Agent {
             bash_security: current_security,
             file_security: crate::security::FileSecurity::default(),
             mcp: crate::config::McpConfig::default(),
+            skills: crate::config::SkillConfig::default(),
         }
     }
 
@@ -1244,6 +1427,39 @@ impl Agent {
                 Ok(ToolResult {
                     tool_use_id: call.id.clone(),
                     content: error_content.to_string(),
+                    is_error: true,
+                })
+            }
+        } else if call.name == "use_skill" {
+            // Handle use_skill tool for progressive disclosure
+            if let Some(skill_manager) = &self.skill_manager {
+                let skill_name = call.arguments.get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow!("Missing 'name' parameter for use_skill"))?;
+
+                let manager = skill_manager.lock().await;
+                match manager.get_skill_full_content(skill_name) {
+                    Ok(content) => {
+                        info!("Loaded full content for skill: {}", skill_name);
+                        Ok(ToolResult {
+                            tool_use_id: call.id.clone(),
+                            content,
+                            is_error: false,
+                        })
+                    }
+                    Err(e) => {
+                        error!("Failed to load skill '{}': {}", skill_name, e);
+                        Ok(ToolResult {
+                            tool_use_id: call.id.clone(),
+                            content: format!("Error loading skill '{}': {}", skill_name, e),
+                            is_error: true,
+                        })
+                    }
+                }
+            } else {
+                Ok(ToolResult {
+                    tool_use_id: call.id.clone(),
+                    content: "Skill manager not available. Skills cannot be loaded.".to_string(),
                     is_error: true,
                 })
             }
