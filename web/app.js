@@ -738,7 +738,7 @@ async function selectConversation(id) {
   setStatus("Loading conversation...");
   const detail = await api(`/api/conversations/${id}`);
   const meta = detail.conversation;
-  setStatus(`${detail.messages.length} messages • ${meta.model}`);
+  setStatus(`${detail.messages.length} messages`);
   renderMessages(detail.messages);
   const select = document.getElementById("agent-selector");
   if (select) {
@@ -1657,7 +1657,7 @@ function bindEvents() {
       if (state.activeConversationId) {
         await selectConversation(state.activeConversationId);
       }
-      setStatus(`Model set to ${model}`);
+      setStatus(`Model updated to ${model}`);
     } catch (err) {
       setStatus(`Model update failed: ${err.message}`);
     }
