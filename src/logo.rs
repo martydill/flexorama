@@ -52,7 +52,7 @@ pub fn display_logo() {
             }
             app_println!("{}", colored_line);
         }
-        let subtitle = "?? Your Supercharged AI Coding Agent";
+        let subtitle = "✨ Your Supercharged AI Coding Agent";
         let mut colored_subtitle = String::new();
         let chars: Vec<char> = subtitle.chars().collect();
         for (i, ch) in chars.iter().enumerate() {

@@ -242,7 +242,7 @@ Path: {}",
         }
 
         app_println!();
-        app_println!("{}", "?? File Operation Security Check".yellow().bold());
+        app_println!("{}", "🛡️ File Operation Security Check".yellow().bold());
         app_println!("The following file operation requires permission:");
         app_println!("  Operation: {}", operation.cyan());
         app_println!("  Path: {}", path.cyan());
@@ -271,7 +271,7 @@ Path: {}",
                 error!("Failed to get user input: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying file operation for safety",
-                    "??".yellow()
+                    "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
             }
@@ -279,7 +279,7 @@ Path: {}",
                 error!("Task join error: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying file operation for safety",
-                    "??".yellow()
+                    "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
             }
@@ -287,7 +287,7 @@ Path: {}",
                 error!("Permission dialog timed out after 30 seconds");
                 app_println!(
                     "{} Permission dialog timed out, denying file operation for safety",
-                    "??".yellow()
+                    "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
             }
@@ -482,7 +482,7 @@ impl BashSecurityManager {
         }
 
         app_println!();
-        app_println!("{}", "?? Security Check".yellow().bold());
+        app_println!("{}", "🛡️ Security Check".yellow().bold());
         app_println!("The following command is not in the allowlist:");
         app_println!("  {}", command.cyan());
         app_println!();
@@ -507,7 +507,7 @@ impl BashSecurityManager {
                 error!("Failed to get user input: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying command for safety",
-                    "??".yellow()
+                    "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
             }
@@ -515,7 +515,7 @@ impl BashSecurityManager {
                 error!("Task join error: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying command for safety",
-                    "??".yellow()
+                    "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
             }
@@ -523,7 +523,7 @@ impl BashSecurityManager {
                 error!("Permission dialog timed out after 30 seconds");
                 app_println!(
                     "{} Permission dialog timed out, denying command for safety",
-                    "??".yellow()
+                    "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
             }

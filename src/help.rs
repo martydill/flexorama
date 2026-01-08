@@ -103,7 +103,7 @@ pub fn print_file_permissions_help() {
 
 /// Print skill help information
 pub fn print_skill_help() {
-    app_println!("{}", "?? Skill Commands".cyan().bold());
+    app_println!("{}", "📚 Skill Commands".cyan().bold());
     app_println!();
     app_println!("{}", "Management:".green().bold());
     app_println!("  /skill list                    - List all skills and active status");

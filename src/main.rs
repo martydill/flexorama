@@ -177,7 +177,7 @@ async fn run_tui_interactive(
         .await;
 
     logo::display_logo();
-    app_println!("{}", "?? Flexorama - Interactive Mode".green().bold());
+    app_println!("{}", "💻 Flexorama - Interactive Mode".green().bold());
     if plan_mode {
         app_println!(
             "{}",
@@ -220,7 +220,7 @@ async fn run_tui_interactive(
                 let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
                 if let Some(flag) = cancel {
                     flag.store(true, Ordering::SeqCst);
-                    app_println!("\n{} Cancelling AI conversation...", "??".yellow());
+                    app_println!("\n{} Cancelling AI conversation...", "🛑".yellow());
                 }
             }
             Ok(tui::InputResult::Exit) => {
@@ -228,7 +228,7 @@ async fn run_tui_interactive(
                 let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
                 if let Some(flag) = cancel {
                     flag.store(true, Ordering::SeqCst);
-                    app_println!("\n{} Cancelling and exiting...", "??".yellow());
+                    app_println!("\n{} Cancelling and exiting...", "🛑".yellow());
                 }
                 let _ = input_tx.send(InputEvent::Exit);
                 break;
@@ -251,7 +251,7 @@ async fn run_tui_interactive(
         if exit_requested.load(Ordering::SeqCst) {
             clear_queue(&queued_inputs)?;
             print_usage_stats(agent);
-            app_println!("{}", "Goodbye! ??".green());
+            app_println!("{}", "Goodbye! 👋".green());
             break;
         }
 
@@ -925,7 +925,7 @@ async fn select_index_with_tui(
                 }
                 app_println!(
                     "{} Invalid selection. Enter a number between 1 and {}.",
-                    "??".yellow(),
+                    "💡".yellow(),
                     options.len()
                 );
             }
@@ -949,7 +949,7 @@ async fn handle_resume_command(agent: &mut Agent, tui: Option<&tui::Tui>) -> Res
     if agent.database_manager().is_none() {
         app_println!(
             "{} Database is not configured; cannot resume conversations.",
-            "??".yellow()
+            "💡".yellow()
         );
         return Ok(());
     }
@@ -967,7 +967,7 @@ async fn handle_resume_command(agent: &mut Agent, tui: Option<&tui::Tui>) -> Res
     if available.is_empty() {
         app_println!(
             "{} No other recent conversations found to resume.",
-            "??".yellow()
+            "💡".yellow()
         );
         return Ok(());
     }
@@ -977,7 +977,7 @@ async fn handle_resume_command(agent: &mut Agent, tui: Option<&tui::Tui>) -> Res
     if conversations_with_previews.is_empty() {
         app_println!(
             "{} No recent conversations with messages found to resume.",
-            "??".yellow()
+            "💡".yellow()
         );
         return Ok(());
     }
@@ -1018,14 +1018,14 @@ async fn handle_search_command(
     if agent.database_manager().is_none() {
         app_println!(
             "{} Database is not configured; cannot search conversations.",
-            "??".yellow()
+            "💡".yellow()
         );
         return Ok(());
     }
 
     let search_term = query.trim();
     if search_term.is_empty() {
-        app_println!("{} Usage: /search <text>", "??".yellow());
+        app_println!("{} Usage: /search <text>", "💡".yellow());
         return Ok(());
     }
 
@@ -1041,7 +1041,7 @@ async fn handle_search_command(
     if available.is_empty() {
         app_println!(
             "{} No conversations matched '{}'.",
-            "??".yellow(),
+            "💡".yellow(),
             search_term
         );
         return Ok(());
@@ -1052,7 +1052,7 @@ async fn handle_search_command(
     if conversations_with_previews.is_empty() {
         app_println!(
             "{} No matching conversations with messages found.",
-            "??".yellow()
+            "💡".yellow()
         );
         return Ok(());
     }
@@ -1142,7 +1142,7 @@ async fn handle_slash_command(
                     if available.is_empty() {
                         app_println!(
                             "{} No default models configured for {}",
-                            "??".yellow(),
+                            "💡".yellow(),
                             provider
                         );
                         return Ok(true);
@@ -1160,7 +1160,7 @@ async fn handle_slash_command(
                         {
                             let new_model = options[index].clone();
                             agent.set_model(new_model.clone()).await?;
-                            app_println!("{} Active model set to {}", "??".green(), new_model);
+                            app_println!("{} Active model set to {}", "✅".green(), new_model);
                         }
                     } else {
                         let selected = Select::new()
@@ -1171,18 +1171,18 @@ async fn handle_slash_command(
                         if let Some(index) = selected {
                             let new_model = available[index].to_string();
                             agent.set_model(new_model.clone()).await?;
-                            app_println!("{} Active model set to {}", "??".green(), new_model);
+                            app_println!("{} Active model set to {}", "✅".green(), new_model);
                         }
                     }
                 }
                 _ => {
                     let new_model = parts[1..].join(" ");
                     if new_model.is_empty() {
-                        app_println!("{} Usage: /model <name>", "??".yellow());
+                        app_println!("{} Usage: /model <name>", "💡".yellow());
                         return Ok(true);
                     }
                     agent.set_model(new_model.clone()).await?;
-                    app_println!("{} Active model set to {}", "??".green(), new_model);
+                    app_println!("{} Active model set to {}", "✅".green(), new_model);
                 }
             }
             Ok(true)
@@ -1345,7 +1345,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
             }
 
             let active_skills = agent.get_active_skills();
-            app_println!("{}", "?? Skills".cyan().bold());
+            app_println!("{}", "🛠️ Skills".cyan().bold());
             app_println!();
             let mut skills_sorted = skills;
             skills_sorted.sort_by(|a, b| a.name.cmp(&b.name));
@@ -1353,7 +1353,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
                 let status = if active_skills.contains(&skill.name) {
                     "? Active".green().to_string()
                 } else {
-                    "?? Inactive".yellow().to_string()
+                    "❌ Inactive".yellow().to_string()
                 };
                 app_println!("  {} {} ({})", "Skill:".bold(), skill.name.cyan(), status);
                 if !skill.description.is_empty() {
@@ -1369,7 +1369,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
             if rest.is_empty() {
                 app_println!(
                     "{} Usage: /skill create <name> <description>",
-                    "??".yellow()
+                    "💡".yellow()
                 );
                 return Ok(());
             }
@@ -1380,7 +1380,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
             if name.is_empty() || description.is_empty() {
                 app_println!(
                     "{} Usage: /skill create <name> <description>",
-                    "??".yellow()
+                    "💡".yellow()
                 );
                 return Ok(());
             }
@@ -1411,7 +1411,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
             if rest.is_empty() {
                 app_println!(
                     "{} Usage: /skill update <path-to-SKILL.md>",
-                    "??".yellow()
+                    "💡".yellow()
                 );
                 return Ok(());
             }
@@ -1431,7 +1431,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
         }
         "delete" => {
             if rest.is_empty() {
-                app_println!("{} Usage: /skill delete <name>", "??".yellow());
+                app_println!("{} Usage: /skill delete <name>", "💡".yellow());
                 return Ok(());
             }
             agent.delete_skill(rest).await?;
@@ -1439,7 +1439,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
         }
         "deactivate" => {
             if rest.is_empty() {
-                app_println!("{} Usage: /skill deactivate <name>", "??".yellow());
+                app_println!("{} Usage: /skill deactivate <name>", "💡".yellow());
                 return Ok(());
             }
             agent.deactivate_skill(rest).await?;
@@ -1447,7 +1447,7 @@ async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()> {
         _ => {
             app_println!(
                 "{} Unknown /skill command. Use '/skill help' for options.",
-                "??".yellow()
+                "💡".yellow()
             );
         }
     }
