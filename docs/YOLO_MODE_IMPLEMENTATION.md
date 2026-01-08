@@ -25,7 +25,7 @@ flexorama --yolo
 echo "Create directory and files" | flexorama --yolo --non-interactive
 
 # Combined with other flags
-flexorama --yolo --stream -s "You are a system administrator" "Clean up the system"
+flexorama --yolo -s "You are a system administrator" "Clean up the system"
 ```
 
 ### 2. Security Bypass Implementation

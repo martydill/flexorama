@@ -244,9 +244,8 @@ pub fn print_help() {
     app_println!("  System prompts set the behavior and personality of the AI");
     app_println!();
     app_println!("{}", "Streaming:".green().bold());
-    app_println!("  Use --stream flag to enable streaming responses");
-    app_println!("  Streaming shows responses as they're generated (no spinner)");
-    app_println!("  Non-streaming shows a spinner and formats the complete response");
+    app_println!("  Streaming is the default for all CLI modes");
+    app_println!("  Use --no-stream to disable streaming (spinner + formatted response)");
     app_println!();
     app_println!("{}", "Plan Mode:".green().bold());
     app_println!("  Use --plan-mode to generate a read-only plan in Markdown");
@@ -259,7 +258,8 @@ pub fn print_help() {
     app_println!("  flexorama \"@file1.txt @file2.txt\"  # Only adds context, no API call");
     app_println!("  flexorama -s \"You are a Rust expert\" \"Help me with this code\"");
     app_println!("  flexorama -s \"Act as a code reviewer\" -f main.rs \"Review this code\"");
-    app_println!("  flexorama --stream \"Tell me a story\"  # Stream the response");
+    app_println!("  flexorama \"Tell me a story\"  # Streaming by default");
+    app_println!("  flexorama --no-stream \"Tell me a story\"  # Disable streaming");
     app_println!("  flexorama --plan-mode \"Add Stripe billing\"  # Plan only, saves to DB");
     app_println!("  !dir                    # List directory contents");
     app_println!("  !git status             # Check git status");

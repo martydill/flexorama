@@ -23,7 +23,8 @@ Added streaming support for LLM responses to provide real-time feedback as respo
 - Handles both streaming and non-streaming modes seamlessly
 
 ### CLI (src/main.rs)
-- Added `--stream` flag to enable streaming responses
+- Streaming is the default for all CLI modes
+- Added `--no-stream` flag to disable streaming
 - Updated help text to include streaming information
 - Modified all modes (single message, non-interactive, interactive) to support streaming
 - Streaming mode prints content as it arrives without spinner
@@ -32,17 +33,17 @@ Added streaming support for LLM responses to provide real-time feedback as respo
 ## Usage Examples
 
 ```bash
-# Enable streaming for single message
-flexorama --stream -m "Tell me a story"
+# Streaming is default for single message
+flexorama -m "Tell me a story"
 
-# Enable streaming for stdin
-echo "Explain quantum computing" | flexorama --stream --non-interactive
+# Streaming is default for stdin
+echo "Explain quantum computing" | flexorama --non-interactive
 
-# Enable streaming in interactive mode
-flexorama --stream
+# Streaming is default in interactive mode
+flexorama
 
-# Regular non-streaming (default)
-flexorama -m "What's the weather like?"
+# Disable streaming
+flexorama --no-stream -m "What's the weather like?"
 ```
 
 ## Benefits
@@ -51,7 +52,7 @@ flexorama -m "What's the weather like?"
 2. **Reduced Perceived Latency**: No waiting for complete response
 3. **Better UX**: Immediate visual feedback that the system is working
 4. **Backward Compatibility**: Existing functionality unchanged
-5. **Flexible**: Can be enabled per-request via command line flag
+5. **Flexible**: Can be disabled per-request via `--no-stream`
 
 ## Technical Details
 

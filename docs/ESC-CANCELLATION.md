@@ -55,7 +55,7 @@ flexorama -m "Generate a complete Rust application with multiple modules"
 
 ```bash
 # Start streaming response
-flexorama --stream -m "Explain quantum computing in detail"
+flexorama -m "Explain quantum computing in detail"
 
 # Press ESC during streaming to cancel
 # Output: 🛑 Cancelling AI conversation...
@@ -176,7 +176,7 @@ flexorama
 # Verify cancellation message and continued operation
 
 # Test streaming cancellation
-flexorama --stream
+flexorama
 > Explain quantum physics
 [Press ESC during streaming]
 # Verify immediate cancellation

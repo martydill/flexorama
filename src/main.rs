@@ -2410,9 +2410,9 @@ struct Cli {
     #[arg(short = 's', long = "system", value_name = "PROMPT")]
     system_prompt: Option<String>,
 
-    /// Enable streaming responses
-    #[arg(long)]
-    stream: bool,
+    /// Disable streaming responses
+    #[arg(long = "no-stream")]
+    no_stream: bool,
 
     /// Enable 'yolo' mode - bypass all permission checks for file and tool operations
     #[arg(long)]
@@ -2436,6 +2436,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web;
+    let stream = if cli.no_stream { false } else { true };
 
     // Create code formatter early so TUI can render input/output immediately
     let formatter = create_code_formatter()?;
@@ -2728,7 +2729,7 @@ async fn main() -> Result<()> {
         app_println!("> {}", highlighted_message);
 
         // Single message mode
-        if cli.stream {
+        if stream {
             let cancellation_flag = Arc::new(AtomicBool::new(false));
             let (streaming_state, stream_callback) = create_streaming_renderer(&formatter);
             let response = agent
@@ -2765,7 +2766,7 @@ async fn main() -> Result<()> {
         app_println!("> {}", highlighted_input);
 
         let cancellation_flag = Arc::new(AtomicBool::new(false));
-        if cli.stream {
+        if stream {
             let (streaming_state, stream_callback) = create_streaming_renderer(&formatter);
             let response = agent
                 .process_message_with_stream(
@@ -2798,7 +2799,7 @@ async fn main() -> Result<()> {
                 &mut agent,
                 &mcp_manager,
                 &formatter,
-                cli.stream,
+                stream,
                 cli.plan_mode,
             )
             .await?;

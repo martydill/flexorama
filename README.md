@@ -63,13 +63,14 @@ Supported env vars:
 - ANTHROPIC_AUTH_TOKEN
 
 ### CLI version
-```cargo run -- --stream --provider <provider>```
+```cargo run -- --provider <provider>```
+
 
 ### Web version
 ```cargo run -- --web --provider <provider>```
 
 ### Example
-```cargo run -- --stream --provider openai --api-key ABCDasdfxxx...```
+```cargo run -- --provider openai --api-key ABCDasdfxxx...```
 
 
 ## License
