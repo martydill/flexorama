@@ -42,7 +42,7 @@ impl SubagentManager {
     pub fn new() -> Result<Self> {
         let agents_dir = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".aixplosion")
+            .join(".flexorama")
             .join("agents");
         Self::new_with_dir(agents_dir)
     }

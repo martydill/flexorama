@@ -2,7 +2,7 @@
 
 ## Implementation Summary
 
-I've successfully added a `/context` command to your AIxplosion that displays the current conversation context. Here's what was implemented:
+I've successfully added a `/context` command to your Flexorama that displays the current conversation context. Here's what was implemented:
 
 ### Changes Made
 
@@ -35,7 +35,7 @@ I've successfully added a `/context` command to your AIxplosion that displays th
 
 ```bash
 # Start interactive mode
-aixplosion
+flexorama
 
 # Use the /context command
 > /context
@@ -51,10 +51,10 @@ aixplosion
 ──────────────────────────────────────────────────
 
 [1] USER: (1 content blocks)
-  └─ Block 1: Text: Context from file 'AGENTS.md': # AIxplosions Documentation This file contains...
+  └─ Block 1: Text: Context from file 'AGENTS.md': # Flexoramas Documentation This file contains...
 
 [2] ASSISTANT: (1 content blocks)
-  └─ Block 1: Text: I can see you have an AIxplosions documentation file. This appears to be...
+  └─ Block 1: Text: I can see you have an Flexoramas documentation file. This appears to be...
 
 ──────────────────────────────────────────────────
 Summary: 2 messages, 2 total content blocks

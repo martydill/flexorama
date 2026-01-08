@@ -33,16 +33,16 @@ Added streaming support for LLM responses to provide real-time feedback as respo
 
 ```bash
 # Enable streaming for single message
-aixplosion --stream -m "Tell me a story"
+flexorama --stream -m "Tell me a story"
 
 # Enable streaming for stdin
-echo "Explain quantum computing" | aixplosion --stream --non-interactive
+echo "Explain quantum computing" | flexorama --stream --non-interactive
 
 # Enable streaming in interactive mode
-aixplosion --stream
+flexorama --stream
 
 # Regular non-streaming (default)
-aixplosion -m "What's the weather like?"
+flexorama -m "What's the weather like?"
 ```
 
 ## Benefits

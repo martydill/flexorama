@@ -57,22 +57,22 @@ function getChartDefaults() {
 
 const state = {
   conversations: [],
-  activeConversationId: localStorage.getItem("aixplosion-active-conversation"),
+  activeConversationId: localStorage.getItem("flexorama-active-conversation"),
   plans: [],
-  activePlanId: localStorage.getItem("aixplosion-active-plan"),
+  activePlanId: localStorage.getItem("flexorama-active-plan"),
   mcpServers: [],
-  activeServer: localStorage.getItem("aixplosion-active-mcp"),
+  activeServer: localStorage.getItem("flexorama-active-mcp"),
   agents: [],
   activeAgent: null,
-  activeAgentEditing: localStorage.getItem("aixplosion-active-agent-edit"),
+  activeAgentEditing: localStorage.getItem("flexorama-active-agent-edit"),
   skills: [],
-  activeSkillEditing: localStorage.getItem("aixplosion-active-skill-edit"),
+  activeSkillEditing: localStorage.getItem("flexorama-active-skill-edit"),
   provider: null,
   models: [],
   activeModel: null,
   theme: "dark",
   activeTab: "chats",
-  streaming: localStorage.getItem("aixplosion-stream") === "true",
+  streaming: localStorage.getItem("flexorama-stream") === "true",
   planMode: false,
   pendingPermissions: new Set(),
   statsCharts: {
@@ -93,15 +93,15 @@ const state = {
     conversationsByProvider: null,
     conversationsBySubagent: null,
   },
-  statsPeriod: localStorage.getItem("aixplosion-stats-period") || "month",
-  lastNonCustomPeriod: localStorage.getItem("aixplosion-stats-last-period") || "month",
+  statsPeriod: localStorage.getItem("flexorama-stats-period") || "month",
+  lastNonCustomPeriod: localStorage.getItem("flexorama-stats-last-period") || "month",
   statsStartDate: null,
   statsEndDate: null,
 };
 
 function setPlanForm(plan) {
   state.activePlanId = plan.id;
-  localStorage.setItem("aixplosion-active-plan", String(plan.id));
+  localStorage.setItem("flexorama-active-plan", String(plan.id));
   document.getElementById("plan-title").value = plan.title || "";
   document.getElementById("plan-user-request").value = plan.user_request || "";
   document.getElementById("plan-markdown").value = plan.plan_markdown || "";
@@ -121,7 +121,7 @@ function applyTheme(theme) {
     btn.title = theme === "light" ? "Switch to dark mode" : "Switch to light mode";
     btn.setAttribute("aria-label", btn.title);
   }
-  localStorage.setItem("aixplosion-theme", theme);
+  localStorage.setItem("flexorama-theme", theme);
 
   // Update stats charts if on stats tab
   if (state.activeTab === "stats" && state.statsData.overview) {
@@ -732,7 +732,7 @@ async function loadConversations() {
 
 async function selectConversation(id) {
   state.activeConversationId = id;
-  localStorage.setItem("aixplosion-active-conversation", String(id));
+  localStorage.setItem("flexorama-active-conversation", String(id));
   state.pendingPermissions.clear();
   renderConversationList();
   setStatus("Loading conversation...");
@@ -963,7 +963,7 @@ function updateConversationPreview(id, lastMessage) {
 
 function resetPlanForm() {
   state.activePlanId = null;
-  localStorage.removeItem("aixplosion-active-plan");
+  localStorage.removeItem("flexorama-active-plan");
   document.getElementById("plan-title").value = "";
   document.getElementById("plan-user-request").value = "";
   document.getElementById("plan-markdown").value = "";
@@ -971,7 +971,7 @@ function resetPlanForm() {
 
 function resetMcpForm() {
   state.activeServer = null;
-  localStorage.removeItem("aixplosion-active-mcp");
+  localStorage.removeItem("flexorama-active-mcp");
   document.getElementById("mcp-name").value = "";
   document.getElementById("mcp-command").value = "";
   document.getElementById("mcp-args").value = "";
@@ -990,7 +990,7 @@ function setMcpForm(server) {
     return;
   }
   state.activeServer = server.name;
-  localStorage.setItem("aixplosion-active-mcp", server.name);
+  localStorage.setItem("flexorama-active-mcp", server.name);
   document.getElementById("mcp-name").value = server.name;
   document.getElementById("mcp-command").value = server.config.command || "";
   document.getElementById("mcp-args").value = (server.config.args || []).join(" ");
@@ -1025,7 +1025,7 @@ async function createPlan() {
   };
   const res = await api("/api/plans", { method: "POST", body: payload });
   state.activePlanId = res.id;
-  localStorage.setItem("aixplosion-active-plan", String(res.id));
+  localStorage.setItem("flexorama-active-plan", String(res.id));
   await loadPlans();
 }
 
@@ -1133,7 +1133,7 @@ function renderAgents() {
 
 function resetAgentForm() {
   state.activeAgentEditing = null;
-  localStorage.removeItem("aixplosion-active-agent-edit");
+  localStorage.removeItem("flexorama-active-agent-edit");
   document.getElementById("agent-name").value = "";
   document.getElementById("agent-model").value = "";
   document.getElementById("agent-temp").value = "";
@@ -1148,7 +1148,7 @@ function resetAgentForm() {
 
 function setAgentForm(agent) {
   state.activeAgentEditing = agent.name;
-  localStorage.setItem("aixplosion-active-agent-edit", agent.name);
+  localStorage.setItem("flexorama-active-agent-edit", agent.name);
   document.getElementById("agent-name").value = agent.name;
   document.getElementById("agent-model").value = agent.model || "";
   document.getElementById("agent-temp").value = agent.temperature ?? "";
@@ -1301,7 +1301,7 @@ function renderSkills() {
 
 function resetSkillForm() {
   state.activeSkillEditing = null;
-  localStorage.removeItem("aixplosion-active-skill-edit");
+  localStorage.removeItem("flexorama-active-skill-edit");
   document.getElementById("skill-name").value = "";
   document.getElementById("skill-description").value = "";
   document.getElementById("skill-model").value = "";
@@ -1321,7 +1321,7 @@ function resetSkillForm() {
 
 function setSkillForm(skill) {
   state.activeSkillEditing = skill.name;
-  localStorage.setItem("aixplosion-active-skill-edit", skill.name);
+  localStorage.setItem("flexorama-active-skill-edit", skill.name);
   document.getElementById("skill-name").value = skill.name;
   document.getElementById("skill-description").value = skill.description || "";
   document.getElementById("skill-model").value = skill.model || "";
@@ -1493,30 +1493,30 @@ function renderModelSelector() {
 }
 
 async function restoreSelections() {
-  const savedConv = localStorage.getItem("aixplosion-active-conversation");
+  const savedConv = localStorage.getItem("flexorama-active-conversation");
   if (savedConv && state.conversations.some((c) => String(c.id) === String(savedConv))) {
     await selectConversation(savedConv);
   }
 
-  const savedPlan = localStorage.getItem("aixplosion-active-plan");
+  const savedPlan = localStorage.getItem("flexorama-active-plan");
   const planMatch = savedPlan && state.plans.find((p) => String(p.id) === String(savedPlan));
   if (planMatch) {
     setPlanForm(planMatch);
   }
 
-  const savedMcp = localStorage.getItem("aixplosion-active-mcp");
+  const savedMcp = localStorage.getItem("flexorama-active-mcp");
   const mcpMatch = savedMcp && state.mcpServers.find((s) => s.name === savedMcp);
   if (mcpMatch) {
     setMcpForm(mcpMatch);
   }
 
-  const savedAgentEdit = localStorage.getItem("aixplosion-active-agent-edit");
+  const savedAgentEdit = localStorage.getItem("flexorama-active-agent-edit");
   const agentMatch = savedAgentEdit && state.agents.find((a) => a.name === savedAgentEdit);
   if (agentMatch) {
     setAgentForm(agentMatch);
   }
 
-  const savedSkillEdit = localStorage.getItem("aixplosion-active-skill-edit");
+  const savedSkillEdit = localStorage.getItem("flexorama-active-skill-edit");
   const skillMatch = savedSkillEdit && state.skills.find((s) => s.name === savedSkillEdit);
   if (skillMatch) {
     setSkillForm(skillMatch);
@@ -1562,7 +1562,7 @@ function initTabs() {
 }
 
 function initTheme() {
-  const stored = localStorage.getItem("aixplosion-theme");
+  const stored = localStorage.getItem("flexorama-theme");
   const initial = stored === "light" || stored === "dark" ? stored : "dark";
   applyTheme(initial);
   const toggle = document.getElementById("mode-toggle");
@@ -1586,7 +1586,7 @@ function bindEvents() {
     streamToggle.checked = state.streaming;
     streamToggle.addEventListener("change", (e) => {
       state.streaming = e.target.checked;
-      localStorage.setItem("aixplosion-stream", String(state.streaming));
+      localStorage.setItem("flexorama-stream", String(state.streaming));
     });
   }
   document.getElementById("new-conversation").addEventListener("click", createConversation);
@@ -1681,7 +1681,7 @@ function bindEvents() {
     statsPeriodSelect.addEventListener("change", (e) => {
       const previousPeriod = state.statsPeriod;
       state.statsPeriod = e.target.value;
-      localStorage.setItem("aixplosion-stats-period", state.statsPeriod);
+      localStorage.setItem("flexorama-stats-period", state.statsPeriod);
 
       if (state.statsPeriod === "custom") {
         const basePeriod =
@@ -1690,7 +1690,7 @@ function bindEvents() {
         loadStats();
       } else {
         state.lastNonCustomPeriod = state.statsPeriod;
-        localStorage.setItem("aixplosion-stats-last-period", state.lastNonCustomPeriod);
+        localStorage.setItem("flexorama-stats-last-period", state.lastNonCustomPeriod);
         setCustomDatesFromPeriod(state.statsPeriod);
         loadStats();
       }
@@ -1702,7 +1702,7 @@ function bindEvents() {
       state.statsStartDate = e.target.value;
       if (state.statsPeriod !== "custom") {
         state.statsPeriod = "custom";
-        localStorage.setItem("aixplosion-stats-period", state.statsPeriod);
+        localStorage.setItem("flexorama-stats-period", state.statsPeriod);
         if (statsPeriodSelect) statsPeriodSelect.value = "custom";
       }
       if (state.statsStartDate && state.statsEndDate) loadStats();
@@ -1714,7 +1714,7 @@ function bindEvents() {
       state.statsEndDate = e.target.value;
       if (state.statsPeriod !== "custom") {
         state.statsPeriod = "custom";
-        localStorage.setItem("aixplosion-stats-period", state.statsPeriod);
+        localStorage.setItem("flexorama-stats-period", state.statsPeriod);
         if (statsPeriodSelect) statsPeriodSelect.value = "custom";
       }
       if (state.statsStartDate && state.statsEndDate) loadStats();

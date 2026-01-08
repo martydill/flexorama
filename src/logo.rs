@@ -1,17 +1,17 @@
-/// ASCII art logo for aixplosion
-pub static AIXPLOSION_LOGO: &str = r#"
-     █████╗ ██╗██╗  ██╗██████╗ ██╗      ██████╗ ███████╗██╗ ██████╗ ███╗   ██╗
-    ██╔══██╗██║╚██╗██╔╝██╔══██╗██║     ██╔═══██╗██╔════╝██║██╔═══██╗████╗  ██║
-    ███████║██║ ╚███╔╝ ██████╔╝██║     ██║   ██║███████╗██║██║   ██║██╔██╗ ██║
-    ██╔══██║██║ ██╔██╗ ██╔═══╝ ██║     ██║   ██║╚════██║██║██║   ██║██║╚██╗██║
-    ██║  ██║██║██╔╝ ██╗██║     ███████╗╚██████╔╝███████║██║╚██████╔╝██║ ╚████║
-    ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+/// ASCII art logo for flexorama
+pub static FLEXORAMA_LOGO: &str = r#"
+    ███████╗██╗     ███████╗██╗  ██╗ ██████╗ ██████╗  █████╗ ███╗   ███╗ █████╗
+    ██╔════╝██║     ██╔════╝╚██╗██╔╝██╔═══██╗██╔══██╗██╔══██╗████╗ ████║██╔══██╗
+    █████╗  ██║     █████╗   ╚███╔╝ ██║   ██║██████╔╝███████║██╔████╔██║███████║
+    ██╔══╝  ██║     ██╔══╝   ██╔██╗ ██║   ██║██╔══██╗██╔══██║██║╚██╔╝██║██╔══██║
+    ██║     ███████╗███████╗██╔╝ ██╗╚██████╔╝██║  ██║██║  ██║██║ ╚═╝ ██║██║  ██║
+    ╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
 "#;
 
 /// Minimal logo for very small terminals
-pub static AIXPLOSION_LOGO_MINIMAL: &str = r#"
-    ▄▀█ █ ▀▄▀ █▀█ █   █▀█ █▀ █ █▀█ █▄ █
-    █▀█ █ █ █ █▀▀ █▄▄ █▄█ ▄█ █ █▄█ █ ▀█
+pub static FLEXORAMA_LOGO_MINIMAL: &str = r#"
+    █▀▀ █   █▀▀ ▀▄▀ █▀█ █▀█ ▄▀█ █▀▄▀█ ▄▀█
+    █▀  █▄▄ ██▄ █ █ █▄█ █▀▄ █▀█ █ ▀ █ █▀█
 "#;
 
 /// Function to get the appropriate logo based on terminal width
@@ -19,13 +19,13 @@ pub fn get_logo_for_terminal() -> &'static str {
     // Try to get terminal width
     if let Ok((width, _)) = crossterm::terminal::size() {
         if width >= 80 {
-            AIXPLOSION_LOGO
+            FLEXORAMA_LOGO
         } else {
-            AIXPLOSION_LOGO_MINIMAL
+            FLEXORAMA_LOGO_MINIMAL
         }
     } else {
         // Fallback to compact if we can't detect terminal size
-        AIXPLOSION_LOGO_MINIMAL
+        FLEXORAMA_LOGO_MINIMAL
     }
 }
 

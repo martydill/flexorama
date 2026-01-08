@@ -2,7 +2,7 @@
 
 ## Summary
 
-Successfully implemented a 5-line limit for all tool call output displays in the AIxplosion. This change affects both the pretty display mode (`ToolCallDisplay`) and simple display mode (`SimpleToolDisplay`).
+Successfully implemented a 5-line limit for all tool call output displays in the Flexorama. This change affects both the pretty display mode (`ToolCallDisplay`) and simple display mode (`SimpleToolDisplay`).
 
 ## Changes Made
 

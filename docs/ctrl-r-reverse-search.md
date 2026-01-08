@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ctrl+R reverse search feature provides readline-like reverse incremental search functionality for the AIxplosion interactive mode. This allows you to quickly search through your command history by typing a substring of a previous command.
+The Ctrl+R reverse search feature provides readline-like reverse incremental search functionality for the Flexorama interactive mode. This allows you to quickly search through your command history by typing a substring of a previous command.
 
 ## How to Use
 
@@ -55,7 +55,7 @@ The @file reference will be highlighted in blue.
 
 ## Integration with Existing Features
 
-The reverse search feature integrates seamlessly with existing AIxplosion features:
+The reverse search feature integrates seamlessly with existing Flexorama features:
 
 - **History Navigation**: Works alongside up/down arrow history navigation
 - **File Highlighting**: Maintains @file syntax highlighting in search results
@@ -137,7 +137,7 @@ Potential improvements for future versions:
 
 The feature includes comprehensive logging that can be enabled with:
 ```bash
-RUST_LOG=debug aixplosion
+RUST_LOG=debug flexorama
 ```
 
 This will show detailed information about search operations and state changes.

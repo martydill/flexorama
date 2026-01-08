@@ -48,17 +48,17 @@ if !response.is_empty() {
 
 ```bash
 # Single file
-aixplosion "@Cargo.toml"
+flexorama "@Cargo.toml"
 # Output: ✓ Added context file: Cargo.toml
 
 # Multiple files  
-aixplosion "@src/main.rs @src/lib.rs @README.md"
+flexorama "@src/main.rs @src/lib.rs @README.md"
 # Output: ✓ Added context file: src/main.rs
 #         ✓ Added context file: src/lib.rs  
 #         ✓ Added context file: README.md
 
 # Invalid file
-aixplosion "@nonexistent.txt"
+flexorama "@nonexistent.txt"
 # Output: ✗ Failed to add context file 'nonexistent.txt': [error message]
 ```
 
@@ -66,12 +66,12 @@ aixplosion "@nonexistent.txt"
 
 ```bash
 # File + question
-aixplosion "@Cargo.toml What is this project about?"
+flexorama "@Cargo.toml What is this project about?"
 # Output: ✓ Added context file: Cargo.toml
 #         [AI response about the project]
 
 # Mixed content
-aixplosion "@file1.txt Please explain this"
+flexorama "@file1.txt Please explain this"
 # Output: ✓ Added context file: file1.txt
 #         [AI response explaining the file]
 ```
@@ -96,7 +96,7 @@ aixplosion "@file1.txt Please explain this"
 ## Interactive Mode Workflow
 
 ```bash
-aixplosion
+flexorama
 > @package.json
 ✓ Added context file: package.json
 

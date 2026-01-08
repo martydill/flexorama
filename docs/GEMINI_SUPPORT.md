@@ -1,6 +1,6 @@
 # Gemini Provider Support
 
-AIxplosion can now use Google's Gemini API in addition to Anthropic. This guide covers how to switch providers and configure credentials.
+Flexorama can now use Google's Gemini API in addition to Anthropic. This guide covers how to switch providers and configure credentials.
 
 ## Configuration
 - Set the provider to `gemini` via `--provider gemini` or in your config file.
@@ -10,10 +10,10 @@ AIxplosion can now use Google's Gemini API in addition to Anthropic. This guide 
 
 Example CLI usage:
 ```
-aixplosion --provider gemini --model gemini-1.5-pro -m "hello"
+flexorama --provider gemini --model gemini-1.5-pro -m "hello"
 ```
 
-Example config excerpt (`~/.config/aixplosion/config.toml`):
+Example config excerpt (`~/.config/flexorama/config.toml`):
 ```toml
 provider = "gemini"
 base_url = "https://generativelanguage.googleapis.com/v1beta"

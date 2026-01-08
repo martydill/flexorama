@@ -1,7 +1,7 @@
 # Context Files Feature
 
 ## Overview
-The AIxplosion now supports adding files as context to provide additional information to the AI during conversations.
+The Flexorama now supports adding files as context to provide additional information to the AI during conversations.
 
 ## Usage
 
@@ -16,13 +16,13 @@ The AIxplosion now supports adding files as context to provide additional inform
 
 ```bash
 # Add specific files as context
-aixplosion -f README.md -f config.toml -m "Explain the project structure"
+flexorama -f README.md -f config.toml -m "Explain the project structure"
 
 # AGENTS.md will be automatically added if it exists
-aixplosion -m "What agents are available?"
+flexorama -m "What agents are available?"
 
 # Multiple context files
-aixplosion -f docs/api.md -f examples/sample.rs -m "Show me how to use the API"
+flexorama -f docs/api.md -f examples/sample.rs -m "Show me how to use the API"
 ```
 
 ## Implementation Details

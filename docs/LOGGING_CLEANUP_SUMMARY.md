@@ -68,13 +68,13 @@ All tool functions now use debug-level logging:
 If you need to see the detailed logging for troubleshooting:
 
 ```bash
-RUST_LOG=debug aixplosion [your-arguments]
+RUST_LOG=debug flexorama [your-arguments]
 ```
 
 Or set environment variable:
 ```bash
 export RUST_LOG=debug
-aixplosion [your-arguments]
+flexorama [your-arguments]
 ```
 
 ## Summary

@@ -2,7 +2,7 @@
 
 ## Overview
 
-YOLO (You Only Live Once) mode is a security bypass feature that allows the AIxplosion to execute file operations and bash commands without any security checks or permission prompts. This is useful for trusted environments where security restrictions would be overly burdensome.
+YOLO (You Only Live Once) mode is a security bypass feature that allows the Flexorama to execute file operations and bash commands without any security checks or permission prompts. This is useful for trusted environments where security restrictions would be overly burdensome.
 
 ## Implementation Details
 
@@ -16,16 +16,16 @@ YOLO (You Only Live Once) mode is a security bypass feature that allows the AIxp
 **Usage Examples:**
 ```bash
 # Single message with YOLO mode
-aixplosion --yolo -m "Delete all temporary files"
+flexorama --yolo -m "Delete all temporary files"
 
 # Interactive mode with YOLO mode  
-aixplosion --yolo
+flexorama --yolo
 
 # Non-interactive with YOLO mode
-echo "Create directory and files" | aixplosion --yolo --non-interactive
+echo "Create directory and files" | flexorama --yolo --non-interactive
 
 # Combined with other flags
-aixplosion --yolo --stream -s "You are a system administrator" "Clean up the system"
+flexorama --yolo --stream -s "You are a system administrator" "Clean up the system"
 ```
 
 ### 2. Security Bypass Implementation
@@ -145,28 +145,28 @@ aixplosion --yolo --stream -s "You are a system administrator" "Clean up the sys
 #### ✅ Appropriate Use Cases
 ```bash
 # Development environment cleanup
-aixplosion --yolo -m "Clean up all build artifacts and temporary files"
+flexorama --yolo -m "Clean up all build artifacts and temporary files"
 
 # Automated scripts in controlled environments
-aixplosion --yolo --non-interactive < cleanup_commands.txt
+flexorama --yolo --non-interactive < cleanup_commands.txt
 
 # Trusted system administration tasks
-aixplosion --yolo -s "You are a sysadmin" "Set up development environment"
+flexorama --yolo -s "You are a sysadmin" "Set up development environment"
 
 # Bulk file operations in trusted directories
-aixplosion --yolo -m "Reorganize project files according to new structure"
+flexorama --yolo -m "Reorganize project files according to new structure"
 ```
 
 #### ❌ Inappropriate Use Cases
 ```bash
 # NEVER with untrusted inputs or prompts
-aixplosion --yolo -m "Execute this user-provided command: ${USER_INPUT}"
+flexorama --yolo -m "Execute this user-provided command: ${USER_INPUT}"
 
 # NEVER in production environments
-aixplosion --yolo -m "Deploy to production servers"
+flexorama --yolo -m "Deploy to production servers"
 
 # NEVER with external APIs or untrusted data
-curl untrusted-api.com | aixplosion --yolo --non-interactive
+curl untrusted-api.com | flexorama --yolo --non-interactive
 ```
 
 ## Testing YOLO Mode
@@ -175,20 +175,20 @@ curl untrusted-api.com | aixplosion --yolo --non-interactive
 
 ```bash
 # Test 1: Verify YOLO mode indicator appears
-aixplosion --yolo --help
+flexorama --yolo --help
 
 # Test 2: File operations without security prompts
-aixplosion --yolo -m "Create a test file called yolo_test.txt with content 'YOLO mode works!'"
+flexorama --yolo -m "Create a test file called yolo_test.txt with content 'YOLO mode works!'"
 
 # Test 3: Dangerous bash commands without prompts  
-aixplosion --yolo -m "Delete all .tmp files in current directory"
+flexorama --yolo -m "Delete all .tmp files in current directory"
 
 # Test 4: Multiple operations in sequence
-aixplosion --yolo -m "Create directory, create files inside, then delete them all"
+flexorama --yolo -m "Create directory, create files inside, then delete them all"
 
 # Test 5: Compare with regular mode
-aixplosion -m "Try to delete system files"  # Should be blocked
-aixplosion --yolo -m "Try to delete system files"  # Should proceed (DANGEROUS!)
+flexorama -m "Try to delete system files"  # Should be blocked
+flexorama --yolo -m "Try to delete system files"  # Should proceed (DANGEROUS!)
 ```
 
 ### Expected Behavior

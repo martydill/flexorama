@@ -1,8 +1,8 @@
-# AIxplosion - MCP Support Implementation
+# Flexorama - MCP Support Implementation
 
 ## Summary
 
-I have successfully added comprehensive MCP (Model Context Protocol) support to your AIxplosion tool. This implementation includes both local stdio server support and remote WebSocket server support, with full management capabilities through interactive commands.
+I have successfully added comprehensive MCP (Model Context Protocol) support to your Flexorama tool. This implementation includes both local stdio server support and remote WebSocket server support, with full management capabilities through interactive commands.
 
 ## What Was Added
 
@@ -54,13 +54,13 @@ A complete MCP implementation including:
 2. **WebSocket Servers**: Connect via WebSocket (for remote services)
 
 ### Configuration
-- Servers configured in `~/.config/aixplosion/mcp.toml`
+- Servers configured in `~/.config/flexorama/mcp.toml`
 - Persistent configuration across sessions
 - Enable/disable servers as needed
 
 ### Tool Integration
 - Automatic tool discovery from connected servers
-- Tools appear as normal tools to the AIxplosion
+- Tools appear as normal tools to the Flexorama
 - Real-time updates when servers connect/disconnect
 - Error handling for failed tool calls
 

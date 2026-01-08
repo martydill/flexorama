@@ -1,10 +1,10 @@
 # MCP (Model Context Protocol) Support
 
-This document describes the MCP (Model Context Protocol) support added to the AIxplosion tool.
+This document describes the MCP (Model Context Protocol) support added to the Flexorama tool.
 
 ## Overview
 
-MCP allows the AIxplosion to connect to external servers that provide additional tools and capabilities. This enables the agent to interact with external services, databases, APIs, and more through a standardized protocol.
+MCP allows the Flexorama to connect to external servers that provide additional tools and capabilities. This enables the agent to interact with external services, databases, APIs, and more through a standardized protocol.
 
 ## Features
 
@@ -62,7 +62,7 @@ MCP allows the AIxplosion to connect to external servers that provide additional
 
 ### Configuration
 
-MCP servers are configured in `~/.config/aixplosion/mcp.toml`:
+MCP servers are configured in `~/.config/flexorama/mcp.toml`:
 
 ```toml
 [servers.filesystem]
@@ -156,7 +156,7 @@ enabled = false
 Enable debug logging to see MCP communication:
 
 ```bash
-RUST_LOG=debug aixplosion
+RUST_LOG=debug flexorama
 ```
 
 ### Server Status

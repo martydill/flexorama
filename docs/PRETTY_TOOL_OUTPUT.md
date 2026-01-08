@@ -2,7 +2,7 @@
 
 ## Overview
 
-I've successfully implemented pretty tool call output for your AIxplosion project! This enhancement provides beautiful, informative displays when tools are executed, with progress indicators, formatted results, and timing information.
+I've successfully implemented pretty tool call output for your Flexorama project! This enhancement provides beautiful, informative displays when tools are executed, with progress indicators, formatted results, and timing information.
 
 ## What Was Added
 
@@ -123,19 +123,19 @@ Each tool type shows relevant information:
 
 ## Usage
 
-The pretty output is automatic - no configuration needed! When you run your AIxplosion and it executes tools, you'll see the enhanced display immediately.
+The pretty output is automatic - no configuration needed! When you run your Flexorama and it executes tools, you'll see the enhanced display immediately.
 
 ### Examples
 
 ```bash
 # Interactive mode - will show pretty output
-aixplosion
+flexorama
 
 # Single message - will show pretty output
-aixplosion -m "Read the file @config.toml"
+flexorama -m "Read the file @config.toml"
 
 # Piped output - will use simple text format
-aixplosion -m "List files" | tee tools.log
+flexorama -m "List files" | tee tools.log
 ```
 
 ## Implementation Details
@@ -173,4 +173,4 @@ The implementation handles edge cases gracefully:
 
 ---
 
-**Result**: Your AIxplosion now provides beautiful, informative output when making tool calls, greatly enhancing the user experience and making tool execution much more transparent and professional! 🎉
+**Result**: Your Flexorama now provides beautiful, informative output when making tool calls, greatly enhancing the user experience and making tool execution much more transparent and professional! 🎉

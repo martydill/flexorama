@@ -2,7 +2,7 @@
 
 ## ✅ Implementation Complete
 
-The `/clear` command has been successfully implemented and integrated into the AIxplosion.
+The `/clear` command has been successfully implemented and integrated into the Flexorama.
 
 ## 📋 What Was Done
 
@@ -60,12 +60,12 @@ pub async fn clear_conversation_keep_agents_md(&mut self) -> Result<()>
 
 ```bash
 # Interactive mode
-aixplosion
+flexorama
 > /clear
 🧹 Conversation context cleared! (AGENTS.md preserved if it existed)
 
 # View help
-aixplosion
+flexorama
 > /help
   /clear        - Clear all conversation context (keeps AGENTS.md if it exists)
 ```

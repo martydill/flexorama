@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AIxplosion agent now supports cancelling ongoing AI conversations using the ESC key. This feature provides users with immediate control over long-running AI responses and tool executions.
+The Flexorama agent now supports cancelling ongoing AI conversations using the ESC key. This feature provides users with immediate control over long-running AI responses and tool executions.
 
 ## How It Works
 
@@ -29,7 +29,7 @@ The AIxplosion agent now supports cancelling ongoing AI conversations using the 
 
 ```bash
 # Start interactive mode
-aixplosion
+flexorama
 
 # Send a message that might take a while
 > Write a comprehensive analysis of machine learning algorithms
@@ -45,7 +45,7 @@ aixplosion
 
 ```bash
 # Start a long-running request
-aixplosion -m "Generate a complete Rust application with multiple modules"
+flexorama -m "Generate a complete Rust application with multiple modules"
 
 # Press ESC during processing to cancel
 # Output: 🛑 AI conversation cancelled by user
@@ -55,7 +55,7 @@ aixplosion -m "Generate a complete Rust application with multiple modules"
 
 ```bash
 # Start streaming response
-aixplosion --stream -m "Explain quantum computing in detail"
+flexorama --stream -m "Explain quantum computing in detail"
 
 # Press ESC during streaming to cancel
 # Output: 🛑 Cancelling AI conversation...
@@ -170,13 +170,13 @@ When a conversation is cancelled, the system:
 
 ```bash
 # Test basic cancellation
-aixplosion
+flexorama
 > Tell me a long story
 [Press ESC]
 # Verify cancellation message and continued operation
 
 # Test streaming cancellation
-aixplosion --stream
+flexorama --stream
 > Explain quantum physics
 [Press ESC during streaming]
 # Verify immediate cancellation

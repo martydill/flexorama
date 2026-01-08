@@ -1,6 +1,6 @@
-# AIxplosions Documentation
+# Flexoramas Documentation
 
-This file contains documentation about the available AIxplosions in this project.
+This file contains documentation about the available Flexoramas in this project.
 
 ## Agent Configuration
 
@@ -11,7 +11,7 @@ This file contains documentation about the available AIxplosions in this project
 
 ### Agent Capabilities
 
-The AIxplosion supports the following features:
+The Flexorama supports the following features:
 
 1. **Interactive Mode**: Chat with the AI in a terminal interface
 2. **Single Message Mode**: Send a single message and get a response
@@ -39,41 +39,41 @@ The AIxplosion supports the following features:
 
 ```bash
 # Interactive mode
-aixplosion
+flexorama
 
 # Single message
-aixplosion -m "Hello, how are you?"
+flexorama -m "Hello, how are you?"
 
 # Read from stdin
-echo "Help me understand this code" | aixplosion --non-interactive
+echo "Help me understand this code" | flexorama --non-interactive
 
 # With API key via command line
-aixplosion -k "your-api-key" -m "Your message here"
+flexorama -k "your-api-key" -m "Your message here"
 
 # With API key from environment variable (RECOMMENDED)
 export ANTHROPIC_AUTH_TOKEN="your-api-key"
-aixplosion -m "Your message here"
+flexorama -m "Your message here"
 
 # With context files
-aixplosion -f config.toml -f Cargo.toml "Explain this project"
+flexorama -f config.toml -f Cargo.toml "Explain this project"
 
 # Using @file syntax (NEW!)
-aixplosion "What does @Cargo.toml contain?"
-aixplosion "Compare @src/main.rs and @src/lib.rs"
-aixplosion "@file1.txt @file2.txt"
+flexorama "What does @Cargo.toml contain?"
+flexorama "Compare @src/main.rs and @src/lib.rs"
+flexorama "@file1.txt @file2.txt"
 
 # With system prompts (NEW!)
-aixplosion -s "You are a Rust expert" "Help me with this code"
-aixplosion -s "Act as a code reviewer" -f main.rs "Review this code"
-aixplosion -s "You are a helpful assistant" "Explain this concept"
+flexorama -s "You are a Rust expert" "Help me with this code"
+flexorama -s "Act as a code reviewer" -f main.rs "Review this code"
+flexorama -s "You are a helpful assistant" "Explain this concept"
 
 # With streaming support (NEW!)
-aixplosion --stream -m "Tell me a story"
-aixplosion --stream --non-interactive < input.txt
-aixplosion --stream  # Interactive mode with streaming
+flexorama --stream -m "Tell me a story"
+flexorama --stream --non-interactive < input.txt
+flexorama --stream  # Interactive mode with streaming
 
 # Interactive mode examples
-aixplosion
+flexorama
 > !dir                    # List directory contents
 > !git status             # Check git status
 > !cargo build            # Build the project
@@ -84,7 +84,7 @@ aixplosion
 
 ### Web App
 
-- Launch with `aixplosion --web [--web-port 3000]` (or `cargo run -- --web ...`) to start the local UI at `http://127.0.0.1:<port>`; when `--web` is supplied, `-m/--message` and `--non-interactive` flags are ignored.
+- Launch with `flexorama --web [--web-port 3000]` (or `cargo run -- --web ...`) to start the local UI at `http://127.0.0.1:<port>`; when `--web` is supplied, `-m/--message` and `--non-interactive` flags are ignored.
 - Chats tab lists conversations, supports message sending with streaming on/off, lets you switch the active agent from the dropdown, and includes a context modal showing files, the system prompt, and recent messages.
 - Plans tab lists, creates, edits, and deletes plans (title, user request, markdown) that stay tied to a conversation.
 - MCP Servers tab manages command- or WebSocket-based servers with args, env pairs, enabled flag, and connect/disconnect actions, and shows status per server.
@@ -99,16 +99,16 @@ System prompts allow you to control the AI's behavior, personality, and response
 
 ```bash
 # Set the AI to act as a specific expert
-aixplosion -s "You are a senior Rust developer with 10 years of experience" "Review this code"
+flexorama -s "You are a senior Rust developer with 10 years of experience" "Review this code"
 
 # Set a specific response style
-aixplosion -s "Respond in a concise, technical manner" "Explain distributed systems"
+flexorama -s "Respond in a concise, technical manner" "Explain distributed systems"
 
 # Set a specific context or role
-aixplosion -s "You are a code reviewer. Focus on security, performance, and maintainability" -f app.rs "Review this file"
+flexorama -s "You are a code reviewer. Focus on security, performance, and maintainability" -f app.rs "Review this file"
 
 # Multiple instructions
-aixplosion -s "You are a helpful coding assistant. Always provide code examples and explain your reasoning" "How do I implement a binary tree in Rust?"
+flexorama -s "You are a helpful coding assistant. Always provide code examples and explain your reasoning" "How do I implement a binary tree in Rust?"
 ```
 
 #### When to Use System Prompts
@@ -128,16 +128,16 @@ The agent can automatically execute shell commands when you ask it to:
 
 ```bash
 # List files in current directory
-aixplosion "List the files in the current directory"
+flexorama "List the files in the current directory"
 
 # Check git status
-aixplosion "Check the git status"
+flexorama "Check the git status"
 
 # Run tests
-aixplosion "Run tests and show me the results"
+flexorama "Run tests and show me the results"
 
 # Execute multiple commands
-aixplosion "Check the current branch and run the build process"
+flexorama "Check the current branch and run the build process"
 ```
 
 #### 2. Direct Shell Commands (!)
@@ -145,7 +145,7 @@ In interactive mode, you can use `!` commands to execute shell commands directly
 
 ```bash
 # Start interactive mode
-aixplosion
+flexorama
 
 # Then use shell commands directly
 > !dir
@@ -182,7 +182,7 @@ The agent can be configured via:
 2. **Command Line**:
    - `-k` or `--api-key`: Set API key via command line
 
-3. **Config File**: Located at `~/.config/aixplosion/config.toml` (API keys are excluded for security)
+3. **Config File**: Located at `~/.config/flexorama/config.toml` (API keys are excluded for security)
 
 ⚠️ **Security Note**: API keys are **never** stored in config files for security reasons. Always use environment variables or command line flags.
 
@@ -212,16 +212,16 @@ The agent supports multiple ways to include files as context:
 #### @file Syntax Examples
 ```bash
 # Single file
-aixplosion "What does @config.toml contain?"
+flexorama "What does @config.toml contain?"
 
 # Multiple files
-aixplosion "Compare @file1.rs and @file2.rs"
+flexorama "Compare @file1.rs and @file2.rs"
 
 # File with question
-aixplosion "Explain the Rust code in @src/main.rs"
+flexorama "Explain the Rust code in @src/main.rs"
 
 # Only file references
-aixplosion "@file1.txt @file2.txt"
+flexorama "@file1.txt @file2.txt"
 ```
 
 ### Progress Spinner
@@ -251,17 +251,17 @@ The agent now supports streaming responses for real-time feedback as the AI gene
 #### Streaming Examples
 ```bash
 # Enable streaming for single message
-aixplosion --stream -m "Tell me a story"
+flexorama --stream -m "Tell me a story"
 
 # Enable streaming for stdin
-echo "Explain quantum computing" | aixplosion --stream --non-interactive
+echo "Explain quantum computing" | flexorama --stream --non-interactive
 
 # Enable streaming in interactive mode
-aixplosion --stream
+flexorama --stream
 
 # Compare streaming vs non-streaming
-aixplosion -m "What's the weather like?"  # Shows spinner, then formatted response
-aixplosion --stream -m "What's the weather like?"  # Shows real-time response
+flexorama -m "What's the weather like?"  # Shows spinner, then formatted response
+flexorama --stream -m "What's the weather like?"  # Shows real-time response
 ```
 
 #### When to Use Streaming
@@ -294,13 +294,13 @@ The agent supports cancelling ongoing AI conversations using the ESC key:
 #### Cancellation Examples
 ```bash
 # Start a long-running conversation
-aixplosion "Write a detailed analysis of quantum computing"
+flexorama "Write a detailed analysis of quantum computing"
 
 # Press ESC during processing to cancel
 # Output: 🛑 Cancelling AI conversation...
 
 # Continue with a new request
-aixplosion "What's the weather like today?"
+flexorama "What's the weather like today?"
 ```
 
 ### Slash Commands
@@ -390,16 +390,16 @@ Streaming can be enabled via:
 #### Streaming Configuration Examples
 ```bash
 # Per-request streaming
-aixplosion --stream -m "Your message"
+flexorama --stream -m "Your message"
 
 # Interactive mode with streaming
-aixplosion --stream
+flexorama --stream
 
 # Non-interactive with streaming
-cat input.txt | aixplosion --stream --non-interactive
+cat input.txt | flexorama --stream --non-interactive
 
 # Combine with other options
-aixplosion --stream -s "You are an expert" -f context.txt "Analyze this"
+flexorama --stream -s "You are an expert" -f context.txt "Analyze this"
 ```
 
 #### Rules

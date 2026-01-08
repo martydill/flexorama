@@ -2,7 +2,7 @@
 
 ## Summary
 
-Successfully updated your AIxplosion project to switch from `info` level logging to `debug` level logging. Now only actual LLM responses are output by default, while all internal processing messages are moved to debug logging.
+Successfully updated your Flexorama project to switch from `info` level logging to `debug` level logging. Now only actual LLM responses are output by default, while all internal processing messages are moved to debug logging.
 
 ## Key Changes Made
 
@@ -25,7 +25,7 @@ Successfully updated your AIxplosion project to switch from `info` level logging
 
 ### Before (Info Level - Verbose)
 ```
-INFO Starting AIxplosion with model: glm-4.6
+INFO Starting Flexorama with model: glm-4.6
 INFO Adding context file: config.toml
 INFO Processing user message: Hello
 INFO Auto-adding context file from @ syntax: Cargo.toml
@@ -41,10 +41,10 @@ Hello! How can I help you today?
 
 ### After (Debug Mode - Detailed)
 ```bash
-RUST_LOG=debug aixplosion -m "Hello"
+RUST_LOG=debug flexorama -m "Hello"
 ```
 ```
-DEBUG Starting AIxplosion with model: glm-4.6
+DEBUG Starting Flexorama with model: glm-4.6
 DEBUG Adding context file: config.toml
 DEBUG Processing user message: Hello
 DEBUG Auto-adding context file from @ syntax: Cargo.toml
@@ -58,25 +58,25 @@ Hello! How can I help you today?
 ### Normal Usage (Clean Output)
 ```bash
 # Single message - only shows LLM response
-aixplosion -m "What is the weather like?"
+flexorama -m "What is the weather like?"
 
 # Interactive mode - clean interface
-aixplosion
+flexorama
 
 # With context files - only LLM response shown
-aixplosion -f Cargo.toml "Explain this project"
+flexorama -f Cargo.toml "Explain this project"
 ```
 
 ### Debug Mode (Verbose Output)
 ```bash
 # Show all debug logs
-RUST_LOG=debug aixplosion -m "Hello"
+RUST_LOG=debug flexorama -m "Hello"
 
 # Show debug and above
-RUST_LOG=debug aixplosion
+RUST_LOG=debug flexorama
 
 # Show only warnings and errors
-RUST_LOG=warn aixplosion -m "Hello"
+RUST_LOG=warn flexorama -m "Hello"
 ```
 
 ## Files Modified
@@ -118,17 +118,17 @@ This will check:
 
 ### Default Usage (After Changes)
 ```bash
-$ aixplosion -m "What is 2+2?"
+$ flexorama -m "What is 2+2?"
 4
 
-$ aixplosion -f Cargo.toml "What is this project?"
-This is a Rust project that implements an AIxplosion CLI tool...
+$ flexorama -f Cargo.toml "What is this project?"
+This is a Rust project that implements an Flexorama CLI tool...
 ```
 
 ### Debug Usage (When Needed)
 ```bash
-$ RUST_LOG=debug aixplosion -m "What is 2+2?"
-DEBUG Starting AIxplosion with model: glm-4.6
+$ RUST_LOG=debug flexorama -m "What is 2+2?"
+DEBUG Starting Flexorama with model: glm-4.6
 DEBUG Processing user message: What is 2+2?
 DEBUG Sending API request to endpoint: https://api.anthropic.com/v1/messages
 DEBUG Successfully received response from API

@@ -177,7 +177,7 @@ async fn run_tui_interactive(
         .await;
 
     logo::display_logo();
-    app_println!("{}", "?? AIxplosion - Interactive Mode".green().bold());
+    app_println!("{}", "?? Flexorama - Interactive Mode".green().bold());
     if plan_mode {
         app_println!(
             "{}",
@@ -347,10 +347,10 @@ async fn run_tui_interactive(
 
 /// Check for and add context files
 async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> Result<()> {
-    // Always add AGENTS.md from ~/.aixplosion/ if it exists (priority)
+    // Always add AGENTS.md from ~/.flexorama/ if it exists (priority)
     let home_agents_md = get_home_agents_md_path();
     if home_agents_md.exists() {
-        debug!("Auto-adding AGENTS.md from ~/.aixplosion/ as context");
+        debug!("Auto-adding AGENTS.md from ~/.flexorama/ as context");
         match agent
             .add_context_file(home_agents_md.to_str().unwrap())
             .await
@@ -399,11 +399,11 @@ async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> Resul
     Ok(())
 }
 
-/// Get the path to AGENTS.md in the user's home .aixplosion directory
+/// Get the path to AGENTS.md in the user's home .flexorama directory
 fn get_home_agents_md_path() -> std::path::PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".aixplosion")
+        .join(".flexorama")
         .join("AGENTS.md")
 }
 
@@ -504,7 +504,7 @@ async fn handle_agent_command(
             {
                 Ok(_config) => {
                     app_println!("{} Created subagent: {}", "✅".green(), name.cyan());
-                    app_println!("  Config file: ~/.aixplosion/agents/{}.md", name);
+                    app_println!("  Config file: ~/.flexorama/agents/{}.md", name);
                 }
                 Err(e) => {
                     app_eprintln!("{} Failed to create subagent: {}", "✗".red(), e);
@@ -607,7 +607,7 @@ async fn handle_agent_command(
             let name = args[1];
             let file_path = dirs::home_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join(".aixplosion")
+                .join(".flexorama")
                 .join("agents")
                 .join(format!("{}.md", name));
 
@@ -2374,7 +2374,7 @@ async fn save_file_permissions_to_config(agent: &Agent) -> Result<()> {
 }
 
 #[derive(Parser)]
-#[command(name = "aixplosion")]
+#[command(name = "flexorama")]
 #[command(about = "A CLI coding agent with pluggable LLM providers")]
 #[command(version)]
 struct Cli {
@@ -2447,7 +2447,7 @@ async fn main() -> Result<()> {
 
     // Initialize logger
     output::init_logger(log::LevelFilter::Info);
-    debug!("Starting AIxplosion");
+    debug!("Starting Flexorama");
 
     // Display large red warning if yolo mode is enabled
     if cli.yolo {

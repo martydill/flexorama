@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use uuid::Uuid;
 
-/// Database manager for AIxplosion
+/// Database manager for Flexorama
 pub struct DatabaseManager {
     pool: SqlitePool,
     db_path: PathBuf,
@@ -1108,11 +1108,11 @@ pub fn get_database_path() -> Result<PathBuf> {
     let home_dir =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
 
-    // Create .aixplosion directory path
-    let aixplosion_dir = home_dir.join(".aixplosion");
+    // Create .flexorama directory path
+    let flexorama_dir = home_dir.join(".flexorama");
 
     // Create database file path
-    let db_path = aixplosion_dir.join(format!("{}.db", slug));
+    let db_path = flexorama_dir.join(format!("{}.db", slug));
 
     debug!(
         "Database path for directory '{}': {}",

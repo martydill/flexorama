@@ -7,7 +7,7 @@ This document tests the new context-only mode feature where messages containing 
 ### 1. Single File Reference
 
 ```bash
-aixplosion "@Cargo.toml"
+flexorama "@Cargo.toml"
 ```
 
 **Expected behavior:**
@@ -20,7 +20,7 @@ aixplosion "@Cargo.toml"
 ### 2. Multiple File References
 
 ```bash
-aixplosion "@src/main.rs @src/lib.rs @README.md"
+flexorama "@src/main.rs @src/lib.rs @README.md"
 ```
 
 **Expected behavior:**
@@ -32,7 +32,7 @@ aixplosion "@src/main.rs @src/lib.rs @README.md"
 ### 3. File Reference with Question
 
 ```bash
-aixplosion "@Cargo.toml What is this project about?"
+flexorama "@Cargo.toml What is this project about?"
 ```
 
 **Expected behavior:**
@@ -43,7 +43,7 @@ aixplosion "@Cargo.toml What is this project about?"
 ### 4. Mixed Content
 
 ```bash
-aixplosion "@file1.txt Some text here @file2.txt"
+flexorama "@file1.txt Some text here @file2.txt"
 ```
 
 **Expected behavior:**
@@ -54,7 +54,7 @@ aixplosion "@file1.txt Some text here @file2.txt"
 ### 5. File Reference with Only Whitespace
 
 ```bash
-aixplosion "@file1.txt    "
+flexorama "@file1.txt    "
 ```
 
 **Expected behavior:**
@@ -64,7 +64,7 @@ aixplosion "@file1.txt    "
 ### 6. Invalid File Reference
 
 ```bash
-aixplosion "@nonexistent.txt"
+flexorama "@nonexistent.txt"
 ```
 
 **Expected behavior:**
@@ -74,7 +74,7 @@ aixplosion "@nonexistent.txt"
 ### 7. Mixed Valid and Invalid Files
 
 ```bash
-aixplosion "@valid.txt @nonexistent.txt"
+flexorama "@valid.txt @nonexistent.txt"
 ```
 
 **Expected behavior:**
@@ -88,7 +88,7 @@ aixplosion "@valid.txt @nonexistent.txt"
 
 ```bash
 # Start interactive mode
-aixplosion
+flexorama
 
 # Add context files
 > @src/main.rs
@@ -130,7 +130,7 @@ Context from file '/path/to/src/main.rs':
 ### Context Only
 
 ```bash
-echo "@file1.txt @file2.txt" | aixplosion --non-interactive
+echo "@file1.txt @file2.txt" | flexorama --non-interactive
 ```
 
 **Expected behavior:**
@@ -141,7 +141,7 @@ echo "@file1.txt @file2.txt" | aixplosion --non-interactive
 ### Context with Question
 
 ```bash
-echo "@file1.txt @file2.txt What do these files do?" | aixplosion --non-interactive
+echo "@file1.txt @file2.txt What do these files do?" | flexorama --non-interactive
 ```
 
 **Expected behavior:**
@@ -154,7 +154,7 @@ echo "@file1.txt @file2.txt What do these files do?" | aixplosion --non-interact
 ### Context Only
 
 ```bash
-aixplosion -m "@file1.txt @file2.txt"
+flexorama -m "@file1.txt @file2.txt"
 ```
 
 **Expected behavior:**
@@ -165,7 +165,7 @@ aixplosion -m "@file1.txt @file2.txt"
 ### Context with Question
 
 ```bash
-aixplosion -m "@file1.txt @file2.txt Explain the difference"
+flexorama -m "@file1.txt @file2.txt Explain the difference"
 ```
 
 **Expected behavior:**
@@ -178,7 +178,7 @@ aixplosion -m "@file1.txt @file2.txt Explain the difference"
 ### 1. Empty @file syntax
 
 ```bash
-aixplosion "@"
+flexorama "@"
 ```
 
 **Expected behavior:**
@@ -188,7 +188,7 @@ aixplosion "@"
 ### 2. @file at end with punctuation
 
 ```bash
-aixplosion "@file.txt."
+flexorama "@file.txt."
 ```
 
 **Expected behavior:**
@@ -198,7 +198,7 @@ aixplosion "@file.txt."
 ### 3. Multiple @ symbols
 
 ```bash
-aixplosion "@@file.txt"
+flexorama "@@file.txt"
 ```
 
 **Expected behavior:**
@@ -208,7 +208,7 @@ aixplosion "@@file.txt"
 ### 4. File paths with spaces
 
 ```bash
-aixplosion "@\"file with spaces.txt\""
+flexorama "@\"file with spaces.txt\""
 ```
 
 **Expected behavior:**
@@ -220,7 +220,7 @@ aixplosion "@\"file with spaces.txt\""
 ### Before (Old Behavior)
 
 ```bash
-aixplosion "@file1.txt @file2.txt"
+flexorama "@file1.txt @file2.txt"
 # Would:
 # 1. Add both files to context
 # 2. Make empty API call
@@ -231,7 +231,7 @@ aixplosion "@file1.txt @file2.txt"
 ### After (New Behavior)
 
 ```bash
-aixplosion "@file1.txt @file2.txt"
+flexorama "@file1.txt @file2.txt"
 # Now:
 # 1. Add both files to context
 # 2. Detect no actual content
@@ -253,19 +253,19 @@ This feature saves tokens by avoiding unnecessary API calls when users are just 
 
 ```bash
 # Load context
-aixplosion "@config.json @src/main.rs @README.md"
+flexorama "@config.json @src/main.rs @README.md"
 
 # Ask questions
-aixplosion "How does this application work?"
-aixplosion "What are the main dependencies?"
-aixplosion "Explain the architecture"
+flexorama "How does this application work?"
+flexorama "What are the main dependencies?"
+flexorama "Explain the architecture"
 ```
 
 ### Pattern 2: Incremental Context Building
 
 ```bash
 # Interactive mode
-aixplosion
+flexorama
 > @package.json
 ✓ Added context file: package.json
 > @src/index.js
@@ -280,11 +280,11 @@ aixplosion
 
 ```bash
 # Load project A context
-aixplosion "@projectA/config.json @projectA/main.js"
+flexorama "@projectA/config.json @projectA/main.js"
 # Ask questions about project A
 
 # Clear context (start new session)
-aixplosion
+flexorama
 > @projectB/config.py @projectB/app.py
 # Ask questions about project B
 ```

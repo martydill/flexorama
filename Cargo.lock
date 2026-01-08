@@ -40,50 +40,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aixplosion"
-version = "0.1.0"
-dependencies = [
- "ansi-to-tui",
- "anyhow",
- "atty",
- "axum",
- "bytes",
- "chrono",
- "clap",
- "colored",
- "console",
- "crossterm 0.27.0",
- "dialoguer",
- "dirs 5.0.1",
- "env_logger",
- "futures-util",
- "glob",
- "http-body-util",
- "hyper 1.8.1",
- "indicatif",
- "log",
- "path-absolutize",
- "ratatui",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "shellexpand",
- "sqlx",
- "syntect",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "toml",
- "tower",
- "url",
- "uuid",
- "which",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -844,6 +800,50 @@ checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "flexorama"
+version = "0.1.0"
+dependencies = [
+ "ansi-to-tui",
+ "anyhow",
+ "atty",
+ "axum",
+ "bytes",
+ "chrono",
+ "clap",
+ "colored",
+ "console",
+ "crossterm 0.27.0",
+ "dialoguer",
+ "dirs 5.0.1",
+ "env_logger",
+ "futures-util",
+ "glob",
+ "http-body-util",
+ "hyper 1.8.1",
+ "indicatif",
+ "log",
+ "path-absolutize",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "shellexpand",
+ "sqlx",
+ "syntect",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "toml",
+ "tower",
+ "url",
+ "uuid",
+ "which",
 ]
 
 [[package]]

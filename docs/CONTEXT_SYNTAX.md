@@ -1,19 +1,19 @@
 # @file Syntax Context Support
 
-This document describes the new `@file` syntax support for automatically attaching file context to AIxplosion messages.
+This document describes the new `@file` syntax support for automatically attaching file context to Flexorama messages.
 
 ## Overview
 
-The AIxplosion now supports a convenient `@path-to-file` syntax that allows you to automatically include file content as context in your messages. This eliminates the need to manually specify files using the `-f` or `--file` flags when you want to reference files in your conversation.
+The Flexorama now supports a convenient `@path-to-file` syntax that allows you to automatically include file content as context in your messages. This eliminates the need to manually specify files using the `-f` or `--file` flags when you want to reference files in your conversation.
 
 ## Syntax
 
 Use `@` followed by the file path anywhere in your message:
 
 ```bash
-aixplosion "What does @Cargo.toml contain?"
-aixplosion "Compare @file1.rs and @file2.rs"
-aixplosion "Explain the configuration in @config.toml"
+flexorama "What does @Cargo.toml contain?"
+flexorama "Compare @file1.rs and @file2.rs"
+flexorama "Explain the configuration in @config.toml"
 ```
 
 ## Features
@@ -43,27 +43,27 @@ aixplosion "Explain the configuration in @config.toml"
 
 ### Single File Reference
 ```bash
-aixplosion "What does @Cargo.toml contain?"
+flexorama "What does @Cargo.toml contain?"
 ```
 
 ### Multiple File References
 ```bash
-aixplosion "Compare @src/main.rs and @src/lib.rs"
+flexorama "Compare @src/main.rs and @src/lib.rs"
 ```
 
 ### File Reference with Question
 ```bash
-aixplosion "Can you explain the Rust code in @src/main.rs?"
+flexorama "Can you explain the Rust code in @src/main.rs?"
 ```
 
 ### Only File References
 ```bash
-aixplosion "@file1.txt @file2.txt @file3.txt"
+flexorama "@file1.txt @file2.txt @file3.txt"
 ```
 
 ### Mixed Valid and Invalid Files
 ```bash
-aixplosion "Analyze @config.toml and @nonexistent.txt"
+flexorama "Analyze @config.toml and @nonexistent.txt"
 ```
 
 ## Integration with Existing Features
@@ -72,7 +72,7 @@ aixplosion "Analyze @config.toml and @nonexistent.txt"
 The `@file` syntax works alongside the existing `-f`/`--file` flag:
 
 ```bash
-aixplosion -f base.txt "Compare @file1.txt with the base file"
+flexorama -f base.txt "Compare @file1.txt with the base file"
 ```
 
 ### Auto-inclusion of AGENTS.md
@@ -120,9 +120,9 @@ A test script is provided at `test_context_syntax.sh` that creates sample files 
 ./test_context_syntax.sh
 
 # Test individual commands
-aixplosion "What does @test_file1.txt contain?"
-aixplosion "Compare @test_file1.txt and @test_file2.txt"
-aixplosion "@test_file1.txt @test_file2.txt"
+flexorama "What does @test_file1.txt contain?"
+flexorama "Compare @test_file1.txt and @test_file2.txt"
+flexorama "@test_file1.txt @test_file2.txt"
 ```
 
 ## Limitations
@@ -143,8 +143,8 @@ aixplosion "@test_file1.txt @test_file2.txt"
 
 | Method | Syntax | Pros | Cons |
 |--------|--------|------|------|
-| `-f` flag | `aixplosion -f file.txt "question"` | Explicit, clear separation | Requires separate flag |
-| `@file` syntax | `aixplosion "What's in @file.txt?"` | Natural, inline usage | Mixed with message content |
-| stdin piping | `cat file.txt \| aixplosion` | Works with any tool | Less convenient for multiple files |
+| `-f` flag | `flexorama -f file.txt "question"` | Explicit, clear separation | Requires separate flag |
+| `@file` syntax | `flexorama "What's in @file.txt?"` | Natural, inline usage | Mixed with message content |
+| stdin piping | `cat file.txt \| flexorama` | Works with any tool | Less convenient for multiple files |
 
 The `@file` syntax provides the most natural and convenient way to reference files directly within your messages.

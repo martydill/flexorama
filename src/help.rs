@@ -171,7 +171,7 @@ pub fn print_permissions_help() {
 
 /// Print the main help message
 pub fn print_help() {
-    app_println!("{}", "🤖 AIxplosion - Slash Commands".cyan().bold());
+    app_println!("{}", "🤖 Flexorama - Slash Commands".cyan().bold());
     app_println!();
     app_println!("{}", "Available commands:".green().bold());
     app_println!("  /help         - Show this help message");
@@ -235,7 +235,7 @@ pub fn print_help() {
     app_println!("{}", "Context Files:".green().bold());
     app_println!("  Use -f or --file to include files as context");
     app_println!("  Use @path/to/file syntax in messages to auto-include files");
-    app_println!("  AGENTS.md is automatically included from ~/.aixplosion/AGENTS.md (priority)");
+    app_println!("  AGENTS.md is automatically included from ~/.flexorama/AGENTS.md (priority)");
     app_println!("  Falls back to ./AGENTS.md if home directory version doesn't exist");
     app_println!("  Messages with only @file references will NOT make API calls");
     app_println!();
@@ -253,14 +253,14 @@ pub fn print_help() {
     app_println!("  Plan mode disables mutating tools and saves the plan to the database");
     app_println!();
     app_println!("{}", "Examples:".green().bold());
-    app_println!("  aixplosion -f config.toml \"Explain this configuration\"");
-    app_println!("  aixplosion \"What does @Cargo.toml contain?\"");
-    app_println!("  aixplosion \"Compare @file1.rs and @file2.rs\"");
-    app_println!("  aixplosion \"@file1.txt @file2.txt\"  # Only adds context, no API call");
-    app_println!("  aixplosion -s \"You are a Rust expert\" \"Help me with this code\"");
-    app_println!("  aixplosion -s \"Act as a code reviewer\" -f main.rs \"Review this code\"");
-    app_println!("  aixplosion --stream \"Tell me a story\"  # Stream the response");
-    app_println!("  aixplosion --plan-mode \"Add Stripe billing\"  # Plan only, saves to DB");
+    app_println!("  flexorama -f config.toml \"Explain this configuration\"");
+    app_println!("  flexorama \"What does @Cargo.toml contain?\"");
+    app_println!("  flexorama \"Compare @file1.rs and @file2.rs\"");
+    app_println!("  flexorama \"@file1.txt @file2.txt\"  # Only adds context, no API call");
+    app_println!("  flexorama -s \"You are a Rust expert\" \"Help me with this code\"");
+    app_println!("  flexorama -s \"Act as a code reviewer\" -f main.rs \"Review this code\"");
+    app_println!("  flexorama --stream \"Tell me a story\"  # Stream the response");
+    app_println!("  flexorama --plan-mode \"Add Stripe billing\"  # Plan only, saves to DB");
     app_println!("  !dir                    # List directory contents");
     app_println!("  !git status             # Check git status");
     app_println!("  !cargo build            # Build the project");
@@ -276,7 +276,7 @@ pub fn print_help() {
     app_println!();
     app_println!(
         "{}",
-        "Any other input will be sent to the AIxplosion for processing.".dimmed()
+        "Any other input will be sent to the Flexorama for processing.".dimmed()
     );
     app_println!();
 }

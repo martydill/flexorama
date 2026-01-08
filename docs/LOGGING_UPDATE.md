@@ -2,7 +2,7 @@
 
 ## Summary
 
-I've successfully updated your AIxplosion project to switch all logging from `info` level to `debug` level. Now only actual LLM responses will be output by default, while all internal processing messages are moved to debug logging.
+I've successfully updated your Flexorama project to switch all logging from `info` level to `debug` level. Now only actual LLM responses will be output by default, while all internal processing messages are moved to debug logging.
 
 ## Changes Made
 
@@ -25,7 +25,7 @@ I've successfully updated your AIxplosion project to switch all logging from `in
 
 ### Before (Info Level)
 ```
-INFO Starting AIxplosion with model: glm-4.6
+INFO Starting Flexorama with model: glm-4.6
 INFO Adding context file: config.toml
 INFO Processing user message: Hello
 INFO Auto-adding context file from @ syntax: Cargo.toml
@@ -41,7 +41,7 @@ Hello! How can I help you today?
 
 ### After (Debug Level - With RUST_LOG=debug)
 ```
-DEBUG Starting AIxplosion with model: glm-4.6
+DEBUG Starting Flexorama with model: glm-4.6
 DEBUG Adding context file: config.toml
 DEBUG Processing user message: Hello
 DEBUG Auto-adding context file from @ syntax: Cargo.toml
@@ -54,21 +54,21 @@ Hello! How can I help you today?
 
 ### Normal Usage (Clean Output)
 ```bash
-aixplosion -m "What is the weather like?"
+flexorama -m "What is the weather like?"
 # Only shows: "I'm sorry, I don't have access to real-time weather information..."
 ```
 
 ### Debug Mode (Verbose Output)
 ```bash
-RUST_LOG=debug aixplosion -m "What is the weather like?"
+RUST_LOG=debug flexorama -m "What is the weather like?"
 # Shows all debug logs plus the response
 ```
 
 ### Custom Log Levels
 ```bash
-RUST_LOG=info aixplosion -m "What is the weather like?"
+RUST_LOG=info flexorama -m "What is the weather like?"
 # Shows info and above (but we've moved everything to debug, so this is clean)
-RUST_LOG=warn aixplosion -m "What is the weather like?"
+RUST_LOG=warn flexorama -m "What is the weather like?"
 # Only warnings and errors
 ```
 

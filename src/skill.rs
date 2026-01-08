@@ -135,7 +135,7 @@ pub struct SkillManager {
 }
 
 impl SkillManager {
-    /// Initialize SkillManager from ~/.aixplosion/skills/ directory
+    /// Initialize SkillManager from ~/.flexorama/skills/ directory
     pub fn new(config: Arc<RwLock<Config>>) -> Result<Self> {
         // Determine skills directory
         let skills_dir = Self::get_skills_dir()?;
@@ -148,16 +148,16 @@ impl SkillManager {
         })
     }
 
-    /// Get the ~/.aixplosion/skills/ directory path
+    /// Get the ~/.flexorama/skills/ directory path
     fn get_skills_dir() -> Result<PathBuf> {
         let skills_dir = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".aixplosion")
+            .join(".flexorama")
             .join("skills");
         Ok(skills_dir)
     }
 
-    /// Load all skills from ~/.aixplosion/skills/ directory
+    /// Load all skills from ~/.flexorama/skills/ directory
     pub async fn load_all_skills(&mut self) -> Result<()> {
         // Create directory if it doesn't exist
         if !self.skills_dir.exists() {

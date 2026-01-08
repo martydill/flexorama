@@ -486,7 +486,7 @@ impl McpConnection {
                     }),
                 },
                 client_info: McpClientInfo {
-                    name: "aixplosion".to_string(),
+                    name: "flexorama".to_string(),
                     version: "0.1.0".to_string(),
                 },
             },

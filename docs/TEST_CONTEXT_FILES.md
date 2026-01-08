@@ -5,31 +5,31 @@
 ### 1. Basic Functionality
 ```bash
 # Test with explicit context file
-aixplosion -f README.md -m "Summarize the project"
+flexorama -f README.md -m "Summarize the project"
 
 # Test automatic AGENTS.md inclusion
-aixplosion -m "What agents are available?"
+flexorama -m "What agents are available?"
 ```
 
 ### 2. Multiple Files
 ```bash
 # Test multiple context files
-aixplosion -f README.md -f Cargo.toml -m "Describe this Rust project"
+flexorama -f README.md -f Cargo.toml -m "Describe this Rust project"
 ```
 
 ### 3. Error Handling
 ```bash
 # Test with non-existent file
-aixplosion -f nonexistent.md -m "Test error handling"
+flexorama -f nonexistent.md -m "Test error handling"
 
 # Test with unreadable file (if possible)
-aixplosion -f /root/protected.md -m "Test permission error"
+flexorama -f /root/protected.md -m "Test permission error"
 ```
 
 ### 4. Interactive Mode
 ```bash
 # Test context files in interactive mode
-aixplosion -f README.md
+flexorama -f README.md
 > "What is this project about?"
 > "How do I build it?"
 ```
@@ -37,7 +37,7 @@ aixplosion -f README.md
 ### 5. Non-interactive Mode
 ```bash
 # Test with stdin
-echo "Explain the project" | aixplosion -f README.md --non-interactive
+echo "Explain the project" | flexorama -f README.md --non-interactive
 ```
 
 ## Expected Behavior

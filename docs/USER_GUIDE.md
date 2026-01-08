@@ -1,6 +1,6 @@
-# AIxplosion User Guide
+# Flexorama User Guide
 
-This guide provides comprehensive documentation for using the AIxplosion tool, a powerful terminal-based AI assistant that supports multiple interaction modes, file operations, and advanced features.
+This guide provides comprehensive documentation for using the Flexorama tool, a powerful terminal-based AI assistant that supports multiple interaction modes, file operations, and advanced features.
 
 ## Table of Contents
 
@@ -24,8 +24,8 @@ This guide provides comprehensive documentation for using the AIxplosion tool, a
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/aixplosion.git
-cd aixplosion
+git clone https://github.com/your-repo/flexorama.git
+cd flexorama
 
 # Install dependencies
 npm install
@@ -43,13 +43,13 @@ npm install -g .
 
 ```bash
 # Start interactive mode
-aixplosion
+flexorama
 
 # Send a single message
-aixplosion -m "Hello, how are you?"
+flexorama -m "Hello, how are you?"
 
 # Get help
-aixplosion --help
+flexorama --help
 ```
 
 ## Configuration
@@ -65,7 +65,7 @@ export ANTHROPIC_BASE_URL="https://api.anthropic.com/v1"
 
 ### Configuration File
 
-Create a configuration file at `~/.config/aixplosion/config.toml`:
+Create a configuration file at `~/.config/flexorama/config.toml`:
 
 ```toml
 base_url = "https://api.anthropic.com/v1"
@@ -95,10 +95,10 @@ temperature = 0.7
 
 ### 1. Interactive Mode
 
-Start a conversation with the AIxplosion:
+Start a conversation with the Flexorama:
 
 ```bash
-aixplosion
+flexorama
 ```
 
 Features:
@@ -111,7 +111,7 @@ Features:
 Send one message and get a response:
 
 ```bash
-aixplosion -m "Explain quantum computing"
+flexorama -m "Explain quantum computing"
 ```
 
 ### 3. Non-Interactive Mode
@@ -119,7 +119,7 @@ aixplosion -m "Explain quantum computing"
 Read from stdin for scripting:
 
 ```bash
-echo "Help me understand this code" | aixplosion --non-interactive
+echo "Help me understand this code" | flexorama --non-interactive
 ```
 
 ### 4. Context-Aware Mode
@@ -128,10 +128,10 @@ Include files as context:
 
 ```bash
 # Using command line flags
-aixplosion -f config.toml -f package.json "Explain this project"
+flexorama -f config.toml -f package.json "Explain this project"
 
 # Using @file syntax
-aixplosion "What does @Cargo.toml contain?"
+flexorama "What does @Cargo.toml contain?"
 ```
 
 ## File Operations
@@ -143,23 +143,23 @@ The agent supports multiple ways to include files:
 #### Method 1: Command Line Flags
 
 ```bash
-aixplosion -f file1.txt -f file2.rs "Analyze these files"
+flexorama -f file1.txt -f file2.rs "Analyze these files"
 ```
 
 #### Method 2: @file Syntax (Recommended)
 
 ```bash
 # Single file
-aixplosion "What does @config.json contain?"
+flexorama "What does @config.json contain?"
 
 # Multiple files
-aixplosion "Compare @src/main.rs and @src/lib.rs"
+flexorama "Compare @src/main.rs and @src/lib.rs"
 
 # File with specific question
-aixplosion "Explain the authentication logic in @auth.js"
+flexorama "Explain the authentication logic in @auth.js"
 
 # Multiple files without question
-aixplosion "@package.json @README.md"
+flexorama "@package.json @README.md"
 ```
 
 #### Method 3: Auto-inclusion
@@ -221,10 +221,10 @@ The agent can execute various tools for file operations:
 
 ```bash
 # Ask the agent to perform file operations
-aixplosion "Read the contents of @src/config.js and create a backup"
+flexorama "Read the contents of @src/config.js and create a backup"
 
 # Multi-step operations
-aixplosion "List all .rs files in src/ directory, then read main.rs"
+flexorama "List all .rs files in src/ directory, then read main.rs"
 ```
 
 ### Context Management
@@ -262,7 +262,7 @@ echo $ANTHROPIC_AUTH_TOKEN
 export ANTHROPIC_AUTH_TOKEN="your-api-key"
 
 # Or use command line
-aixplosion -k "your-api-key" -m "test"
+flexorama -k "your-api-key" -m "test"
 ```
 
 #### 2. File Not Found
@@ -297,7 +297,7 @@ aixplosion -k "your-api-key" -m "test"
 Enable debug output for troubleshooting:
 
 ```bash
-DEBUG=1 aixplosion -m "test message"
+DEBUG=1 flexorama -m "test message"
 ```
 
 ### Getting Help
@@ -305,7 +305,7 @@ DEBUG=1 aixplosion -m "test message"
 If you encounter issues:
 
 1. Check this guide first
-2. Run `aixplosion --help` for command options
+2. Run `flexorama --help` for command options
 3. Use `/help` in interactive mode
 4. Check the GitHub issues page
 5. Create a new issue with details about your problem
@@ -345,14 +345,14 @@ If you encounter issues:
 ```bash
 # ✅ RECOMMENDED: Environment variable
 export ANTHROPIC_AUTH_TOKEN="your-api-key"
-aixplosion -m "Hello"
+flexorama -m "Hello"
 
 # ✅ SECURE: Command line flag
-aixplosion -k "your-api-key" -m "Hello"
+flexorama -k "your-api-key" -m "Hello"
 
 # ✅ DEVELOPMENT: .env file (add to .gitignore)
 echo 'ANTHROPIC_AUTH_TOKEN="your-api-key"' > .env
-source .env && aixplosion -m "Hello"
+source .env && flexorama -m "Hello"
 ```
 
 4. ❌ **NEVER DO**:
@@ -367,34 +367,34 @@ api_key = "sk-ant-api03-..."  # SECURITY RISK!
 
 ```bash
 # Analyze a Rust project
-aixplosion "@Cargo.toml @src/main.rs @src/lib.rs Explain this project structure"
+flexorama "@Cargo.toml @src/main.rs @src/lib.rs Explain this project structure"
 
 # Review Python code
-aixplosion "Find potential bugs in @app.py and suggest improvements"
+flexorama "Find potential bugs in @app.py and suggest improvements"
 ```
 
 ### Documentation Generation
 
 ```bash
 # Generate README
-aixplosion "@src/index.js @package.json Create a README for this project"
+flexorama "@src/index.js @package.json Create a README for this project"
 
 # Document API endpoints
-aixplosion "@api/routes.js @api/models.js Document all API endpoints"
+flexorama "@api/routes.js @api/models.js Document all API endpoints"
 ```
 
 ### Configuration Management
 
 ```bash
 # Compare configurations
-aixplosion "Compare @dev.config.json and @prod.config.json"
+flexorama "Compare @dev.config.json and @prod.config.json"
 
 # Generate config template
-aixplosion "@config.example.json Create a template configuration file"
+flexorama "@config.example.json Create a template configuration file"
 ```
 
 ## Conclusion
 
-The AIxplosion is a powerful tool that can significantly enhance your development workflow. By mastering its features and following best practices, you can leverage AI assistance for code analysis, documentation, configuration management, and much more.
+The Flexorama is a powerful tool that can significantly enhance your development workflow. By mastering its features and following best practices, you can leverage AI assistance for code analysis, documentation, configuration management, and much more.
 
 For the most up-to-date information, check the project documentation and GitHub repository.

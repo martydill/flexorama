@@ -2,7 +2,7 @@
 
 ## Summary
 
-I have successfully implemented the `!` command functionality for the AIxplosion. This feature allows users to execute shell commands directly in interactive mode by prefixing them with `!`.
+I have successfully implemented the `!` command functionality for the Flexorama. This feature allows users to execute shell commands directly in interactive mode by prefixing them with `!`.
 
 ## Implementation Details
 
@@ -42,7 +42,7 @@ I have successfully implemented the `!` command functionality for the AIxplosion
 
 ```bash
 # Start interactive mode
-aixplosion
+flexorama
 
 # Execute shell commands directly
 > !dir                    # List directory (Windows)

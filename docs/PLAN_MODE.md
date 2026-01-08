@@ -18,8 +18,8 @@ Plan mode produces read-only implementation plans, blocks mutating tools, and sa
 - Persistence helper: `DatabaseManager::create_plan` and `ConversationManager::save_plan` handle inserts and conversation association.
 
 ## Usage
-- Single message: `aixplosion --plan-mode "Implement SSO with OAuth"` -> prints Markdown plan and saves it.
-- Interactive: start with `aixplosion --plan-mode`, every user message yields a new stored plan.
+- Single message: `flexorama --plan-mode "Implement SSO with OAuth"` -> prints Markdown plan and saves it.
+- Interactive: start with `flexorama --plan-mode`, every user message yields a new stored plan.
 
 ## Notes
 - Context files still work; @file syntax continues to add read-only context.

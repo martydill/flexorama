@@ -168,7 +168,7 @@ impl ConversationManager {
         let mut files = Vec::new();
         let home_agents_md = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".aixplosion")
+            .join(".flexorama")
             .join("AGENTS.md");
         if home_agents_md.exists() {
             files.push(home_agents_md.display().to_string());

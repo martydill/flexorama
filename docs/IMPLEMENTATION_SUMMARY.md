@@ -1,7 +1,7 @@
 # @file Syntax Implementation Summary
 
 ## Overview
-Added support for `@path-to-file` syntax to automatically attach file content as context in AIxplosion messages.
+Added support for `@path-to-file` syntax to automatically attach file content as context in Flexorama messages.
 
 ## Changes Made
 
@@ -67,19 +67,19 @@ pub fn clean_message(&self, message: &str) -> String
 
 ```bash
 # Single file reference
-aixplosion "What does @Cargo.toml contain?"
+flexorama "What does @Cargo.toml contain?"
 
 # Multiple file references  
-aixplosion "Compare @file1.rs and @file2.rs"
+flexorama "Compare @file1.rs and @file2.rs"
 
 # File with question
-aixplosion "Explain the Rust code in @src/main.rs"
+flexorama "Explain the Rust code in @src/main.rs"
 
 # Only file references
-aixplosion "@file1.txt @file2.txt"
+flexorama "@file1.txt @file2.txt"
 
 # Mixed with -f flag
-aixplosion -f base.txt "Compare @file1.txt with the base file"
+flexorama -f base.txt "Compare @file1.txt with the base file"
 ```
 
 ## Testing
@@ -92,11 +92,11 @@ Run `./test_context_syntax.sh` to:
 
 ### Manual Testing Commands
 ```bash
-aixplosion "What does @test_file1.txt contain?"
-aixplosion "Compare @test_file1.txt and @test_file2.txt" 
-aixplosion "Can you explain @test_rust.rs?"
-aixplosion "@test_file1.txt @test_file2.txt"
-aixplosion "What is in @nonexistent_file.txt?"
+flexorama "What does @test_file1.txt contain?"
+flexorama "Compare @test_file1.txt and @test_file2.txt" 
+flexorama "Can you explain @test_rust.rs?"
+flexorama "@test_file1.txt @test_file2.txt"
+flexorama "What is in @nonexistent_file.txt?"
 ```
 
 ## Error Handling
@@ -168,4 +168,4 @@ let re = Regex::new(r"@([^\s@]+)").unwrap();
 - ✅ Good error messages
 - ✅ Helpful documentation
 
-The implementation provides a natural, convenient way to reference files directly within AIxplosion messages while maintaining full compatibility with existing functionality.
+The implementation provides a natural, convenient way to reference files directly within Flexorama messages while maintaining full compatibility with existing functionality.
