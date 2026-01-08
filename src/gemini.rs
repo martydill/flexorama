@@ -17,7 +17,7 @@ struct GeminiRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<GeminiTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system_instruction: Option<GeminiContent>,
+    system_instruction: Option<GeminiSystemInstruction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     generation_config: Option<GenerationConfig>,
 }
@@ -25,6 +25,12 @@ struct GeminiRequest {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct GeminiContent {
     role: String,
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiSystemInstruction {
     parts: Vec<GeminiPart>,
 }
 
@@ -43,6 +49,8 @@ struct GeminiFunctionCall {
     name: String,
     #[serde(rename = "args", skip_serializing_if = "Option::is_none")]
     arguments: Option<Value>,
+    #[serde(rename = "thoughtSignature", skip_serializing_if = "Option::is_none")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -229,14 +237,23 @@ impl GeminiClient {
                             if let (Some(id), Some(name)) = (&block.id, &block.name) {
                                 tool_name_by_id.insert(id.clone(), name.clone());
                             }
-                            parts.push(GeminiPart {
-                                text: None,
-                                function_call: Some(GeminiFunctionCall {
-                                    name: block.name.clone().unwrap_or_else(|| "tool".to_string()),
-                                    arguments: Some(args),
-                                }),
-                                function_response: None,
-                            });
+                            let name = block.name.clone().unwrap_or_else(|| "tool".to_string());
+                            if let Some(signature) = block.thought_signature.clone() {
+                                parts.push(GeminiPart {
+                                    text: None,
+                                    function_call: Some(GeminiFunctionCall {
+                                        name,
+                                        arguments: Some(args),
+                                        thought_signature: Some(signature),
+                                    }),
+                                    function_response: None,
+                                });
+                            } else {
+                                debug!(
+                                    "Skipping Gemini tool_call without thought_signature: {}",
+                                    name
+                                );
+                            }
                         }
                         "tool_result" => {
                             let mut response_value = Value::Null;
@@ -276,8 +293,7 @@ impl GeminiClient {
             })
             .collect();
 
-        let system_instruction = system_prompt.map(|prompt| GeminiContent {
-            role: "system".to_string(),
+        let system_instruction = system_prompt.map(|prompt| GeminiSystemInstruction {
             parts: vec![GeminiPart {
                 text: Some(prompt.clone()),
                 function_call: None,
@@ -334,6 +350,7 @@ impl GeminiClient {
                                 tool_use_id: None,
                                 content: None,
                                 is_error: None,
+                                thought_signature: call.thought_signature,
                             });
                         }
                         if let Some(response) = part.function_response {

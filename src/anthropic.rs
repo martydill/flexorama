@@ -33,6 +33,8 @@ pub struct ContentBlock {
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub thought_signature: Option<String>,
 }
 
 impl ContentBlock {
@@ -46,6 +48,7 @@ impl ContentBlock {
             tool_use_id: None,
             content: None,
             is_error: None,
+            thought_signature: None,
         }
     }
 
@@ -59,6 +62,7 @@ impl ContentBlock {
             tool_use_id: None,
             content: None,
             is_error: None,
+            thought_signature: None,
         }
     }
 
@@ -72,6 +76,7 @@ impl ContentBlock {
             tool_use_id: Some(tool_use_id),
             content: Some(content),
             is_error,
+            thought_signature: None,
         }
     }
 }
@@ -532,6 +537,7 @@ impl AnthropicClient {
                                                                     tool_use_id: None,
                                                                     content: None,
                                                                     is_error: None,
+                                                                    thought_signature: None,
                                                                 });
                                                         }
                                                         _ => {
