@@ -143,7 +143,7 @@ pub fn provider_default_base_url(provider: Provider) -> String {
 
 pub fn provider_default_model(provider: Provider) -> String {
     match provider {
-        Provider::Anthropic => "claude-3-5-sonnet-20240620".to_string(),
+        Provider::Anthropic => "claude-sonnet-4-5".to_string(),
         Provider::Gemini => "gemini-flash-latest".to_string(),
         Provider::OpenAI => "gpt-5.2".to_string(),
         Provider::Zai => "glm-4.7".to_string(),
@@ -152,7 +152,15 @@ pub fn provider_default_model(provider: Provider) -> String {
 
 pub fn provider_models(provider: Provider) -> &'static [&'static str] {
     match provider {
-        Provider::Anthropic => &["claude-3-5-sonnet-20240620", "claude-3-5-haiku-20241022"],
+        Provider::Anthropic => &[
+            "claude-opus-4-1",
+            "claude-sonnet-4-0",
+            "claude-3-7-sonnet-latest",
+            "claude-opus-4-0",
+            "claude-sonnet-4-5",
+            "claude-haiku-4-5",
+            "claude-opus-4-5",
+        ],
         Provider::Gemini => &[
             "gemini-flash-latest",
             "gemini-1.5-pro",

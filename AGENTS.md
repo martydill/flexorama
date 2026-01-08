@@ -2,13 +2,6 @@
 
 This file contains documentation about the available Flexoramas in this project.
 
-## Agent Configuration
-
-### Default Agent
-- **Model**: glm-4.6
-- **Temperature**: 0.7
-- **Max Tokens**: 4096
-
 ### Agent Capabilities
 
 The Flexorama supports the following features:

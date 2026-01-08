@@ -19,11 +19,17 @@ pub struct Message {
 pub struct ContentBlock {
     #[serde(rename = "type")]
     pub block_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_use_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
@@ -134,6 +140,20 @@ impl AnthropicClient {
         }
     }
 
+    fn endpoint_candidates(&self) -> Vec<String> {
+        let base = self.base_url.trim_end_matches('/');
+        let mut endpoints = Vec::new();
+
+        if base.ends_with("/v1") {
+            endpoints.push(format!("{}/messages", base));
+        } else {
+            endpoints.push(format!("{}/v1/messages", base));
+        }
+
+        endpoints.push(format!("{}/messages", base));
+        endpoints
+    }
+
     pub async fn create_message(
         &self,
         model: &str,
@@ -145,11 +165,7 @@ impl AnthropicClient {
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         // Try the standard endpoint first, then fall back to alternatives if needed
-        let endpoints = vec![
-            format!("{}/v1/messages", self.base_url),
-            format!("{}/messages", self.base_url),
-            format!("{}/anthropic/v1/messages", self.base_url),
-        ];
+        let endpoints = self.endpoint_candidates();
 
         for endpoint in endpoints.iter() {
             match self
@@ -203,11 +219,7 @@ impl AnthropicClient {
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         // Try the standard endpoint first, then fall back to alternatives if needed
-        let endpoints = vec![
-            format!("{}/v1/messages", self.base_url),
-            format!("{}/messages", self.base_url),
-            format!("{}/anthropic/v1/messages", self.base_url),
-        ];
+        let endpoints = self.endpoint_candidates();
 
         for endpoint in endpoints.iter() {
             match self

@@ -1025,7 +1025,7 @@ impl Agent {
             // Add tool results to conversation
             for result in tool_results {
                 self.conversation_manager.conversation.push(Message {
-                    role: "assistant".to_string(),
+                    role: "user".to_string(),
                     content: vec![ContentBlock::tool_result(
                         result.tool_use_id,
                         result.content,
