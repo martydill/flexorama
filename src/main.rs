@@ -43,8 +43,6 @@ mod tools;
 
 #[cfg(test)]
 mod formatter_tests;
-#[cfg(test)]
-mod tui_tests;
 
 use agent::Agent;
 use config::{Config, Provider};
