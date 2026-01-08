@@ -7,7 +7,7 @@ use anyhow::Result;
 use crossterm::{
     event::{
         self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
     },
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
@@ -46,6 +46,35 @@ struct TuiState {
     output_dirty: bool,
     last_render: Instant,
     output_scroll: usize,
+    // Selection tracking
+    selection_start: Option<TextPosition>,
+    selection_end: Option<TextPosition>,
+    selection_active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TextPosition {
+    line_idx: usize,
+    char_offset: usize,
+}
+
+impl TextPosition {
+    fn new(line_idx: usize, char_offset: usize) -> Self {
+        Self {
+            line_idx,
+            char_offset,
+        }
+    }
+
+    fn min_max(self, other: Self) -> (Self, Self) {
+        if self.line_idx < other.line_idx
+            || (self.line_idx == other.line_idx && self.char_offset <= other.char_offset)
+        {
+            (self, other)
+        } else {
+            (other, self)
+        }
+    }
 }
 
 struct OutputBuffer {
@@ -64,6 +93,7 @@ pub struct TuiSnapshot {
     input_raw: String,
     cursor_pos: usize,
     output_scroll: usize,
+    selection_range: Option<(TextPosition, TextPosition)>,
 }
 
 pub enum InputResult {
@@ -137,6 +167,9 @@ impl Tui {
             output_dirty: true,
             last_render: Instant::now(),
             output_scroll: 0,
+            selection_start: None,
+            selection_end: None,
+            selection_active: false,
         }));
 
         let screen = Arc::new(Mutex::new(TuiScreen { terminal }));
@@ -194,7 +227,7 @@ impl Tui {
                         self.handle_paste(&pasted)?;
                     }
                     Event::Mouse(mouse_event) => {
-                        self.handle_mouse_event(mouse_event.kind)?;
+                        self.handle_mouse_event(mouse_event)?;
                     }
                     Event::Resize(_, _) => {
                         let mut guard = self.state.lock().expect("tui state lock");
@@ -292,10 +325,13 @@ impl Tui {
         Ok(())
     }
 
-    fn handle_mouse_event(&self, kind: MouseEventKind) -> Result<()> {
+    fn handle_mouse_event(&self, event: crossterm::event::MouseEvent) -> Result<()> {
+        use crossterm::event::{MouseButton, MouseEventKind};
+
         let mut guard = self.state.lock().expect("tui state lock");
         let mut changed = false;
-        match kind {
+
+        match event.kind {
             MouseEventKind::ScrollUp => {
                 guard.output_scroll = guard.output_scroll.saturating_add(3);
                 changed = true;
@@ -303,6 +339,38 @@ impl Tui {
             MouseEventKind::ScrollDown => {
                 guard.output_scroll = guard.output_scroll.saturating_sub(3);
                 changed = true;
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Start selection at click position
+                if let Some(pos) = self.screen_to_text_position(event.row, event.column, &guard) {
+                    guard.selection_start = Some(pos);
+                    guard.selection_end = Some(pos);
+                    guard.selection_active = true;
+                    changed = true;
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                // Extend selection while dragging
+                if guard.selection_active {
+                    if let Some(pos) = self.screen_to_text_position(event.row, event.column, &guard)
+                    {
+                        guard.selection_end = Some(pos);
+                        changed = true;
+                    }
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                // End drag but keep selection visible
+                guard.selection_active = false;
+            }
+            MouseEventKind::Down(_) | MouseEventKind::Up(_) => {
+                // Clear selection on other mouse buttons
+                if guard.selection_start.is_some() {
+                    guard.selection_start = None;
+                    guard.selection_end = None;
+                    guard.selection_active = false;
+                    changed = true;
+                }
             }
             _ => {}
         }
@@ -321,6 +389,50 @@ impl Tui {
         }
         let mut guard = self.state.lock().expect("tui state lock");
 
+        // Handle Ctrl+C specially - copy selection if present, otherwise exit
+        if matches!(
+            key_event,
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+        ) {
+            if guard.selection_start.is_some() {
+                // Copy selected text to clipboard
+                if let Some(text) = self.get_selected_text(&guard) {
+                    // Try to copy to clipboard
+                    match arboard::Clipboard::new() {
+                        Ok(mut clipboard) => {
+                            let _ = clipboard.set_text(text);
+                        }
+                        Err(_) => {
+                            // Clipboard unavailable, silently ignore
+                        }
+                    }
+                }
+                // Clear selection after copying
+                guard.selection_start = None;
+                guard.selection_end = None;
+                guard.selection_active = false;
+                guard.output_dirty = true;
+                drop(guard);
+                self.render()?;
+                return Ok(None);
+            } else {
+                // No selection, exit
+                return Ok(Some(InputResult::Exit));
+            }
+        }
+
+        // Clear selection on any other keyboard input
+        if guard.selection_start.is_some() {
+            guard.selection_start = None;
+            guard.selection_end = None;
+            guard.selection_active = false;
+            guard.output_dirty = true;
+        }
+
         if guard.reverse_search_mode {
             let result = handle_reverse_search_key(&mut guard, key_event);
             drop(guard);
@@ -334,6 +446,7 @@ impl Tui {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
+                // This case is now handled above, but keep it for safety
                 return Ok(Some(InputResult::Exit));
             }
             KeyEvent {
@@ -453,6 +566,131 @@ impl Tui {
         self.render()?;
         Ok(None)
     }
+
+    /// Convert screen coordinates to text buffer position
+    fn screen_to_text_position(
+        &self,
+        screen_row: u16,
+        screen_col: u16,
+        guard: &TuiState,
+    ) -> Option<TextPosition> {
+        // Get terminal size
+        let screen = self.screen.lock().expect("tui screen lock");
+        let size = screen.terminal.size().ok()?;
+        drop(screen);
+
+        // Reconstruct layout (same logic as render_frame)
+        let formatter = self.formatter.lock().expect("tui formatter lock");
+        let snapshot = guard.snapshot(&formatter);
+        drop(formatter);
+
+        let max_input_height = size.height.saturating_sub(3).max(2);
+        let input_layout = build_input_layout(&snapshot, size.width as usize);
+        let input_height = (input_layout.lines.len() + 2).min(max_input_height as usize) as u16;
+        let max_queue_height = size.height.saturating_sub(3 + input_height);
+        let (queue_height, _) = build_queue_layout(&snapshot, size.width as usize, max_queue_height);
+        let output_height = size.height.saturating_sub(input_height + queue_height);
+
+        // Check if click is within output area
+        if screen_row >= output_height {
+            return None;
+        }
+
+        // Map to wrapped line
+        let width = size.width as usize;
+        let output_lines = build_output_lines(&snapshot.output_lines, width);
+        let max_scroll = output_lines.len().saturating_sub(output_height as usize);
+        let scroll_from_bottom = snapshot.output_scroll.min(max_scroll);
+        let scroll = max_scroll.saturating_sub(scroll_from_bottom);
+
+        let wrapped_line_idx = scroll + (screen_row as usize);
+        if wrapped_line_idx >= output_lines.len() {
+            return None;
+        }
+
+        // Map back to original line
+        let mut wrapped_count = 0;
+        for (line_idx, orig_line) in snapshot.output_lines.iter().enumerate() {
+            let wrapped = wrap_ansi_line(orig_line, width);
+
+            if wrapped_count + wrapped.len() > wrapped_line_idx {
+                let wrap_offset = wrapped_line_idx - wrapped_count;
+                let wrapped_line = &wrapped[wrap_offset];
+
+                // Convert screen column to char offset in wrapped line
+                let char_in_wrapped = screen_col_to_char_offset(wrapped_line, screen_col as usize);
+
+                // Calculate offset in original line
+                let char_offset = (wrap_offset * width) + char_in_wrapped;
+                let line_char_count = strip_ansi_codes(orig_line).chars().count();
+                let clamped_offset = char_offset.min(line_char_count);
+
+                return Some(TextPosition::new(line_idx, clamped_offset));
+            }
+
+            wrapped_count += wrapped.len();
+        }
+
+        None
+    }
+
+    /// Extract selected text from the output buffer
+    fn get_selected_text(&self, guard: &TuiState) -> Option<String> {
+        let start = guard.selection_start?;
+        let end = guard.selection_end?;
+
+        // Order the positions
+        let (start, end) = start.min_max(end);
+
+        let mut result = String::new();
+
+        if start.line_idx == end.line_idx {
+            // Selection on single line
+            if let Some(line) = guard.output.lines.get(start.line_idx) {
+                let visible = strip_ansi_codes(line);
+                let chars: Vec<char> = visible.chars().collect();
+                let selected: String = chars
+                    .iter()
+                    .skip(start.char_offset)
+                    .take(end.char_offset + 1 - start.char_offset)
+                    .collect();
+                result.push_str(&selected);
+            }
+        } else {
+            // Multi-line selection
+            for line_idx in start.line_idx..=end.line_idx {
+                if let Some(line) = guard.output.lines.get(line_idx) {
+                    let visible = strip_ansi_codes(line);
+                    let chars: Vec<char> = visible.chars().collect();
+
+                    if line_idx == start.line_idx {
+                        // First line - from start offset to end
+                        let selected: String = chars.iter().skip(start.char_offset).collect();
+                        result.push_str(&selected);
+                    } else if line_idx == end.line_idx {
+                        // Last line - from beginning to end offset
+                        let selected: String =
+                            chars.iter().take(end.char_offset + 1).collect();
+                        result.push_str(&selected);
+                    } else {
+                        // Middle lines - entire line
+                        result.push_str(&visible);
+                    }
+
+                    // Add newline between lines (but not after the last line)
+                    if line_idx < end.line_idx {
+                        result.push('\n');
+                    }
+                }
+            }
+        }
+
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
+    }
 }
 
 impl Drop for Tui {
@@ -489,6 +727,13 @@ impl TuiState {
             )
         };
 
+        let selection_range =
+            if let (Some(start), Some(end)) = (self.selection_start, self.selection_end) {
+                Some(start.min_max(end))
+            } else {
+                None
+            };
+
         TuiSnapshot {
             output_lines: self.output.lines.clone(),
             queued: self.queued.iter().cloned().collect(),
@@ -496,6 +741,7 @@ impl TuiState {
             input_raw,
             cursor_pos,
             output_scroll: self.output_scroll,
+            selection_range,
         }
     }
 }
@@ -770,6 +1016,151 @@ struct InputLayout {
     cursor_col: usize,
 }
 
+/// Strip ANSI escape codes from text
+fn strip_ansi_codes(text: &str) -> String {
+    let mut result = String::new();
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if let Some('[') = chars.peek().copied() {
+                chars.next();
+                while let Some(next) = chars.next() {
+                    if next == 'm' {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        result.push(ch);
+    }
+    result
+}
+
+/// Convert screen column to character offset, skipping ANSI codes
+fn screen_col_to_char_offset(ansi_line: &str, screen_col: usize) -> usize {
+    let mut visible_count = 0;
+    let mut char_count = 0;
+    let mut chars = ansi_line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if let Some('[') = chars.peek().copied() {
+                chars.next();
+                while let Some(next) = chars.next() {
+                    if next == 'm' {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        if visible_count >= screen_col {
+            break;
+        }
+
+        visible_count += 1;
+        char_count += 1;
+    }
+
+    char_count
+}
+
+#[derive(Clone)]
+struct WrappedLineInfo {
+    line_idx: usize,
+    char_start: usize,
+    char_end: usize,
+}
+
+fn build_line_mapping(lines: &[String], width: usize) -> Vec<WrappedLineInfo> {
+    let mut mapping = Vec::new();
+
+    for (line_idx, line) in lines.iter().enumerate() {
+        let wrapped = wrap_ansi_line(line, width);
+        let mut char_start = 0;
+
+        for segment in wrapped {
+            let visible = strip_ansi_codes(&segment);
+            let char_end = char_start + visible.chars().count();
+            mapping.push(WrappedLineInfo {
+                line_idx,
+                char_start,
+                char_end,
+            });
+            char_start = char_end;
+        }
+    }
+
+    mapping
+}
+
+fn render_line_with_selection(
+    info: &WrappedLineInfo,
+    wrapped_line: &str,
+    sel_start: TextPosition,
+    sel_end: TextPosition,
+) -> Text<'static> {
+    use ratatui::style::{Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    // Determine highlight range within this wrapped segment
+    let (hl_start, hl_end) = if info.line_idx == sel_start.line_idx
+        && info.line_idx == sel_end.line_idx
+    {
+        // Selection on same line
+        (
+            sel_start.char_offset.saturating_sub(info.char_start),
+            (sel_end.char_offset + 1)
+                .saturating_sub(info.char_start)
+                .min(info.char_end - info.char_start),
+        )
+    } else if info.line_idx == sel_start.line_idx {
+        // Selection starts here
+        (
+            sel_start.char_offset.saturating_sub(info.char_start),
+            info.char_end - info.char_start,
+        )
+    } else if info.line_idx == sel_end.line_idx {
+        // Selection ends here
+        (
+            0,
+            (sel_end.char_offset + 1)
+                .saturating_sub(info.char_start)
+                .min(info.char_end - info.char_start),
+        )
+    } else {
+        // Entire line selected
+        (0, info.char_end - info.char_start)
+    };
+
+    // Build spans with selection highlight
+    let visible = strip_ansi_codes(wrapped_line);
+    let chars: Vec<char> = visible.chars().collect();
+
+    let before: String = chars.iter().take(hl_start).collect();
+    let selected: String = chars.iter().skip(hl_start).take(hl_end - hl_start).collect();
+    let after: String = chars.iter().skip(hl_end).collect();
+
+    let mut spans = Vec::new();
+    if !before.is_empty() {
+        spans.push(Span::raw(before));
+    }
+    if !selected.is_empty() {
+        spans.push(Span::styled(
+            selected,
+            Style::default().add_modifier(Modifier::REVERSED),
+        ));
+    }
+    if !after.is_empty() {
+        spans.push(Span::raw(after));
+    }
+
+    Text::from(Line::from(spans))
+}
+
 fn build_output_text(snapshot: &TuiSnapshot, rect: Rect) -> Text<'static> {
     if rect.height == 0 || rect.width == 0 {
         return Text::default();
@@ -781,13 +1172,37 @@ fn build_output_text(snapshot: &TuiSnapshot, rect: Rect) -> Text<'static> {
     let max_scroll = output_lines.len().saturating_sub(height);
     let scroll_from_bottom = snapshot.output_scroll.min(max_scroll);
     let scroll = max_scroll.saturating_sub(scroll_from_bottom);
+
     let mut text = Text::default();
-    for line in output_lines.into_iter().skip(scroll) {
+
+    // Build line-to-position mapping for selection
+    let line_map = if snapshot.selection_range.is_some() {
+        build_line_mapping(&snapshot.output_lines, width)
+    } else {
+        vec![]
+    };
+
+    for (wrapped_idx, line) in output_lines.into_iter().skip(scroll).enumerate() {
+        let absolute_wrapped_idx = scroll + wrapped_idx;
+
+        if let Some((start, end)) = snapshot.selection_range {
+            if let Some(info) = line_map.get(absolute_wrapped_idx) {
+                if info.line_idx >= start.line_idx && info.line_idx <= end.line_idx {
+                    // This line may contain selection
+                    let line_text = render_line_with_selection(info, &line, start, end);
+                    text.lines.extend(line_text.lines);
+                    continue;
+                }
+            }
+        }
+
+        // No selection on this line
         let line_text = line
             .into_text()
             .unwrap_or_else(|_| Text::from(line.clone()));
         text.lines.extend(line_text.lines);
     }
+
     text
 }
 
