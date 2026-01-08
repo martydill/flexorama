@@ -450,9 +450,9 @@ fn build_permission_handler(
                 }
             }
 
-            match tokio::time::timeout(std::time::Duration::from_secs(30), receiver).await {
-                Ok(Ok(selection)) => selection,
-                _ => {
+            match receiver.await {
+                Ok(selection) => selection,
+                Err(_) => {
                     let _ = hub.resolve(&request_id, None).await;
                     None
                 }

@@ -223,21 +223,14 @@ Path: {}",
                 options,
             };
             let handler = handler.clone();
-            let result =
-                tokio::time::timeout(std::time::Duration::from_secs(30), (handler)(prompt)).await;
+            let selection = (handler)(prompt).await;
 
-            return match result {
-                Ok(selection) => match selection {
-                    Some(idx) => {
-                        self.handle_file_permission_selection(idx, operation, path)
-                            .await
-                    }
-                    None => Ok(None),
-                },
-                Err(_) => {
-                    error!("Permission handler timed out after 30 seconds");
-                    Ok(None)
+            return match selection {
+                Some(idx) => {
+                    self.handle_file_permission_selection(idx, operation, path)
+                        .await
                 }
+                None => Ok(None),
             };
         }
 
@@ -248,26 +241,23 @@ Path: {}",
         app_println!("  Path: {}", path.cyan());
         app_println!();
 
-        // Use tokio::task::spawn_blocking with timeout to prevent hanging
+        // Use tokio::task::spawn_blocking without timeout to wait indefinitely for user input
         let options_clone = options.clone();
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(30), // 30 second timeout
-            tokio::task::spawn_blocking(move || {
-                Select::new()
-                    .with_prompt("Select an option")
-                    .items(&options_clone)
-                    .default(0) // Default to "Allow this operation only"
-                    .interact()
-            }),
-        )
+        let result = tokio::task::spawn_blocking(move || {
+            Select::new()
+                .with_prompt("Select an option")
+                .items(&options_clone)
+                .default(0) // Default to "Allow this operation only"
+                .interact()
+        })
         .await;
 
         match result {
-            Ok(Ok(Ok(selection))) => {
+            Ok(Ok(selection)) => {
                 self.handle_file_permission_selection(selection, operation, path)
                     .await
             }
-            Ok(Ok(Err(e))) => {
+            Ok(Err(e)) => {
                 error!("Failed to get user input: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying file operation for safety",
@@ -275,18 +265,10 @@ Path: {}",
                 );
                 Ok(None) // Deny for safety
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 error!("Task join error: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying file operation for safety",
-                    "🛡️".yellow()
-                );
-                Ok(None) // Deny for safety
-            }
-            Err(_) => {
-                error!("Permission dialog timed out after 30 seconds");
-                app_println!(
-                    "{} Permission dialog timed out, denying file operation for safety",
                     "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
@@ -466,18 +448,11 @@ impl BashSecurityManager {
                 options,
             };
             let handler = handler.clone();
-            let result =
-                tokio::time::timeout(std::time::Duration::from_secs(30), (handler)(prompt)).await;
+            let selection = (handler)(prompt).await;
 
-            return match result {
-                Ok(selection) => match selection {
-                    Some(idx) => self.handle_permission_selection(idx, command).await,
-                    None => Ok(None),
-                },
-                Err(_) => {
-                    error!("Permission handler timed out after 30 seconds");
-                    Ok(None)
-                }
+            return match selection {
+                Some(idx) => self.handle_permission_selection(idx, command).await,
+                None => Ok(None),
             };
         }
 
@@ -487,23 +462,20 @@ impl BashSecurityManager {
         app_println!("  {}", command.cyan());
         app_println!();
 
-        // Use tokio::task::spawn_blocking with timeout to prevent hanging
+        // Use tokio::task::spawn_blocking without timeout to wait indefinitely for user input
         let options_clone = options.clone();
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(30), // 30 second timeout
-            tokio::task::spawn_blocking(move || {
-                Select::new()
-                    .with_prompt("Select an option")
-                    .items(&options_clone)
-                    .default(0) // Default to "Allow this time only"
-                    .interact()
-            }),
-        )
+        let result = tokio::task::spawn_blocking(move || {
+            Select::new()
+                .with_prompt("Select an option")
+                .items(&options_clone)
+                .default(0) // Default to "Allow this time only"
+                .interact()
+        })
         .await;
 
         match result {
-            Ok(Ok(Ok(selection))) => self.handle_permission_selection(selection, command).await,
-            Ok(Ok(Err(e))) => {
+            Ok(Ok(selection)) => self.handle_permission_selection(selection, command).await,
+            Ok(Err(e)) => {
                 error!("Failed to get user input: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying command for safety",
@@ -511,18 +483,10 @@ impl BashSecurityManager {
                 );
                 Ok(None) // Deny for safety
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 error!("Task join error: {}", e);
                 app_println!(
                     "{} Failed to get user input, denying command for safety",
-                    "🛡️".yellow()
-                );
-                Ok(None) // Deny for safety
-            }
-            Err(_) => {
-                error!("Permission dialog timed out after 30 seconds");
-                app_println!(
-                    "{} Permission dialog timed out, denying command for safety",
                     "🛡️".yellow()
                 );
                 Ok(None) // Deny for safety
