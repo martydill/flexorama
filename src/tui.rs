@@ -53,20 +53,20 @@ struct TuiState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TextPosition {
-    line_idx: usize,
-    char_offset: usize,
+pub struct TextPosition {
+    pub line_idx: usize,
+    pub char_offset: usize,
 }
 
 impl TextPosition {
-    fn new(line_idx: usize, char_offset: usize) -> Self {
+    pub fn new(line_idx: usize, char_offset: usize) -> Self {
         Self {
             line_idx,
             char_offset,
         }
     }
 
-    fn min_max(self, other: Self) -> (Self, Self) {
+    pub fn min_max(self, other: Self) -> (Self, Self) {
         if self.line_idx < other.line_idx
             || (self.line_idx == other.line_idx && self.char_offset <= other.char_offset)
         {
@@ -77,9 +77,9 @@ impl TextPosition {
     }
 }
 
-struct OutputBuffer {
-    lines: Vec<String>,
-    max_lines: usize,
+pub struct OutputBuffer {
+    pub lines: Vec<String>,
+    pub max_lines: usize,
 }
 
 struct TuiScreen {
@@ -87,13 +87,13 @@ struct TuiScreen {
 }
 
 pub struct TuiSnapshot {
-    output_lines: Vec<String>,
-    queued: Vec<String>,
-    input_display: String,
-    input_raw: String,
-    cursor_pos: usize,
-    output_scroll: usize,
-    selection_range: Option<(TextPosition, TextPosition)>,
+    pub output_lines: Vec<String>,
+    pub queued: Vec<String>,
+    pub input_display: String,
+    pub input_raw: String,
+    pub cursor_pos: usize,
+    pub output_scroll: usize,
+    pub selection_range: Option<(TextPosition, TextPosition)>,
 }
 
 pub enum InputResult {
@@ -109,14 +109,14 @@ struct TuiOutputSink {
 }
 
 impl OutputBuffer {
-    fn new(max_lines: usize) -> Self {
+    pub fn new(max_lines: usize) -> Self {
         Self {
             lines: vec![String::new()],
             max_lines,
         }
     }
 
-    fn push_text(&mut self, text: &str) {
+    pub fn push_text(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
@@ -1010,14 +1010,14 @@ fn handle_reverse_search_key(guard: &mut TuiState, key_event: KeyEvent) -> Optio
     }
 }
 
-struct InputLayout {
-    lines: Vec<String>,
-    cursor_row: usize,
-    cursor_col: usize,
+pub struct InputLayout {
+    pub lines: Vec<String>,
+    pub cursor_row: usize,
+    pub cursor_col: usize,
 }
 
 /// Strip ANSI escape codes from text
-fn strip_ansi_codes(text: &str) -> String {
+pub fn strip_ansi_codes(text: &str) -> String {
     let mut result = String::new();
     let mut chars = text.chars().peekable();
 
@@ -1039,7 +1039,7 @@ fn strip_ansi_codes(text: &str) -> String {
 }
 
 /// Convert screen column to character offset, skipping ANSI codes
-fn screen_col_to_char_offset(ansi_line: &str, screen_col: usize) -> usize {
+pub fn screen_col_to_char_offset(ansi_line: &str, screen_col: usize) -> usize {
     let mut visible_count = 0;
     let mut char_count = 0;
     let mut chars = ansi_line.chars().peekable();
@@ -1225,7 +1225,7 @@ fn build_queue_layout(snapshot: &TuiSnapshot, width: usize, max_height: u16) -> 
     (height, queue_lines)
 }
 
-fn build_queue_lines(queue: &[String], width: usize, max_lines: usize) -> Vec<String> {
+pub fn build_queue_lines(queue: &[String], width: usize, max_lines: usize) -> Vec<String> {
     if width == 0 || max_lines == 0 {
         return Vec::new();
     }
@@ -1362,7 +1362,7 @@ fn build_input_text_with_layout(
     (visible_text, cursor_row_offset, cursor_col)
 }
 
-fn build_input_layout(snapshot: &TuiSnapshot, width: usize) -> InputLayout {
+pub fn build_input_layout(snapshot: &TuiSnapshot, width: usize) -> InputLayout {
     let mut lines = Vec::new();
     let mut cursor_row = 0;
     let mut cursor_col = 0;
@@ -1423,7 +1423,7 @@ fn build_input_layout(snapshot: &TuiSnapshot, width: usize) -> InputLayout {
     }
 }
 
-fn cursor_position_in_lines(text: &str, cursor_pos: usize) -> (usize, usize) {
+pub fn cursor_position_in_lines(text: &str, cursor_pos: usize) -> (usize, usize) {
     let mut line_idx = 0usize;
     let mut col = 0usize;
     let bounded = cursor_pos.min(text.len());
@@ -1440,7 +1440,7 @@ fn cursor_position_in_lines(text: &str, cursor_pos: usize) -> (usize, usize) {
     (line_idx, col)
 }
 
-fn build_output_lines(lines: &[String], width: usize) -> Vec<String> {
+pub fn build_output_lines(lines: &[String], width: usize) -> Vec<String> {
     let mut output_lines = Vec::new();
     let width = width.max(1);
 
@@ -1560,7 +1560,7 @@ fn drain_queued_input_after_enter() -> Result<Option<String>> {
     }
 }
 
-fn wrap_ansi_line(line: &str, width: usize) -> Vec<String> {
+pub fn wrap_ansi_line(line: &str, width: usize) -> Vec<String> {
     if width == 0 {
         return vec![String::new()];
     }
@@ -1602,7 +1602,7 @@ fn wrap_ansi_line(line: &str, width: usize) -> Vec<String> {
     segments
 }
 
-fn normalize_cursor_pos(text: &str, cursor_pos: usize) -> usize {
+pub fn normalize_cursor_pos(text: &str, cursor_pos: usize) -> usize {
     if cursor_pos > text.len() {
         return text.len();
     }
@@ -1618,7 +1618,7 @@ fn normalize_cursor_pos(text: &str, cursor_pos: usize) -> usize {
     pos
 }
 
-fn previous_char_boundary(text: &str, cursor_pos: usize) -> usize {
+pub fn previous_char_boundary(text: &str, cursor_pos: usize) -> usize {
     let pos = normalize_cursor_pos(text, cursor_pos);
     if pos == 0 {
         return 0;
@@ -1632,7 +1632,7 @@ fn previous_char_boundary(text: &str, cursor_pos: usize) -> usize {
         .unwrap_or(0)
 }
 
-fn next_char_boundary(text: &str, cursor_pos: usize) -> usize {
+pub fn next_char_boundary(text: &str, cursor_pos: usize) -> usize {
     let pos = normalize_cursor_pos(text, cursor_pos);
     if pos >= text.len() {
         return text.len();
