@@ -84,7 +84,7 @@ impl CodeFormatter {
         Ok(result)
     }
 
-    fn format_code_block(&self, code: &str, lang: &str) -> Result<String> {
+    pub(crate) fn format_code_block(&self, code: &str, lang: &str) -> Result<String> {
         let mut result = String::new();
 
         // Normalize language name
@@ -108,7 +108,7 @@ impl CodeFormatter {
         Ok(result)
     }
 
-    fn build_code_block_header(&self, normalized_lang: &str) -> String {
+    pub(crate) fn build_code_block_header(&self, normalized_lang: &str) -> String {
         format!(
             "{}{} {} {}{}",
             "┌".bold().cyan(),
@@ -119,7 +119,7 @@ impl CodeFormatter {
         )
     }
 
-    fn build_code_block_footer(&self, normalized_lang: &str) -> String {
+    pub(crate) fn build_code_block_footer(&self, normalized_lang: &str) -> String {
         let footer_width = normalized_lang.len() + 6;
         format!(
             "{}{}{}",
@@ -129,7 +129,7 @@ impl CodeFormatter {
         )
     }
 
-    fn highlight_line(&self, line: &str, lang: &str) -> String {
+    pub(crate) fn highlight_line(&self, line: &str, lang: &str) -> String {
         match lang {
             "rust" => self.highlight_rust(line),
             "python" => self.highlight_python(line),
@@ -854,13 +854,13 @@ impl CodeFormatter {
         result
     }
 
-    fn highlight_numbers(&self, text: &str) -> String {
+    pub(crate) fn highlight_numbers(&self, text: &str) -> String {
         self.number_regex
             .replace_all(text, |caps: &regex::Captures| caps[0].yellow().to_string())
             .to_string()
     }
 
-    fn normalize_language<'a>(&self, lang: &'a str) -> &'a str {
+    pub(crate) fn normalize_language<'a>(&self, lang: &'a str) -> &'a str {
         match lang.to_lowercase().as_str() {
             "js" => "javascript",
             "ts" => "typescript",
