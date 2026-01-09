@@ -918,6 +918,12 @@ impl CodeFormatter {
 }
 
 pub fn create_code_formatter() -> Result<CodeFormatter> {
+    #[cfg(test)]
+    {
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| colored::control::set_override(false));
+    }
     CodeFormatter::new()
 }
 
