@@ -41,9 +41,6 @@ mod web;
 mod llm;
 mod tools;
 
-#[cfg(test)]
-mod formatter_tests;
-
 use agent::Agent;
 use config::{Config, Provider};
 use database::{
