@@ -26,7 +26,10 @@ The Flexorama supports the following features:
 - **glob**: Find files and directories using glob patterns (read-only)
 - **create_directory**: Create a directory (and parent directories if needed)
 - **delete_file**: Delete a file or directory
-- **bash**: Execute shell commands and return the output
+- **bash**: Execute shell commands and return the output (with security)
+- **create_todo**: Create a new todo item in the internal todo list
+- **complete_todo**: Mark a todo item as completed using its ID
+- **list_todos**: List all todo items with their status
 
 ### Usage Examples
 
@@ -397,3 +400,57 @@ flexorama --stream -s "You are an expert" -f context.txt "Analyze this"
 
 #### Rules
  - Any time you create a doc, it must go in the docs folder. Any time you need to read a doc, look in the docs folder.
+
+### Todo Management
+
+The agent includes built-in todo management tools that allow the LLM to track and manage tasks internally. This is useful for:
+
+- **Task Planning**: Break down complex tasks into manageable todo items
+- **Progress Tracking**: Keep track of what has been completed
+- **Work Organization**: Maintain a list of action items during conversations
+
+#### Todo Tools
+
+1. **create_todo**: Create a new todo item
+   - Parameter: `description` (string) - The task description
+   - Returns: Todo ID and confirmation message
+
+2. **complete_todo**: Mark a todo as completed
+   - Parameter: `id` (string) - The todo item ID
+   - Returns: Updated todo status
+
+3. **list_todos**: Show all todo items
+   - No parameters required
+   - Returns: List of all todos with their completion status
+
+#### Todo Examples
+
+```bash
+# Create todos for a project
+flexorama "Create todos for: 1) Design database schema, 2) Implement API endpoints, 3) Write tests, 4) Deploy to production"
+
+# List all todos
+flexorama "Show me all the todos"
+
+# Complete a specific todo
+flexorama "Mark todo 'todo-1234567890' as completed"
+
+# Work through a task list
+flexorama "Create a todo list for refactoring the authentication module, then work through each item"
+```
+
+#### Todo Storage
+
+- **In-Memory**: Todos are stored in memory during the agent session
+- **Per-Session**: Each new agent session starts with an empty todo list
+- **JSON Format**: Todo items are returned in JSON format with id, description, and completed status
+
+#### Todo Item Structure
+
+```json
+{
+  "id": "todo-1767888578",
+  "description": "Review pull requests",
+  "completed": false
+}
+```

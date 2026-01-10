@@ -15,7 +15,7 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
     Terminal,
@@ -50,6 +50,8 @@ struct TuiState {
     selection_start: Option<TextPosition>,
     selection_end: Option<TextPosition>,
     selection_active: bool,
+    // Todo tracking
+    todos: Vec<crate::tools::create_todo::TodoItem>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +96,7 @@ pub struct TuiSnapshot {
     cursor_pos: usize,
     output_scroll: usize,
     selection_range: Option<(TextPosition, TextPosition)>,
+    todos: Vec<crate::tools::create_todo::TodoItem>,
 }
 
 pub enum InputResult {
@@ -170,6 +173,7 @@ impl Tui {
             selection_start: None,
             selection_end: None,
             selection_active: false,
+            todos: Vec::new(),
         }));
 
         let screen = Arc::new(Mutex::new(TuiScreen { terminal }));
@@ -245,6 +249,16 @@ impl Tui {
         {
             let mut guard = self.state.lock().expect("tui state lock");
             guard.queued = queued.clone();
+            guard.output_dirty = true;
+        }
+        self.render()?;
+        Ok(())
+    }
+
+    pub fn set_todos(&self, todos: &[crate::tools::create_todo::TodoItem]) -> Result<()> {
+        {
+            let mut guard = self.state.lock().expect("tui state lock");
+            guard.todos = todos.to_vec();
             guard.output_dirty = true;
         }
         self.render()?;
@@ -589,7 +603,13 @@ impl Tui {
         let input_height = (input_layout.lines.len() + 2).min(max_input_height as usize) as u16;
         let max_queue_height = size.height.saturating_sub(3 + input_height);
         let (queue_height, _) = build_queue_layout(&snapshot, size.width as usize, max_queue_height);
-        let output_height = size.height.saturating_sub(input_height + queue_height);
+        let max_todo_height = size
+            .height
+            .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height + queue_height);
+        let (todo_height, _) = build_todo_layout(&snapshot, size.width as usize, max_todo_height);
+        let output_height =
+            size.height
+                .saturating_sub(input_height.saturating_add(queue_height).saturating_add(todo_height));
 
         // Check if click is within output area
         if screen_row >= output_height {
@@ -742,6 +762,7 @@ impl TuiState {
             cursor_pos,
             output_scroll: self.output_scroll,
             selection_range,
+            todos: self.todos.clone(),
         }
     }
 }
@@ -767,11 +788,38 @@ impl TuiScreen {
                 .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
             let (queue_height, queue_lines) =
                 build_queue_layout(snapshot, size.width as usize, max_queue_height);
+
+            // Calculate todo pane height
+            let max_todo_height = size
+                .height
+                .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height + queue_height);
+            let (todo_height, todo_lines) =
+                build_todo_layout(snapshot, size.width as usize, max_todo_height);
+
             let output_height = size
                 .height
-                .saturating_sub(input_height.saturating_add(queue_height));
+                .saturating_sub(input_height.saturating_add(queue_height).saturating_add(todo_height));
 
-            let chunks = if queue_height > 0 {
+            let chunks = if todo_height > 0 && queue_height > 0 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(queue_height),
+                        Constraint::Length(todo_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            } else if todo_height > 0 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(todo_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            } else if queue_height > 0 {
                 Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
@@ -791,10 +839,16 @@ impl TuiScreen {
             };
 
             let output_rect = chunks[0];
-            let (queue_rect, input_rect) = if queue_height > 0 {
-                (Some(chunks[1]), chunks[2])
+            let mut chunk_idx = 1;
+
+            let (queue_rect, todo_rect, input_rect) = if queue_height > 0 && todo_height > 0 {
+                (Some(chunks[1]), Some(chunks[2]), chunks[3])
+            } else if todo_height > 0 {
+                (None, Some(chunks[1]), chunks[2])
+            } else if queue_height > 0 {
+                (Some(chunks[1]), None, chunks[2])
             } else {
-                (None, chunks[1])
+                (None, None, chunks[1])
             };
 
             let output_text = build_output_text(snapshot, output_rect);
@@ -807,6 +861,14 @@ impl TuiScreen {
                 let queue_block = Block::default().borders(Borders::NONE).title(title);
                 let queue_para = Paragraph::new(queue_text).block(queue_block);
                 frame.render_widget(queue_para, queue_rect);
+            }
+
+            if let Some(todo_rect) = todo_rect {
+                let todo_text = build_todo_text(&todo_lines);
+                let title = format!("Todos ({})", snapshot.todos.len());
+                let todo_block = Block::default().borders(Borders::NONE).title(title);
+                let todo_para = Paragraph::new(todo_text).block(todo_block);
+                frame.render_widget(todo_para, todo_rect);
             }
 
             let (input_text, cursor_row_offset, cursor_col) =
@@ -840,11 +902,38 @@ impl TuiScreen {
                 .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height);
             let (queue_height, queue_lines) =
                 build_queue_layout(snapshot, size.width as usize, max_queue_height);
+
+            // Calculate todo pane height
+            let max_todo_height = size
+                .height
+                .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height + queue_height);
+            let (todo_height, todo_lines) =
+                build_todo_layout(snapshot, size.width as usize, max_todo_height);
+
             let output_height = size
                 .height
-                .saturating_sub(input_height.saturating_add(queue_height));
+                .saturating_sub(input_height.saturating_add(queue_height).saturating_add(todo_height));
 
-            let chunks = if queue_height > 0 {
+            let chunks = if todo_height > 0 && queue_height > 0 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(queue_height),
+                        Constraint::Length(todo_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            } else if todo_height > 0 {
+                Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(output_height),
+                        Constraint::Length(todo_height),
+                        Constraint::Length(input_height),
+                    ])
+                    .split(size)
+            } else if queue_height > 0 {
                 Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
@@ -864,10 +953,14 @@ impl TuiScreen {
             };
 
             let output_rect = chunks[0];
-            let (queue_rect, input_rect) = if queue_height > 0 {
-                (Some(chunks[1]), chunks[2])
+            let (queue_rect, todo_rect, input_rect) = if queue_height > 0 && todo_height > 0 {
+                (Some(chunks[1]), Some(chunks[2]), chunks[3])
+            } else if todo_height > 0 {
+                (None, Some(chunks[1]), chunks[2])
+            } else if queue_height > 0 {
+                (Some(chunks[1]), None, chunks[2])
             } else {
-                (None, chunks[1])
+                (None, None, chunks[1])
             };
 
             let output_text =
@@ -881,6 +974,14 @@ impl TuiScreen {
                 let queue_block = Block::default().borders(Borders::NONE).title(title);
                 let queue_para = Paragraph::new(queue_text).block(queue_block);
                 frame.render_widget(queue_para, queue_rect);
+            }
+
+            if let Some(todo_rect) = todo_rect {
+                let todo_text = build_todo_text(&todo_lines);
+                let title = format!("Todos ({})", snapshot.todos.len());
+                let todo_block = Block::default().borders(Borders::NONE).title(title);
+                let todo_para = Paragraph::new(todo_text).block(todo_block);
+                frame.render_widget(todo_para, todo_rect);
             }
 
             let (input_text, cursor_row_offset, cursor_col) =
@@ -1279,6 +1380,117 @@ fn build_queue_text(lines: &[String]) -> Text<'static> {
             .into_text()
             .unwrap_or_else(|_| Text::from(line.clone()));
         text.lines.extend(line_text.lines);
+    }
+    text
+}
+
+fn build_todo_layout(snapshot: &TuiSnapshot, width: usize, max_height: u16) -> (u16, Vec<String>) {
+    if snapshot.todos.is_empty()
+        || snapshot.todos.iter().all(|todo| todo.completed)
+        || max_height < 3
+        || width == 0
+    {
+        return (0, Vec::new());
+    }
+
+    let inner_height = max_height.saturating_sub(2) as usize;
+    if inner_height == 0 {
+        return (0, Vec::new());
+    }
+
+    let todo_lines = build_todo_lines(&snapshot.todos, width, inner_height);
+    if todo_lines.is_empty() {
+        return (0, Vec::new());
+    }
+
+    let height = (todo_lines.len() + 2).min(max_height as usize) as u16;
+    (height, todo_lines)
+}
+
+fn build_todo_lines(todos: &[crate::tools::create_todo::TodoItem], width: usize, max_lines: usize) -> Vec<String> {
+    if width == 0 || max_lines == 0 {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    let mut pending = Vec::new();
+    let mut completed = Vec::new();
+    for todo in todos {
+        if todo.completed {
+            completed.push(todo);
+        } else {
+            pending.push(todo);
+        }
+    }
+    let mut ordered = Vec::with_capacity(todos.len());
+    ordered.extend(pending);
+    ordered.extend(completed);
+    let item_limit = 10usize.min(ordered.len());
+
+    for todo in ordered.iter().take(item_limit) {
+        let checkbox = if todo.completed { "[✓]" } else { "[ ]" };
+        let prefix = format!("  {} ", checkbox);
+        let available = width.saturating_sub(prefix.len()).max(1);
+        let wrapped = wrap_ansi_line(&todo.description, available);
+        let padding = " ".repeat(prefix.len());
+
+        for (wrap_idx, segment) in wrapped.iter().enumerate() {
+            if lines.len() >= max_lines {
+                break;
+            }
+            let prefix_used = if wrap_idx == 0 {
+                prefix.as_str()
+            } else {
+                padding.as_str()
+            };
+            lines.push(format!("{}{}", prefix_used, segment));
+        }
+
+        if lines.len() >= max_lines {
+            break;
+        }
+    }
+
+    let remaining = ordered.len().saturating_sub(item_limit);
+    if remaining > 0 && lines.len() < max_lines {
+        let prefix = "  ";
+        let available = width.saturating_sub(prefix.len()).max(1);
+        let wrapped = wrap_ansi_line(&format!("...({} more)...", remaining), available);
+        for segment in wrapped {
+            if lines.len() >= max_lines {
+                break;
+            }
+            lines.push(format!("{}{}", prefix, segment));
+        }
+    }
+
+    lines
+}
+
+fn build_todo_text(lines: &[String]) -> Text<'static> {
+    let mut text = Text::default();
+    for line in lines {
+        if line.is_empty() {
+            text.lines.push(Line::from(""));
+            continue;
+        }
+        let base_style = Style::default().add_modifier(Modifier::BOLD);
+        let completed_prefix = "  [✓] ";
+
+        if line.starts_with(completed_prefix) {
+            let rest = &line[completed_prefix.len()..];
+            let completed_style = base_style.add_modifier(Modifier::DIM);
+            let completed_check_style = completed_style.fg(Color::Green);
+            text.lines.push(Line::from(vec![
+                Span::styled("  [", completed_style),
+                Span::styled("✓", completed_check_style),
+                Span::styled("] ", completed_style),
+                Span::styled(rest.to_string(), completed_style),
+            ]));
+        } else {
+            text.lines
+                .push(Line::from(Span::styled(line.clone(), base_style)));
+        }
     }
     text
 }
@@ -2244,6 +2456,7 @@ mod tests {
             cursor_pos: 0,
             output_scroll: 0,
             selection_range: None,
+            todos: vec![],
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.lines.len(), 1);
@@ -2262,6 +2475,7 @@ mod tests {
             cursor_pos: 5,
             output_scroll: 0,
             selection_range: None,
+            todos: vec![],
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.lines.len(), 1);
@@ -2280,6 +2494,7 @@ mod tests {
             cursor_pos: 13,
             output_scroll: 0,
             selection_range: None,
+            todos: vec![],
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.lines.len(), 2);
@@ -2297,6 +2512,7 @@ mod tests {
             cursor_pos: 0,
             output_scroll: 0,
             selection_range: None,
+            todos: vec![],
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.cursor_row, 0);
@@ -2313,6 +2529,7 @@ mod tests {
             cursor_pos: 3,
             output_scroll: 0,
             selection_range: None,
+            todos: vec![],
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.cursor_row, 0);
@@ -2329,6 +2546,7 @@ mod tests {
             cursor_pos: 50,
             output_scroll: 0,
             selection_range: None,
+            todos: vec![],
         };
         let layout = build_input_layout(&snapshot, 40);
         // Should have multiple lines due to wrapping
@@ -2408,3 +2626,12 @@ mod tests {
         assert_eq!(built[1], "World");
     }
 }
+
+
+
+
+
+
+
+
+

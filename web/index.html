@@ -356,6 +356,73 @@
       min-height: 0;
       backdrop-filter: blur(12px);
     }
+    .todo-pane {
+      border-top: 1px solid var(--border);
+      padding: 10px 12px 12px 12px;
+      background: var(--panel-3);
+      display: none;
+    }
+    .todo-pane.visible {
+      display: block;
+    }
+    .todo-pane.collapsed .todo-list {
+      display: none;
+    }
+    .todo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 6px;
+    }
+    .todo-toggle {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      padding: 2px 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .todo-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .todo-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+    .todo-check {
+      width: 28px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: ui-monospace, "Consolas", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .todo-text {
+      line-height: 1.35;
+    }
+    .todo-check.complete {
+      color: var(--accent);
+      border-color: rgba(124, 255, 178, 0.6);
+      box-shadow: 0 0 12px rgba(124, 255, 178, 0.2);
+    }
+    .todo-text.complete {
+      color: var(--muted);
+      text-decoration: line-through;
+    }
     .chat-header {
       padding: 10px;
       display: flex;
@@ -849,6 +916,13 @@
             </div>
           </div>
           <div id="messages"></div>
+          <div id="todo-pane" class="todo-pane">
+            <div class="todo-header">
+              <span>Todos (<span id="todo-count">0</span>)</span>
+              <button class="todo-toggle" id="todo-toggle" type="button">Collapse</button>
+            </div>
+            <div id="todo-list" class="todo-list"></div>
+          </div>
           <div class="composer">
             <textarea id="message-input" placeholder="Ask anything..."></textarea>
             <div class="composer-actions">

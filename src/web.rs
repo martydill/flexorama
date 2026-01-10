@@ -9,7 +9,7 @@ use crate::skill::SkillManager;
 use crate::subagent::{SubagentConfig, SubagentManager};
 use anyhow::Result;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
@@ -17,7 +17,7 @@ use axum::{Json, Router};
 use bytes::Bytes;
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
@@ -523,6 +523,7 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
         .route("/api/permissions/pending", get(list_pending_permissions))
         .route("/api/permissions/respond", post(resolve_permission_request))
         .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
+        .route("/api/todos", get(list_todos))
         .route("/api/stats/overview", get(get_stats_overview))
         .route("/api/stats/usage", get(get_usage_stats))
         .route("/api/stats/models", get(get_model_stats))
@@ -1578,6 +1579,20 @@ async fn set_plan_mode(
     }
 }
 
+#[derive(Deserialize)]
+struct TodoQuery {
+    conversation_id: Option<String>,
+}
+
+async fn list_todos(
+    State(state): State<WebState>,
+    Query(query): Query<TodoQuery>,
+) -> impl IntoResponse {
+    let agent = state.agent.lock().await;
+    let todos = agent.get_todos_for(query.conversation_id.as_deref()).await;
+    Json(todos).into_response()
+}
+
 // Stats API handlers
 async fn get_stats_overview(State(state): State<WebState>) -> impl IntoResponse {
     match state.database.get_stats_overview().await {
@@ -1917,16 +1932,50 @@ fn extract_context_files_from_messages(messages: &[MessageDto]) -> Vec<String> {
 }
 
 fn snapshot_messages_to_dto(snapshot: &ConversationSnapshot) -> Vec<MessageDto> {
+    let todo_tool_ids: HashSet<String> = snapshot
+        .messages
+        .iter()
+        .flat_map(|m| m.content.iter())
+        .filter_map(|block| {
+            if block.block_type == "tool_use" {
+                if let Some(name) = block.name.as_deref() {
+                    if is_todo_tool(name) {
+                        return block.id.clone();
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
     snapshot
         .messages
         .iter()
         .enumerate()
         .filter_map(|(idx, m)| {
+            let filtered_blocks: Vec<ContentBlock> = m
+                .content
+                .iter()
+                .filter(|block| match block.block_type.as_str() {
+                    "tool_use" => block
+                        .name
+                        .as_deref()
+                        .map(|name| !is_todo_tool(name))
+                        .unwrap_or(true),
+                    "tool_result" => block
+                        .tool_use_id
+                        .as_deref()
+                        .map(|id| !todo_tool_ids.contains(id))
+                        .unwrap_or(true),
+                    _ => true,
+                })
+                .cloned()
+                .collect();
             build_visible_message_dto(
                 format!("snapshot-{}", idx),
                 m.role.clone(),
                 chrono::Utc::now().to_rfc3339(),
-                m.content.clone(),
+                filtered_blocks,
             )
         })
         .collect()
@@ -1935,6 +1984,10 @@ fn snapshot_messages_to_dto(snapshot: &ConversationSnapshot) -> Vec<MessageDto> 
 fn parse_tool_arguments(arg_text: &str) -> serde_json::Value {
     serde_json::from_str(arg_text)
         .unwrap_or_else(|_| serde_json::Value::String(arg_text.to_string()))
+}
+
+fn is_todo_tool(name: &str) -> bool {
+    matches!(name, "create_todo" | "complete_todo" | "list_todos")
 }
 
 fn timeline_messages_to_dto(
@@ -1954,6 +2007,9 @@ fn timeline_messages_to_dto(
     }
 
     for tc in tool_calls {
+        if is_todo_tool(&tc.tool_name) {
+            continue;
+        }
         timeline.push((tc.created_at, 1, Entry::ToolCall(tc.clone())));
         if tc.result_content.is_some() {
             timeline.push((
@@ -2162,6 +2218,10 @@ mod tests {
         let skill_manager = Arc::new(Mutex::new(
             SkillManager::new(config_arc).expect("create skill manager"),
         ));
+        {
+            let mut manager = skill_manager.lock().await;
+            manager.set_test_paths(root.join("skills"), config_path.clone());
+        }
         let agent =
             Agent::new_with_plan_mode(config.clone(), config.default_model.clone(), false, false)
                 .await

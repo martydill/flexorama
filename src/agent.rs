@@ -111,6 +111,9 @@ pub struct Agent {
     // Skill management
     skill_manager: Option<Arc<AsyncMutex<crate::skill::SkillManager>>>,
     active_skills: Vec<String>,
+    // Todo management
+    todos: Arc<AsyncMutex<Vec<crate::tools::create_todo::TodoItem>>>,
+    todos_by_conversation: Arc<AsyncMutex<HashMap<String, Vec<crate::tools::create_todo::TodoItem>>>>,
 }
 
 impl Agent {
@@ -157,6 +160,10 @@ impl Agent {
         // Initialize the new tool registry
         let tool_registry = Arc::new(RwLock::new(ToolRegistry::with_builtin_tools()));
 
+        // Initialize todo list
+        let todos = Arc::new(AsyncMutex::new(Vec::new()));
+        let todos_by_conversation = Arc::new(AsyncMutex::new(HashMap::new()));
+
         Self {
             client,
             model,
@@ -176,6 +183,8 @@ impl Agent {
             base_url,
             skill_manager: None,
             active_skills: Vec::new(),
+            todos,
+            todos_by_conversation,
         }
     }
 
@@ -1076,6 +1085,34 @@ impl Agent {
         self.conversation_manager.display_context();
     }
 
+    /// Get the current todo list (for TUI display)
+    pub async fn get_todos(&self) -> Vec<crate::tools::create_todo::TodoItem> {
+        self.get_todos_for(None).await
+    }
+
+    pub async fn get_todos_for(
+        &self,
+        conversation_id: Option<&str>,
+    ) -> Vec<crate::tools::create_todo::TodoItem> {
+        let key = self.todo_conversation_key(conversation_id);
+        let map = self.todos_by_conversation.lock().await;
+        if let Some(todos) = map.get(&key) {
+            return todos.clone();
+        }
+        drop(map);
+        if conversation_id.is_none()
+            && Some(key.as_str()) == self.conversation_manager.current_conversation_id.as_deref()
+        {
+            let todos = self.todos.lock().await;
+            return todos.clone();
+        }
+        Vec::new()
+    }
+
+    pub fn todos_handle(&self) -> Arc<AsyncMutex<Vec<crate::tools::create_todo::TodoItem>>> {
+        Arc::clone(&self.todos)
+    }
+
     /// Get the bash security manager
     pub fn get_bash_security_manager(&self) -> Arc<RwLock<BashSecurityManager>> {
         self.bash_security_manager.clone()
@@ -1166,6 +1203,32 @@ impl Agent {
         self.conversation_manager.current_conversation_id.clone()
     }
 
+    fn todo_conversation_key(&self, conversation_id: Option<&str>) -> String {
+        conversation_id
+            .map(|id| id.to_string())
+            .or_else(|| self.conversation_manager.current_conversation_id.clone())
+            .unwrap_or_else(|| "default".to_string())
+    }
+
+    async fn sync_todos_for_current_conversation(&self) {
+        let key = self.todo_conversation_key(None);
+        let snapshot = {
+            let mut map = self.todos_by_conversation.lock().await;
+            map.entry(key).or_default().clone()
+        };
+        let mut todos = self.todos.lock().await;
+        *todos = snapshot;
+    }
+
+    async fn store_todos_for_current_conversation(
+        &self,
+        todos: Vec<crate::tools::create_todo::TodoItem>,
+    ) {
+        let key = self.todo_conversation_key(None);
+        let mut map = self.todos_by_conversation.lock().await;
+        map.insert(key, todos);
+    }
+
     /// Get the currently active subagent name (if any)
     pub fn active_subagent_name(&self) -> Option<String> {
         self.conversation_manager.subagent.clone()
@@ -1222,13 +1285,16 @@ impl Agent {
             &messages,
             &tool_calls,
         );
+        self.sync_todos_for_current_conversation().await;
 
         Ok(())
     }
 
     /// Start a new conversation
     pub async fn start_new_conversation(&mut self) -> Result<String> {
-        self.conversation_manager.start_new_conversation().await
+        let id = self.conversation_manager.start_new_conversation().await?;
+        self.sync_todos_for_current_conversation().await;
+        Ok(id)
     }
 
     pub async fn switch_to_subagent(
@@ -1256,6 +1322,8 @@ impl Agent {
 
         // Start a new conversation for the subagent
         let _ = self.conversation_manager.start_new_conversation().await;
+        self.sync_todos_for_current_conversation().await;
+        self.sync_todos_for_current_conversation().await;
 
         // Filter tools based on subagent configuration
         let mut tools = self.tools.write().await;
@@ -1295,6 +1363,7 @@ impl Agent {
             // Reset to default configuration if no saved context
             self.conversation_manager.system_prompt = None;
         }
+        self.sync_todos_for_current_conversation().await;
 
         // Restore all tools
         let _ = self.force_refresh_mcp_tools().await;
@@ -1319,11 +1388,20 @@ impl Agent {
         self.conversation_manager
             .clear_conversation_keep_agents_md()
             .await?;
+        self.sync_todos_for_current_conversation().await;
         Ok(())
     }
 
     /// Execute a tool with the new display system
     async fn execute_tool_with_display(&self, call: &ToolCall) -> ToolResult {
+        if is_todo_tool(&call.name) {
+            return self.execute_tool_internal(call).await.unwrap_or_else(|e| ToolResult {
+                tool_use_id: call.id.clone(),
+                content: e.to_string(),
+                is_error: true,
+            });
+        }
+
         // Use the new display system
         let registry = self.tool_registry.read().await;
         let mut display = DisplayFactory::create_display(&call.name, &call.arguments, &registry);
@@ -1512,6 +1590,26 @@ impl Agent {
         } else if call.name == "glob" {
             // Handle glob tool (read-only, no security needed)
             crate::tools::glob::glob_files(&call).await
+        } else if call.name == "create_todo" {
+            // Handle create_todo tool
+            let mut todos = self.todos.lock().await;
+            let result = crate::tools::create_todo::create_todo(call, &mut todos).await;
+            let snapshot = todos.clone();
+            drop(todos);
+            self.store_todos_for_current_conversation(snapshot).await;
+            result
+        } else if call.name == "complete_todo" {
+            // Handle complete_todo tool
+            let mut todos = self.todos.lock().await;
+            let result = crate::tools::complete_todo::complete_todo(call, &mut todos).await;
+            let snapshot = todos.clone();
+            drop(todos);
+            self.store_todos_for_current_conversation(snapshot).await;
+            result
+        } else if call.name == "list_todos" {
+            // Handle list_todos tool
+            let todos = self.todos.lock().await;
+            crate::tools::list_todos::list_todos(call, &todos).await
         } else if let Some(tool) = {
             let tools = self.tools.read().await;
             tools.get(&call.name).cloned()
@@ -1527,6 +1625,10 @@ impl Agent {
             })
         }
     }
+}
+
+fn is_todo_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "create_todo" | "complete_todo" | "list_todos")
 }
 
 #[cfg(test)]

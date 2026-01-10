@@ -43,6 +43,18 @@ impl Tool {
             "edit_file" => Box::new(crate::tools::edit_file::edit_file_sync),
             "delete_file" => Box::new(crate::tools::delete_file::delete_file_sync),
             "create_directory" => Box::new(crate::tools::create_directory::create_directory_sync),
+            "create_todo" | "complete_todo" | "list_todos" => {
+                // Todo tools are handled internally by the Agent
+                Box::new(|_call| {
+                    Box::pin(async move {
+                        Ok(ToolResult {
+                            tool_use_id: String::new(),
+                            content: format!("{} is handled internally by the Agent", _call.name),
+                            is_error: false,
+                        })
+                    })
+                })
+            }
             "bash" => {
                 // For bash tool, we need to create a handler that will be updated later
                 // with the security manager. This is a limitation of the current architecture.

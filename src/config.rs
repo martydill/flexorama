@@ -115,6 +115,10 @@ Whenever you generate code, you must make sure it compiles properly by running a
 Generate a chain of thought, explaining your reasoning step-by-step before giving the final answer. Think deeply about what steps are required to proceed and tell me what they are.
 
 When making tool calls, you must explain why you are making them, and what you hope to accomplish.
+
+You MUST create a list of todos for each task you want to accomplish. Do not start writing code until you have created a todo list.
+You must call the create_todo tool call to create each item in the todo list before starting your work.
+You must call the complete_todo tool call after completing an item in your tool list.
 "#;
 
 pub fn provider_default_api_key(provider: Provider) -> String {

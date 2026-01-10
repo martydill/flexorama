@@ -88,6 +88,7 @@ async fn process_input(
     formatter: &formatter::CodeFormatter,
     stream: bool,
     cancellation_flag: Arc<AtomicBool>,
+    on_tool_event: Option<Arc<dyn Fn(agent::StreamToolEvent) + Send + Sync>>,
 ) {
     // Show spinner while processing (only for non-streaming)
     if stream {
@@ -96,7 +97,7 @@ async fn process_input(
             .process_message_with_stream(
                 &input,
                 Some(Arc::clone(&stream_callback)),
-                None,
+                on_tool_event,
                 cancellation_flag.clone(),
             )
             .await;
@@ -123,7 +124,7 @@ async fn process_input(
     } else {
         let spinner = create_spinner();
         let result = agent
-            .process_message(&input, cancellation_flag.clone())
+            .process_message_with_stream(&input, None, on_tool_event, cancellation_flag.clone())
             .await;
         spinner.finish_and_clear();
 
@@ -191,6 +192,31 @@ async fn run_tui_interactive(
 
     let queued_inputs = Arc::new(Mutex::new(VecDeque::new()));
     tui.set_queue(&VecDeque::new())?;
+    tui.set_todos(&agent.get_todos().await)?;
+
+    let todo_handle = agent.todos_handle();
+    let tui_for_todos = Arc::clone(&tui);
+    let on_tool_event: Arc<dyn Fn(agent::StreamToolEvent) + Send + Sync> =
+        Arc::new(move |event: agent::StreamToolEvent| {
+            if event.event != "tool_result" {
+                return;
+            }
+            if event.name != "create_todo"
+                && event.name != "complete_todo"
+                && event.name != "list_todos"
+            {
+                return;
+            }
+            let todo_handle = Arc::clone(&todo_handle);
+            let tui_for_todos = Arc::clone(&tui_for_todos);
+            tokio::spawn(async move {
+                let todos = {
+                    let guard = todo_handle.lock().await;
+                    guard.clone()
+                };
+                let _ = tui_for_todos.set_todos(&todos);
+            });
+        });
 
     let current_cancel_flag = Arc::new(Mutex::new(None::<Arc<AtomicBool>>));
     let exit_requested = Arc::new(AtomicBool::new(false));
@@ -333,6 +359,7 @@ async fn run_tui_interactive(
             formatter,
             stream,
             cancellation_flag_for_processing.clone(),
+            Some(Arc::clone(&on_tool_event)),
         )
         .await;
         {

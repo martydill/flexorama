@@ -132,6 +132,7 @@ pub struct SkillManager {
     skills: HashMap<String, Skill>,
     active_skills: HashSet<String>,
     config: Arc<RwLock<Config>>,
+    config_path: PathBuf,
 }
 
 impl SkillManager {
@@ -139,12 +140,14 @@ impl SkillManager {
     pub fn new(config: Arc<RwLock<Config>>) -> Result<Self> {
         // Determine skills directory
         let skills_dir = Self::get_skills_dir()?;
+        let config_path = Config::default_config_path();
 
         Ok(SkillManager {
             skills_dir,
             skills: HashMap::new(),
             active_skills: HashSet::new(),
             config,
+            config_path,
         })
     }
 
@@ -155,6 +158,12 @@ impl SkillManager {
             .join(".flexorama")
             .join("skills");
         Ok(skills_dir)
+    }
+
+    #[cfg(test)]
+    pub fn set_test_paths(&mut self, skills_dir: PathBuf, config_path: PathBuf) {
+        self.skills_dir = skills_dir;
+        self.config_path = config_path;
     }
 
     /// Load all skills from ~/.flexorama/skills/ directory
@@ -283,7 +292,7 @@ impl SkillManager {
         let mut config = self.config.write().await;
         config.skills.active_skills.retain(|s| s != name);
         config.skills.deactivated_skills.retain(|s| s != name);
-        config.save(None).await?;
+        config.save(self.config_path.to_str()).await?;
 
         Ok(())
     }
@@ -304,7 +313,7 @@ impl SkillManager {
             config.skills.active_skills.push(name.to_string());
         }
         config.skills.deactivated_skills.retain(|s| s != name);
-        config.save(None).await?;
+        config.save(self.config_path.to_str()).await?;
 
         Ok(())
     }
@@ -320,7 +329,7 @@ impl SkillManager {
         if !config.skills.deactivated_skills.contains(&name.to_string()) {
             config.skills.deactivated_skills.push(name.to_string());
         }
-        config.save(None).await?;
+        config.save(self.config_path.to_str()).await?;
 
         Ok(())
     }
@@ -487,6 +496,14 @@ mod tests {
     fn create_test_config() -> Arc<RwLock<Config>> {
         let config = Config::default();
         Arc::new(RwLock::new(config))
+    }
+
+    fn create_test_manager(temp_dir: &TempDir) -> SkillManager {
+        let config = create_test_config();
+        let mut manager = SkillManager::new(config).unwrap();
+        manager.skills_dir = temp_dir.path().to_path_buf();
+        manager.config_path = temp_dir.path().join("config.toml");
+        manager
     }
 
     // Helper function to create a basic skill
@@ -705,9 +722,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_create_and_get_skill() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("test-create");
 
@@ -724,9 +739,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_create_duplicate_fails() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("duplicate");
 
@@ -740,9 +753,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_save_and_load() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let mut skill = create_test_skill("save-load");
         skill.description = "Updated description".to_string();
@@ -763,9 +774,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_update_skill() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("update-test");
         manager.create_skill(skill).await.unwrap();
@@ -782,9 +791,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_update_nonexistent_fails() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("nonexistent");
         let result = manager.update_skill(&skill).await;
@@ -796,9 +803,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_delete_skill() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("delete-test");
         manager.create_skill(skill).await.unwrap();
@@ -815,9 +820,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_activate_skill() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("activate-test");
         manager.create_skill(skill).await.unwrap();
@@ -833,9 +836,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_activate_nonexistent_fails() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let result = manager.activate_skill("nonexistent").await;
 
@@ -846,9 +847,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_deactivate_skill() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("deactivate-test");
         manager.create_skill(skill).await.unwrap();
@@ -864,9 +863,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_list_skills() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         manager.create_skill(create_test_skill("skill1")).await.unwrap();
         manager.create_skill(create_test_skill("skill2")).await.unwrap();
@@ -879,9 +876,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_get_active_skills_content() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let mut skill = create_test_skill("content-test");
         skill.description = "A test skill description".to_string();
@@ -908,9 +903,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_get_skill_full_content() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let mut skill = create_test_skill("full-content");
         skill.content = "Detailed instructions here.".to_string();
@@ -928,9 +921,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_get_skill_full_content_not_active() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("inactive");
         manager.create_skill(skill).await.unwrap();
@@ -955,9 +946,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_load_all_skills() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         // Create skills manually in the directory
         let skill1 = create_test_skill("auto-load-1");
@@ -970,6 +959,7 @@ Also check @references/api.md
         let config2 = create_test_config();
         let mut manager2 = SkillManager::new(config2).unwrap();
         manager2.skills_dir = temp_dir.path().to_path_buf();
+        manager2.config_path = temp_dir.path().join("config.toml");
 
         manager2.load_all_skills().await.unwrap();
 
@@ -981,9 +971,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_load_skill_references() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         // Create a skill with references
         let content = "Check @references/guide.md for details.";
@@ -1015,9 +1003,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_load_nonexistent_references() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let content = "@references/missing.md";
         let mut skill = create_test_skill("missing-ref");
@@ -1035,9 +1021,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_get_skill_mut() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         let skill = create_test_skill("mutable-test");
         manager.create_skill(skill).await.unwrap();
@@ -1128,9 +1112,7 @@ More content.
     #[tokio::test]
     async fn test_multiple_skills_activation() {
         let temp_dir = TempDir::new().unwrap();
-        let config = create_test_config();
-        let mut manager = SkillManager::new(config).unwrap();
-        manager.skills_dir = temp_dir.path().to_path_buf();
+        let mut manager = create_test_manager(&temp_dir);
 
         manager.create_skill(create_test_skill("skill-a")).await.unwrap();
         manager.create_skill(create_test_skill("skill-b")).await.unwrap();

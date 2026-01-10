@@ -2,11 +2,14 @@
 
 pub mod bash;
 pub mod builtin;
+pub mod complete_todo;
 pub mod create_directory;
+pub mod create_todo;
 pub mod delete_file;
 pub mod edit_file;
 pub mod glob;
 pub mod list_directory;
+pub mod list_todos;
 pub mod mcp;
 pub mod read_file;
 pub mod search_in_files;

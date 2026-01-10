@@ -1,4 +1,5 @@
 const READONLY_TOOLS = ["search_in_files", "glob"];
+const TODO_TOOLS = ["create_todo", "complete_todo", "list_todos"];
 
 const CHART_COLORS = {
   neonGreen: '#39ff14',
@@ -75,6 +76,7 @@ const state = {
   streaming: localStorage.getItem("flexorama-stream") === "true",
   planMode: false,
   pendingPermissions: new Set(),
+  todos: [],
   statsCharts: {
     tokens: null,
     conversations: null,
@@ -97,6 +99,7 @@ const state = {
   lastNonCustomPeriod: localStorage.getItem("flexorama-stats-last-period") || "month",
   statsStartDate: null,
   statsEndDate: null,
+  todosCollapsed: localStorage.getItem("flexorama-todos-collapsed") === "true",
 };
 
 function setPlanForm(plan) {
@@ -133,6 +136,10 @@ function setStatus(text) {
   document.getElementById("conversation-meta").textContent = text;
 }
 
+function isTodoTool(name) {
+  return !!name && TODO_TOOLS.includes(name);
+}
+
 async function api(path, options = {}) {
   const opts = { headers: { "Content-Type": "application/json" }, ...options };
   if (opts.body && typeof opts.body !== "string") {
@@ -149,6 +156,77 @@ async function api(path, options = {}) {
     return res.json();
   }
   return res.text();
+}
+
+function setTodos(todos) {
+  state.todos = Array.isArray(todos) ? todos : [];
+  renderTodoPane();
+}
+
+async function loadTodos() {
+  try {
+    const suffix = state.activeConversationId
+      ? `?conversation_id=${encodeURIComponent(state.activeConversationId)}`
+      : "";
+    const todos = await api(`/api/todos${suffix}`);
+    setTodos(todos);
+  } catch (_) {
+    setTodos([]);
+  }
+}
+
+function renderTodoPane() {
+  const pane = document.getElementById("todo-pane");
+  const list = document.getElementById("todo-list");
+  const count = document.getElementById("todo-count");
+  const toggle = document.getElementById("todo-toggle");
+  if (!pane || !list || !count) return;
+  const todos = Array.isArray(state.todos) ? state.todos : [];
+  const hasPending = todos.some((todo) => !todo.completed);
+  if (!hasPending) {
+    pane.classList.remove("visible");
+    return;
+  }
+  pane.classList.add("visible");
+  pane.classList.toggle("collapsed", state.todosCollapsed);
+  if (toggle) {
+    toggle.textContent = state.todosCollapsed ? "Expand" : "Collapse";
+  }
+  count.textContent = String(todos.length);
+  list.innerHTML = "";
+  const pending = todos.filter((todo) => !todo.completed);
+  const completed = todos.filter((todo) => todo.completed);
+  const ordered = pending.concat(completed);
+  const visible = ordered.slice(0, 10);
+  const remaining = ordered.length - visible.length;
+
+  visible.forEach((todo) => {
+    const item = document.createElement("div");
+    item.className = "todo-item";
+    const check = document.createElement("span");
+    check.className = "todo-check" + (todo.completed ? " complete" : "");
+    check.textContent = todo.completed ? "[✓]" : "[ ]";
+    const text = document.createElement("div");
+    text.className = "todo-text" + (todo.completed ? " complete" : "");
+    text.textContent = todo.description || "";
+    item.appendChild(check);
+    item.appendChild(text);
+    list.appendChild(item);
+  });
+
+  if (remaining > 0) {
+    const item = document.createElement("div");
+    item.className = "todo-item";
+    const spacer = document.createElement("span");
+    spacer.className = "todo-check";
+    spacer.textContent = "";
+    const text = document.createElement("div");
+    text.className = "todo-text";
+    text.textContent = `...(${remaining} more)...`;
+    item.appendChild(spacer);
+    item.appendChild(text);
+    list.appendChild(item);
+  }
 }
 
 function renderConversationList() {
@@ -333,7 +411,13 @@ function renderTextContent(text) {
 function renderMessageBubble(msg) {
   const bubble = document.createElement("div");
   bubble.className = `bubble ${msg.role}`;
-  const blocks = normalizeBlocks(msg.blocks, msg.content);
+  const blocks = normalizeBlocks(msg.blocks, msg.content).filter(
+    (b) =>
+      !(
+        (b.type === "tool_use" || b.type === "tool_result") &&
+        isTodoTool(b.name)
+      ),
+  );
   const hasToolResult = blocks.some((b) => (b.type || b.block_type) === "tool_result");
   if (!blocks.length) return null;
   const hasVisible = blocks.some(
@@ -746,6 +830,7 @@ async function selectConversation(id) {
   }
   await loadModels();
   await loadPendingPermissions();
+  await loadTodos();
 }
 
 async function createConversation() {
@@ -795,6 +880,7 @@ async function sendMessageOnce(text) {
     });
     appendMessage("assistant", result.response || "(empty response)");
     setStatus("Ready");
+    await loadTodos();
     await loadConversations();
   } catch (err) {
     appendMessage("assistant", `Error: ${err.message}`);
@@ -855,6 +941,10 @@ async function sendMessageStreaming(text) {
           currentText = evt.content;
           updateBubbleContent(bubble, currentText);
         } else if (evt.type === "tool_call") {
+          if (isTodoTool(evt.name)) {
+            await loadTodos();
+            continue;
+          }
           if (!toolBubble || !document.body.contains(toolBubble)) {
             toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
             toolBubble.dataset.toolStream = "true";
@@ -866,6 +956,10 @@ async function sendMessageStreaming(text) {
             input: evt.input,
           });
         } else if (evt.type === "tool_result") {
+          if (isTodoTool(evt.name)) {
+            await loadTodos();
+            continue;
+          }
           if (!toolBubble || !document.body.contains(toolBubble)) {
             toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
             toolBubble.dataset.toolStream = "true";
@@ -1590,6 +1684,14 @@ function bindEvents() {
     });
   }
   document.getElementById("new-conversation").addEventListener("click", createConversation);
+  const todoToggle = document.getElementById("todo-toggle");
+  if (todoToggle) {
+    todoToggle.addEventListener("click", () => {
+      state.todosCollapsed = !state.todosCollapsed;
+      localStorage.setItem("flexorama-todos-collapsed", String(state.todosCollapsed));
+      renderTodoPane();
+    });
+  }
 
   document.getElementById("save-plan").addEventListener("click", savePlan);
   const createPlanBtn = document.getElementById("create-plan");
@@ -2113,6 +2215,7 @@ async function bootstrap() {
     await loadAgents();
     await loadSkills();
     await loadPlanMode();
+    await loadTodos();
     await restoreSelections();
     switch (state.activeTab) {
       case "plans":
@@ -2191,6 +2294,7 @@ async function showContextModal() {
 function closeContextModal() {
   document.getElementById("context-modal").classList.remove("open");
 }
+
 
 
 
