@@ -3,6 +3,10 @@ name = "flexorama"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "flexorama"
+path = "src/lib.rs"
+
 [[bin]]
 name = "flx"
 path = "src/main.rs" 

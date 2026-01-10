@@ -17,29 +17,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, warn};
 
 #[macro_use]
-mod output;
+extern crate flexorama;
 
-mod agent;
-mod anthropic;
-mod autocomplete;
-mod config;
-mod conversation;
-mod database;
-mod formatter;
-mod gemini;
-mod help;
-mod input;
-mod logo;
-mod mcp;
-mod openai;
-mod security;
-mod skill;
-mod subagent;
-mod tui;
-mod web;
-
-mod llm;
-mod tools;
+use flexorama::*;
 
 use agent::Agent;
 use config::{Config, Provider};
