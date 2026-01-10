@@ -6,7 +6,6 @@ The hybrid cli/web coding agent that works your way.
 <img width="1290" height="719" alt="image" src="https://github.com/user-attachments/assets/fc96dd80-c8c6-43ce-b6a4-bb9bc8d27c97" />
 
 ## Features
- - Interactive and non-interactive mode
  - Built-in file editing, bash, code search, and glob tools
  - Claude-style skills support and management with /skills
  - Syntax highlighting for code snippets
@@ -26,6 +25,7 @@ The hybrid cli/web coding agent that works your way.
  - Command line history navigation with up and down arrow keys and Ctrl-R search
  - Support for different LLM APIs (Anthropic, Gemini, OpenAI, Z.AI) with the --provider arg
  - Support for different models for each provider with /model
+ - Interactive and non-interactive mode
 
 
 ## Web interface
@@ -33,6 +33,7 @@ The hybrid cli/web coding agent that works your way.
 The optional web UI provides a ChatGPT-style browser-based interface for chats, as well as plan, agent, MCP, skills, and stats functionality
 
 ## Todo 
+ - Todo checklists 
  - Git worktrees
  - Token speedometer
  - Hooks
