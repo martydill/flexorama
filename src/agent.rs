@@ -1713,4 +1713,646 @@ mod tests {
             Some("Hi there")
         );
     }
+
+    #[test]
+    fn agent_new_initializes_with_defaults() {
+        let config = Config::default();
+        let agent = Agent::new(config.clone(), "test-model".to_string(), false, false);
+
+        assert_eq!(agent.model, "test-model");
+        assert_eq!(agent.provider, config.provider);
+        assert_eq!(agent.base_url, config.base_url);
+        assert!(!agent.yolo_mode);
+        assert!(!agent.plan_mode);
+        assert!(agent.mcp_manager.is_none());
+        assert_eq!(agent.last_mcp_tools_version, 0);
+        assert!(agent.active_skills.is_empty());
+        assert!(agent.saved_conversation_context.is_none());
+        assert_eq!(agent.token_usage.request_count, 0);
+    }
+
+    #[test]
+    fn agent_new_with_yolo_mode() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), true, false);
+
+        assert!(agent.yolo_mode);
+        assert!(!agent.plan_mode);
+    }
+
+    #[test]
+    fn set_system_prompt_updates_conversation_manager() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        // Config::default() sets a default system prompt, so it's not None initially
+        assert!(agent.conversation_manager.system_prompt.is_some());
+
+        agent.set_system_prompt("Custom system prompt".to_string());
+
+        assert_eq!(
+            agent.conversation_manager.system_prompt.as_deref(),
+            Some("Custom system prompt")
+        );
+    }
+
+    #[test]
+    fn apply_plan_mode_prompt_preserves_existing_context() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, true);
+
+        agent.set_system_prompt("Existing prompt".to_string());
+        agent.apply_plan_mode_prompt();
+
+        let prompt = agent.conversation_manager.system_prompt.unwrap();
+        assert!(prompt.contains("You are operating in plan mode"));
+        assert!(prompt.contains("Existing prompt"));
+        assert!(agent.plan_mode_saved_system_prompt.is_some());
+    }
+
+    #[test]
+    fn apply_plan_mode_prompt_saves_original() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, true);
+
+        agent.set_system_prompt("Original prompt".to_string());
+        agent.apply_plan_mode_prompt();
+
+        assert_eq!(
+            agent.plan_mode_saved_system_prompt,
+            Some(Some("Original prompt".to_string()))
+        );
+    }
+
+    #[test]
+    fn derive_plan_title_from_first_heading() {
+        let markdown = "# My Great Plan\n\nThis is the plan content.";
+        let title = Agent::derive_plan_title(markdown);
+        assert_eq!(title.as_deref(), Some("My Great Plan"));
+    }
+
+    #[test]
+    fn derive_plan_title_from_multiple_hashes() {
+        let markdown = "## Secondary Heading\n\nContent here.";
+        let title = Agent::derive_plan_title(markdown);
+        assert_eq!(title.as_deref(), Some("Secondary Heading"));
+    }
+
+    #[test]
+    fn derive_plan_title_returns_none_for_no_heading() {
+        let markdown = "Just some text without headings.";
+        let title = Agent::derive_plan_title(markdown);
+        assert_eq!(title, None);
+    }
+
+    #[test]
+    fn derive_plan_title_ignores_empty_headings() {
+        let markdown = "#\n## \n### Actual Title\n\nContent.";
+        let title = Agent::derive_plan_title(markdown);
+        assert_eq!(title.as_deref(), Some("Actual Title"));
+    }
+
+    #[test]
+    fn extract_context_files_from_message() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let message = "Please read @file1.txt and @dir/file2.rs for context";
+        let files = agent.extract_context_files(message);
+
+        assert_eq!(files.len(), 2);
+        assert!(files.contains(&"file1.txt".to_string()));
+        assert!(files.contains(&"dir/file2.rs".to_string()));
+    }
+
+    #[test]
+    fn extract_context_files_handles_multiple_at_symbols() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let message = "@file1.txt @file2.txt @file3.txt";
+        let files = agent.extract_context_files(message);
+
+        assert_eq!(files.len(), 3);
+    }
+
+    #[test]
+    fn clean_message_removes_at_file_syntax() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let message = "Read @file1.txt and explain it";
+        let cleaned = agent.clean_message(message);
+
+        assert!(!cleaned.contains("@file1.txt"));
+        assert!(cleaned.contains("Read") && cleaned.contains("and explain it"));
+    }
+
+    #[test]
+    fn clean_message_with_only_files() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let message = "@file1.txt @file2.txt";
+        let cleaned = agent.clean_message(message);
+
+        // The clean_message function removes @file references
+        // Check that file references are not present in the cleaned message
+        assert!(!cleaned.contains("@file1.txt"));
+        assert!(!cleaned.contains("@file2.txt"));
+    }
+
+    #[test]
+    fn token_usage_accumulates_multiple_requests() {
+        let mut usage_tracker = TokenUsage::new();
+
+        usage_tracker.add_usage(&Usage {
+            input_tokens: 10,
+            output_tokens: 20,
+        });
+        usage_tracker.add_usage(&Usage {
+            input_tokens: 15,
+            output_tokens: 25,
+        });
+
+        assert_eq!(usage_tracker.request_count, 2);
+        assert_eq!(usage_tracker.total_input_tokens, 25);
+        assert_eq!(usage_tracker.total_output_tokens, 45);
+        assert_eq!(usage_tracker.total_tokens(), 70);
+    }
+
+    #[test]
+    fn get_token_usage_returns_reference() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.token_usage.add_usage(&Usage {
+            input_tokens: 100,
+            output_tokens: 200,
+        });
+
+        let usage = agent.get_token_usage();
+        assert_eq!(usage.total_input_tokens, 100);
+        assert_eq!(usage.total_output_tokens, 200);
+    }
+
+    #[test]
+    fn reset_token_usage_clears_all_counts() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.token_usage.add_usage(&Usage {
+            input_tokens: 100,
+            output_tokens: 200,
+        });
+        agent.reset_token_usage();
+
+        assert_eq!(agent.token_usage.request_count, 0);
+        assert_eq!(agent.token_usage.total_input_tokens, 0);
+        assert_eq!(agent.token_usage.total_output_tokens, 0);
+    }
+
+    #[test]
+    fn provider_returns_correct_value() {
+        let config = Config::default();
+        let agent = Agent::new(config.clone(), "test-model".to_string(), false, false);
+
+        assert_eq!(agent.provider(), config.provider);
+    }
+
+    #[test]
+    fn model_returns_current_model() {
+        let config = Config::default();
+        let agent = Agent::new(config, "my-model".to_string(), false, false);
+
+        assert_eq!(agent.model(), "my-model");
+    }
+
+    #[test]
+    fn plan_mode_returns_current_state() {
+        let config = Config::default();
+        let agent_normal = Agent::new(config.clone(), "test-model".to_string(), false, false);
+        let agent_plan = Agent::new(config, "test-model".to_string(), false, true);
+
+        assert!(!agent_normal.plan_mode());
+        assert!(agent_plan.plan_mode());
+    }
+
+    #[test]
+    fn set_model_local_updates_both_agent_and_conversation() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "old-model".to_string(), false, false);
+
+        agent.set_model_local("new-model".to_string());
+
+        assert_eq!(agent.model, "new-model");
+        assert_eq!(agent.conversation_manager.model, "new-model");
+    }
+
+    #[test]
+    fn conversation_len_returns_message_count() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.conversation_manager.conversation.push(Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("Hello".to_string())],
+        });
+        agent.conversation_manager.conversation.push(Message {
+            role: "assistant".to_string(),
+            content: vec![ContentBlock::text("Hi".to_string())],
+        });
+
+        assert_eq!(agent.conversation_len(), 2);
+    }
+
+    #[test]
+    fn current_conversation_id_returns_none_initially() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        assert_eq!(agent.current_conversation_id(), None);
+    }
+
+    #[test]
+    fn active_subagent_name_returns_none_initially() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        assert_eq!(agent.active_subagent_name(), None);
+    }
+
+    #[test]
+    fn get_system_prompt_returns_default_initially() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        // Config::default() sets a default system prompt
+        assert!(agent.get_system_prompt().is_some());
+    }
+
+    #[test]
+    fn get_system_prompt_returns_set_value() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.set_system_prompt("Test prompt".to_string());
+
+        assert_eq!(agent.get_system_prompt(), Some(&"Test prompt".to_string()));
+    }
+
+    #[test]
+    fn database_manager_returns_none_when_not_configured() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        assert!(agent.database_manager().is_none());
+    }
+
+    #[test]
+    fn get_active_skills_returns_empty_initially() {
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        assert_eq!(agent.get_active_skills().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn set_plan_mode_to_same_value_is_noop() {
+        let config = Config::default();
+        let mut agent =
+            Agent::new_with_plan_mode(config, "test-model".to_string(), false, true).await;
+
+        let result = agent.set_plan_mode(true).await;
+
+        assert!(result.is_ok());
+        assert!(agent.plan_mode);
+    }
+
+    #[tokio::test]
+    async fn set_plan_mode_enabling_filters_tools() {
+        let config = Config::default();
+        let mut agent =
+            Agent::new_with_plan_mode(config, "test-model".to_string(), false, false).await;
+
+        let tools_before = agent.tools.read().await;
+        let has_bash_before = tools_before.contains_key("bash");
+        drop(tools_before);
+
+        assert!(has_bash_before);
+
+        agent.set_plan_mode(true).await.unwrap();
+
+        let tools_after = agent.tools.read().await;
+        let has_bash_after = tools_after.contains_key("bash");
+        drop(tools_after);
+
+        assert!(!has_bash_after);
+        assert!(agent.plan_mode);
+    }
+
+    #[tokio::test]
+    async fn set_plan_mode_disabling_restores_tools() {
+        let config = Config::default();
+        let mut agent =
+            Agent::new_with_plan_mode(config, "test-model".to_string(), false, true).await;
+
+        let tools_before = agent.tools.read().await;
+        let has_bash_before = tools_before.contains_key("bash");
+        drop(tools_before);
+
+        assert!(!has_bash_before);
+
+        agent.set_plan_mode(false).await.unwrap();
+
+        let tools_after = agent.tools.read().await;
+        let has_bash_after = tools_after.contains_key("bash");
+        drop(tools_after);
+
+        assert!(has_bash_after);
+        assert!(!agent.plan_mode);
+    }
+
+    #[tokio::test]
+    async fn set_plan_mode_restores_saved_system_prompt() {
+        let config = Config::default();
+        let mut agent =
+            Agent::new_with_plan_mode(config, "test-model".to_string(), false, false).await;
+
+        agent.set_system_prompt("Original prompt".to_string());
+        agent.set_plan_mode(true).await.unwrap();
+
+        let plan_prompt = agent.conversation_manager.system_prompt.clone();
+        assert!(plan_prompt.unwrap().contains("plan mode"));
+
+        agent.set_plan_mode(false).await.unwrap();
+
+        assert_eq!(
+            agent.conversation_manager.system_prompt.as_deref(),
+            Some("Original prompt")
+        );
+    }
+
+    #[tokio::test]
+    async fn filter_tools_for_subagent_removes_denied() {
+        use std::collections::HashSet;
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let mut tools = get_builtin_tools()
+            .into_iter()
+            .map(|t| (t.name.clone(), t))
+            .collect();
+
+        let mut denied = HashSet::new();
+        denied.insert("read_file".to_string());
+
+        let subagent_config = subagent::SubagentConfig {
+            name: "test-subagent".to_string(),
+            system_prompt: "Test prompt".to_string(),
+            model: None,
+            allowed_tools: HashSet::new(),
+            denied_tools: denied,
+            max_tokens: None,
+            temperature: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        agent.filter_tools_for_subagent(&mut tools, &subagent_config);
+
+        assert!(!tools.contains_key("read_file"));
+    }
+
+    #[tokio::test]
+    async fn filter_tools_for_subagent_keeps_only_allowed() {
+        use std::collections::HashSet;
+        let config = Config::default();
+        let agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let mut tools = get_builtin_tools()
+            .into_iter()
+            .map(|t| (t.name.clone(), t))
+            .collect();
+
+        let mut allowed = HashSet::new();
+        allowed.insert("read_file".to_string());
+        allowed.insert("list_directory".to_string());
+
+        let subagent_config = subagent::SubagentConfig {
+            name: "test-subagent".to_string(),
+            system_prompt: "Test prompt".to_string(),
+            model: None,
+            allowed_tools: allowed,
+            denied_tools: HashSet::new(),
+            max_tokens: None,
+            temperature: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        agent.filter_tools_for_subagent(&mut tools, &subagent_config);
+
+        assert_eq!(tools.len(), 2);
+        assert!(tools.contains_key("read_file"));
+        assert!(tools.contains_key("list_directory"));
+    }
+
+    #[tokio::test]
+    async fn switch_to_subagent_saves_context() {
+        use std::collections::HashSet;
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.conversation_manager.conversation.push(Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("Before switch".to_string())],
+        });
+        agent.set_system_prompt("Original system".to_string());
+        agent.conversation_manager.current_conversation_id = Some("conv-1".to_string());
+
+        let subagent_config = subagent::SubagentConfig {
+            name: "subagent-1".to_string(),
+            system_prompt: "Subagent prompt".to_string(),
+            model: Some("subagent-model".to_string()),
+            allowed_tools: HashSet::new(),
+            denied_tools: HashSet::new(),
+            max_tokens: None,
+            temperature: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        agent.switch_to_subagent(&subagent_config).await.unwrap();
+
+        assert!(agent.saved_conversation_context.is_some());
+        let saved = agent.saved_conversation_context.as_ref().unwrap();
+        assert_eq!(saved.conversation.len(), 1);
+        assert_eq!(saved.system_prompt.as_deref(), Some("Original system"));
+        assert_eq!(saved.current_conversation_id.as_deref(), Some("conv-1"));
+        assert_eq!(saved.model, "test-model");
+    }
+
+    #[tokio::test]
+    async fn switch_to_subagent_updates_system_prompt() {
+        use std::collections::HashSet;
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let subagent_config = subagent::SubagentConfig {
+            name: "subagent-1".to_string(),
+            system_prompt: "Subagent prompt".to_string(),
+            model: None,
+            allowed_tools: HashSet::new(),
+            denied_tools: HashSet::new(),
+            max_tokens: None,
+            temperature: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        agent.switch_to_subagent(&subagent_config).await.unwrap();
+
+        assert_eq!(
+            agent.conversation_manager.system_prompt.as_deref(),
+            Some("Subagent prompt")
+        );
+        assert_eq!(
+            agent.conversation_manager.subagent.as_deref(),
+            Some("subagent-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn switch_to_subagent_updates_model() {
+        use std::collections::HashSet;
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let subagent_config = subagent::SubagentConfig {
+            name: "subagent-1".to_string(),
+            system_prompt: "Subagent prompt".to_string(),
+            model: Some("new-model".to_string()),
+            allowed_tools: HashSet::new(),
+            denied_tools: HashSet::new(),
+            max_tokens: None,
+            temperature: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        agent.switch_to_subagent(&subagent_config).await.unwrap();
+
+        assert_eq!(agent.model, "new-model");
+        assert_eq!(agent.conversation_manager.model, "new-model");
+    }
+
+    #[tokio::test]
+    async fn exit_subagent_restores_context() {
+        use std::collections::HashSet;
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.conversation_manager.conversation.push(Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("Original message".to_string())],
+        });
+        agent.set_system_prompt("Original system".to_string());
+        agent.conversation_manager.current_conversation_id = Some("conv-1".to_string());
+
+        let subagent_config = subagent::SubagentConfig {
+            name: "subagent-1".to_string(),
+            system_prompt: "Subagent prompt".to_string(),
+            model: Some("subagent-model".to_string()),
+            allowed_tools: HashSet::new(),
+            denied_tools: HashSet::new(),
+            max_tokens: None,
+            temperature: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        agent.switch_to_subagent(&subagent_config).await.unwrap();
+        agent.exit_subagent().await.unwrap();
+
+        assert_eq!(agent.conversation_manager.conversation.len(), 1);
+        assert_eq!(
+            agent.conversation_manager.system_prompt.as_deref(),
+            Some("Original system")
+        );
+        assert_eq!(
+            agent.conversation_manager.current_conversation_id.as_deref(),
+            Some("conv-1")
+        );
+        assert_eq!(agent.model, "test-model");
+        assert!(agent.conversation_manager.subagent.is_none());
+    }
+
+    #[tokio::test]
+    async fn exit_subagent_without_saved_context_resets() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.exit_subagent().await.unwrap();
+
+        assert_eq!(agent.conversation_manager.system_prompt, None);
+        assert!(agent.conversation_manager.subagent.is_none());
+    }
+
+    #[test]
+    fn snapshot_message_clone() {
+        let msg = SnapshotMessage {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("Test".to_string())],
+        };
+
+        let cloned = msg.clone();
+        assert_eq!(cloned.role, "user");
+        assert_eq!(cloned.content.len(), 1);
+    }
+
+    #[test]
+    fn saved_conversation_context_clone() {
+        let context = SavedConversationContext {
+            conversation: vec![Message {
+                role: "user".to_string(),
+                content: vec![ContentBlock::text("Test".to_string())],
+            }],
+            system_prompt: Some("Prompt".to_string()),
+            current_conversation_id: Some("id-1".to_string()),
+            model: "model-1".to_string(),
+        };
+
+        let cloned = context.clone();
+        assert_eq!(cloned.conversation.len(), 1);
+        assert_eq!(cloned.system_prompt.as_deref(), Some("Prompt"));
+        assert_eq!(cloned.current_conversation_id.as_deref(), Some("id-1"));
+        assert_eq!(cloned.model, "model-1");
+    }
+
+    #[test]
+    fn stream_tool_event_serializes() {
+        let event = StreamToolEvent {
+            event: "tool_call".to_string(),
+            tool_use_id: "id-1".to_string(),
+            name: "read_file".to_string(),
+            input: Some(json!({"file_path": "test.txt"})),
+            content: None,
+            is_error: None,
+        };
+
+        let serialized = serde_json::to_string(&event).unwrap();
+        assert!(serialized.contains("tool_call"));
+        assert!(serialized.contains("read_file"));
+    }
+
+    #[tokio::test]
+    async fn new_with_plan_mode_adds_use_skill_tool() {
+        let config = Config::default();
+        let agent =
+            Agent::new_with_plan_mode(config, "test-model".to_string(), false, false).await;
+
+        let tools = agent.tools.read().await;
+        assert!(tools.contains_key("use_skill"));
+    }
 }

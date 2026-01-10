@@ -1200,3 +1200,782 @@ impl Default for McpManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    // Helper function to create a temporary config directory
+    fn temp_config_dir() -> TempDir {
+        tempfile::tempdir().expect("Failed to create temp dir")
+    }
+
+    // Helper function to create a test McpServerConfig
+    fn test_server_config() -> McpServerConfig {
+        McpServerConfig {
+            name: "test-server".to_string(),
+            command: Some("echo".to_string()),
+            args: Some(vec!["test".to_string()]),
+            env: Some(HashMap::new()),
+            url: None,
+            enabled: true,
+        }
+    }
+
+    // Tests for McpRequest serialization
+    #[test]
+    fn test_mcp_request_initialize_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("1".to_string()),
+            method: McpMethod::Initialize {
+                protocol_version: "2024-11-05".to_string(),
+                capabilities: McpClientCapabilities {
+                    tools: Some(McpToolsCapability {
+                        list_changed: Some(true),
+                    }),
+                },
+                client_info: McpClientInfo {
+                    name: "flexorama".to_string(),
+                    version: "0.1.0".to_string(),
+                },
+            },
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "1");
+        assert_eq!(serialized["method"], "initialize");
+        assert!(serialized["params"]["capabilities"]["tools"]["list_changed"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_mcp_request_list_tools_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("2".to_string()),
+            method: McpMethod::ListTools,
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "2");
+        assert_eq!(serialized["method"], "tools/list");
+    }
+
+    #[test]
+    fn test_mcp_request_call_tool_serialization() {
+        let arguments = json!({
+            "path": "/test/path",
+            "content": "test content"
+        });
+
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("3".to_string()),
+            method: McpMethod::CallTool {
+                name: "write_file".to_string(),
+                arguments: Some(arguments.clone()),
+            },
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "3");
+        assert_eq!(serialized["method"], "tools/call");
+        assert_eq!(serialized["params"]["name"], "write_file");
+        assert_eq!(serialized["params"]["arguments"]["path"], "/test/path");
+    }
+
+    #[test]
+    fn test_mcp_request_ping_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("4".to_string()),
+            method: McpMethod::Ping,
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "4");
+        assert_eq!(serialized["method"], "ping");
+    }
+
+    #[test]
+    fn test_mcp_request_initialized_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: None,
+            method: McpMethod::Initialized,
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert!(serialized["id"].is_null());
+        assert_eq!(serialized["method"], "notifications/initialized");
+    }
+
+    // Tests for McpResponse deserialization
+    #[test]
+    fn test_mcp_response_success_deserialization() {
+        let json_str = r#"{
+            "jsonrpc": "2.0",
+            "id": "1",
+            "result": {
+                "tools": []
+            }
+        }"#;
+
+        let response: McpResponse = serde_json::from_str(json_str).unwrap();
+        assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(response.id.unwrap(), "1");
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+    }
+
+    #[test]
+    fn test_mcp_response_error_deserialization() {
+        let json_str = r#"{
+            "jsonrpc": "2.0",
+            "id": "1",
+            "error": {
+                "code": -32601,
+                "message": "Method not found"
+            }
+        }"#;
+
+        let response: McpResponse = serde_json::from_str(json_str).unwrap();
+        assert_eq!(response.jsonrpc, "2.0");
+        assert_eq!(response.id.unwrap(), "1");
+        assert!(response.result.is_none());
+        assert!(response.error.is_some());
+
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32601);
+        assert_eq!(error.message, "Method not found");
+    }
+
+    #[test]
+    fn test_mcp_error_with_data() {
+        let json_str = r#"{
+            "jsonrpc": "2.0",
+            "id": "1",
+            "error": {
+                "code": -32600,
+                "message": "Invalid Request",
+                "data": {
+                    "details": "Missing required parameter"
+                }
+            }
+        }"#;
+
+        let response: McpResponse = serde_json::from_str(json_str).unwrap();
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32600);
+        assert!(error.data.is_some());
+        assert_eq!(
+            error.data.unwrap()["details"],
+            "Missing required parameter"
+        );
+    }
+
+    // Tests for McpTool
+    #[test]
+    fn test_mcp_tool_deserialization_camel_case() {
+        let json_str = r#"{
+            "name": "read_file",
+            "description": "Read a file",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path"
+                    }
+                },
+                "required": ["path"]
+            }
+        }"#;
+
+        let tool: McpTool = serde_json::from_str(json_str).unwrap();
+        assert_eq!(tool.name, "read_file");
+        assert_eq!(tool.description.unwrap(), "Read a file");
+        assert!(tool.input_schema.is_object());
+    }
+
+    #[test]
+    fn test_mcp_tool_deserialization_snake_case() {
+        let json_str = r#"{
+            "name": "write_file",
+            "description": "Write a file",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string"
+                    },
+                    "content": {
+                        "type": "string"
+                    }
+                }
+            }
+        }"#;
+
+        let tool: McpTool = serde_json::from_str(json_str).unwrap();
+        assert_eq!(tool.name, "write_file");
+        assert_eq!(tool.description.unwrap(), "Write a file");
+        assert!(tool.input_schema.is_object());
+    }
+
+    #[test]
+    fn test_mcp_tool_no_description() {
+        let json_str = r#"{
+            "name": "test_tool",
+            "input_schema": {
+                "type": "object",
+                "properties": {}
+            }
+        }"#;
+
+        let tool: McpTool = serde_json::from_str(json_str).unwrap();
+        assert_eq!(tool.name, "test_tool");
+        assert!(tool.description.is_none());
+    }
+
+    // Tests for McpConnection
+    #[test]
+    fn test_mcp_connection_new() {
+        let connection = McpConnection::new("test-server".to_string());
+        assert_eq!(connection.name, "test-server");
+        assert_eq!(connection.request_id, 1);
+        assert!(connection.process.is_none());
+        assert!(connection.websocket.is_none());
+        assert!(connection.reader.is_none());
+        assert!(connection.writer.is_none());
+    }
+
+    #[test]
+    fn test_mcp_connection_next_id() {
+        let mut connection = McpConnection::new("test".to_string());
+        assert_eq!(connection.next_id(), "1");
+        assert_eq!(connection.next_id(), "2");
+        assert_eq!(connection.next_id(), "3");
+        assert_eq!(connection.request_id, 4);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_connection_get_tools_empty() {
+        let connection = McpConnection::new("test".to_string());
+        let tools = connection.get_tools().await;
+        assert_eq!(tools.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_connection_get_tools_version() {
+        let connection = McpConnection::new("test".to_string());
+        let version = connection.get_tools_version().await;
+        assert_eq!(version, 0);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_connection_tools_version_increment() {
+        let connection = McpConnection::new("test".to_string());
+
+        // Initial version should be 0
+        assert_eq!(connection.get_tools_version().await, 0);
+
+        // Simulate version increment
+        {
+            let mut version = connection.tools_version.write().await;
+            *version += 1;
+        }
+
+        assert_eq!(connection.get_tools_version().await, 1);
+    }
+
+    #[test]
+    fn test_log_tool_details() {
+        let connection = McpConnection::new("test".to_string());
+        let tool = McpTool {
+            name: "test_tool".to_string(),
+            description: Some("A test tool".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "arg1": {
+                        "type": "string",
+                        "description": "First argument"
+                    },
+                    "arg2": {
+                        "type": "number",
+                        "description": "Second argument"
+                    }
+                },
+                "required": ["arg1"]
+            }),
+        };
+
+        // This should not panic
+        connection.log_tool_details(&tool);
+    }
+
+    #[test]
+    fn test_log_tool_details_no_description() {
+        let connection = McpConnection::new("test".to_string());
+        let tool = McpTool {
+            name: "minimal_tool".to_string(),
+            description: None,
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        };
+
+        // This should not panic
+        connection.log_tool_details(&tool);
+    }
+
+    #[test]
+    fn test_log_tool_details_invalid_schema() {
+        let connection = McpConnection::new("test".to_string());
+        let tool = McpTool {
+            name: "invalid_tool".to_string(),
+            description: Some("Tool with invalid schema".to_string()),
+            input_schema: json!("not an object"),
+        };
+
+        // This should not panic
+        connection.log_tool_details(&tool);
+    }
+
+    // Tests for McpManager
+    #[test]
+    fn test_mcp_manager_new() {
+        let manager = McpManager::new();
+        assert!(manager.config_path.is_none());
+    }
+
+    #[test]
+    fn test_mcp_manager_new_with_config_path() {
+        let temp_dir = temp_config_dir();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let manager = McpManager::new_with_config_path(config_path.clone());
+        assert_eq!(manager.config_path, Some(config_path));
+    }
+
+    #[test]
+    fn test_mcp_manager_default() {
+        let manager = McpManager::default();
+        assert!(manager.config_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_initialize() {
+        let manager = McpManager::new();
+        let mut config = McpConfig::default();
+        config.servers.insert(
+            "test-server".to_string(),
+            test_server_config(),
+        );
+
+        let result = manager.initialize(config.clone()).await;
+        assert!(result.is_ok());
+
+        let loaded_config = manager.load_config().await.unwrap();
+        assert_eq!(loaded_config.servers.len(), 1);
+        assert!(loaded_config.servers.contains_key("test-server"));
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_get_server() {
+        let manager = McpManager::new();
+        let mut config = McpConfig::default();
+        config.servers.insert(
+            "test-server".to_string(),
+            test_server_config(),
+        );
+
+        manager.initialize(config).await.unwrap();
+
+        let server = manager.get_server("test-server").await;
+        assert!(server.is_some());
+        assert_eq!(server.unwrap().command, Some("echo".to_string()));
+
+        let missing_server = manager.get_server("nonexistent").await;
+        assert!(missing_server.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_is_connected() {
+        let manager = McpManager::new();
+
+        // Initially not connected
+        assert!(!manager.is_connected("test-server").await);
+
+        // Manually add a connection for testing
+        {
+            let mut connections = manager.connections.write().await;
+            connections.insert(
+                "test-server".to_string(),
+                McpConnection::new("test-server".to_string()),
+            );
+        }
+
+        // Now should be connected
+        assert!(manager.is_connected("test-server").await);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_get_tools_version_empty() {
+        let manager = McpManager::new();
+        let version = manager.get_tools_version().await;
+        assert_eq!(version, 0);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_get_tools_version_with_connections() {
+        let manager = McpManager::new();
+
+        // Add connections with different versions
+        {
+            let mut connections = manager.connections.write().await;
+
+            let conn1 = McpConnection::new("server1".to_string());
+            {
+                let mut version = conn1.tools_version.write().await;
+                *version = 5;
+            }
+            connections.insert("server1".to_string(), conn1);
+
+            let conn2 = McpConnection::new("server2".to_string());
+            {
+                let mut version = conn2.tools_version.write().await;
+                *version = 3;
+            }
+            connections.insert("server2".to_string(), conn2);
+        }
+
+        // Total version should be sum of all connection versions
+        let version = manager.get_tools_version().await;
+        assert_eq!(version, 8);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_list_servers_empty() {
+        let manager = McpManager::new();
+        let servers = manager.list_servers().await.unwrap();
+        assert_eq!(servers.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_list_servers() {
+        let manager = McpManager::new();
+        let mut config = McpConfig::default();
+
+        config.servers.insert(
+            "server1".to_string(),
+            test_server_config(),
+        );
+
+        let mut server2_config = test_server_config();
+        server2_config.name = "server2".to_string();
+        server2_config.enabled = false;
+        config.servers.insert("server2".to_string(), server2_config);
+
+        manager.initialize(config).await.unwrap();
+
+        let servers = manager.list_servers().await.unwrap();
+        assert_eq!(servers.len(), 2);
+
+        // Find server1 and server2
+        let server1 = servers.iter().find(|(name, _, _)| name == "server1");
+        let server2 = servers.iter().find(|(name, _, _)| name == "server2");
+
+        assert!(server1.is_some());
+        assert!(server2.is_some());
+
+        let (_, server1_config, server1_connected) = server1.unwrap();
+        let (_, server2_config, server2_connected) = server2.unwrap();
+
+        assert!(server1_config.enabled);
+        assert!(!server2_config.enabled);
+        assert!(!server1_connected);
+        assert!(!server2_connected);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_get_all_tools_empty() {
+        let manager = McpManager::new();
+        let tools = manager.get_all_tools().await.unwrap();
+        assert_eq!(tools.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_get_all_tools() {
+        let manager = McpManager::new();
+
+        // Add connections with tools
+        {
+            let mut connections = manager.connections.write().await;
+
+            let conn1 = McpConnection::new("server1".to_string());
+            {
+                let mut tools = conn1.tools.write().await;
+                tools.push(McpTool {
+                    name: "tool1".to_string(),
+                    description: Some("First tool".to_string()),
+                    input_schema: json!({"type": "object"}),
+                });
+                tools.push(McpTool {
+                    name: "tool2".to_string(),
+                    description: Some("Second tool".to_string()),
+                    input_schema: json!({"type": "object"}),
+                });
+            }
+            connections.insert("server1".to_string(), conn1);
+
+            let conn2 = McpConnection::new("server2".to_string());
+            {
+                let mut tools = conn2.tools.write().await;
+                tools.push(McpTool {
+                    name: "tool3".to_string(),
+                    description: Some("Third tool".to_string()),
+                    input_schema: json!({"type": "object"}),
+                });
+            }
+            connections.insert("server2".to_string(), conn2);
+        }
+
+        let all_tools = manager.get_all_tools().await.unwrap();
+        assert_eq!(all_tools.len(), 3);
+
+        // Check that tools are properly associated with servers
+        let tool1 = all_tools.iter().find(|(_, tool)| tool.name == "tool1");
+        let tool2 = all_tools.iter().find(|(_, tool)| tool.name == "tool2");
+        let tool3 = all_tools.iter().find(|(_, tool)| tool.name == "tool3");
+
+        assert!(tool1.is_some());
+        assert!(tool2.is_some());
+        assert!(tool3.is_some());
+
+        assert_eq!(tool1.unwrap().0, "server1");
+        assert_eq!(tool2.unwrap().0, "server1");
+        assert_eq!(tool3.unwrap().0, "server2");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_disconnect_all() {
+        let manager = McpManager::new();
+
+        // Add some connections
+        {
+            let mut connections = manager.connections.write().await;
+            connections.insert(
+                "server1".to_string(),
+                McpConnection::new("server1".to_string()),
+            );
+            connections.insert(
+                "server2".to_string(),
+                McpConnection::new("server2".to_string()),
+            );
+        }
+
+        assert!(manager.is_connected("server1").await);
+        assert!(manager.is_connected("server2").await);
+
+        // Disconnect all
+        let result = manager.disconnect_all().await;
+        assert!(result.is_ok());
+
+        // Should no longer be connected
+        assert!(!manager.is_connected("server1").await);
+        assert!(!manager.is_connected("server2").await);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_manager_call_tool_not_connected() {
+        let manager = McpManager::new();
+
+        let result = manager
+            .call_tool("nonexistent", "test_tool", None)
+            .await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("is not connected"));
+    }
+
+    // Test McpClientCapabilities serialization
+    #[test]
+    fn test_mcp_client_capabilities_serialization() {
+        let capabilities = McpClientCapabilities {
+            tools: Some(McpToolsCapability {
+                list_changed: Some(true),
+            }),
+        };
+
+        let serialized = serde_json::to_value(&capabilities).unwrap();
+        assert!(serialized["tools"]["list_changed"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_mcp_client_capabilities_no_tools() {
+        let capabilities = McpClientCapabilities { tools: None };
+
+        let serialized = serde_json::to_value(&capabilities).unwrap();
+        assert!(serialized["tools"].is_null());
+    }
+
+    // Test McpClientInfo serialization
+    #[test]
+    fn test_mcp_client_info_serialization() {
+        let client_info = McpClientInfo {
+            name: "test-client".to_string(),
+            version: "1.0.0".to_string(),
+        };
+
+        let serialized = serde_json::to_value(&client_info).unwrap();
+        assert_eq!(serialized["name"], "test-client");
+        assert_eq!(serialized["version"], "1.0.0");
+    }
+
+    // Test edge cases for tool schema parsing
+    #[test]
+    fn test_mcp_tool_empty_properties() {
+        let json_str = r#"{
+            "name": "no_args_tool",
+            "description": "Tool with no arguments",
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }"#;
+
+        let tool: McpTool = serde_json::from_str(json_str).unwrap();
+        assert_eq!(tool.name, "no_args_tool");
+        assert!(tool.input_schema["properties"].as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_mcp_tool_complex_schema() {
+        let json_str = r#"{
+            "name": "complex_tool",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "nested": {
+                        "type": "object",
+                        "properties": {
+                            "value": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "array": {
+                        "type": "array",
+                        "items": {
+                            "type": "number"
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        let tool: McpTool = serde_json::from_str(json_str).unwrap();
+        assert_eq!(tool.name, "complex_tool");
+        assert!(tool.input_schema["properties"]["nested"].is_object());
+        assert!(tool.input_schema["properties"]["array"].is_object());
+    }
+
+    // Test McpError serialization
+    #[test]
+    fn test_mcp_error_serialization() {
+        let error = McpError {
+            code: -32600,
+            message: "Invalid Request".to_string(),
+            data: Some(json!({"detail": "Missing parameter"})),
+        };
+
+        let serialized = serde_json::to_value(&error).unwrap();
+        assert_eq!(serialized["code"], -32600);
+        assert_eq!(serialized["message"], "Invalid Request");
+        assert_eq!(serialized["data"]["detail"], "Missing parameter");
+    }
+
+    #[test]
+    fn test_mcp_error_no_data() {
+        let error = McpError {
+            code: -32601,
+            message: "Method not found".to_string(),
+            data: None,
+        };
+
+        let serialized = serde_json::to_value(&error).unwrap();
+        assert_eq!(serialized["code"], -32601);
+        assert!(serialized["data"].is_null());
+    }
+
+    // Test McpResponse serialization
+    #[test]
+    fn test_mcp_response_success_serialization() {
+        let response = McpResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some("1".to_string()),
+            result: Some(json!({"status": "ok"})),
+            error: None,
+        };
+
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "1");
+        assert_eq!(serialized["result"]["status"], "ok");
+        assert!(serialized["error"].is_null());
+    }
+
+    #[test]
+    fn test_mcp_response_error_serialization() {
+        let response = McpResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some("1".to_string()),
+            result: None,
+            error: Some(McpError {
+                code: -32600,
+                message: "Invalid Request".to_string(),
+                data: None,
+            }),
+        };
+
+        let serialized = serde_json::to_value(&response).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "1");
+        assert!(serialized["result"].is_null());
+        assert_eq!(serialized["error"]["code"], -32600);
+    }
+
+    // Test request ID generation
+    #[test]
+    fn test_next_id_sequential() {
+        let mut connection = McpConnection::new("test".to_string());
+
+        let ids: Vec<String> = (0..10).map(|_| connection.next_id()).collect();
+
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(id, &(i + 1).to_string());
+        }
+    }
+
+    // Test McpConnection disconnect
+    #[tokio::test]
+    async fn test_mcp_connection_disconnect_no_process() {
+        let mut connection = McpConnection::new("test".to_string());
+        let result = connection.disconnect().await;
+        assert!(result.is_ok());
+    }
+}

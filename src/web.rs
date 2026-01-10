@@ -35,6 +35,7 @@ pub struct WebState {
     pub subagent_manager: Arc<Mutex<SubagentManager>>,
     pub permission_hub: Arc<PermissionHub>,
     pub skill_manager: Arc<Mutex<SkillManager>>,
+    pub conversation_agents: Arc<Mutex<HashMap<String, Arc<Mutex<Agent>>>>>,
 }
 
 #[derive(Serialize)]
@@ -403,6 +404,47 @@ impl PermissionHub {
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 
+/// Get or create an agent for a specific conversation
+/// This allows multiple conversations to be processed concurrently without blocking
+async fn get_or_create_conversation_agent(
+    state: &WebState,
+    conversation_id: &str,
+) -> Result<Arc<Mutex<Agent>>> {
+    // Check if agent already exists for this conversation
+    {
+        let agents = state.conversation_agents.lock().await;
+        if let Some(agent) = agents.get(conversation_id) {
+            return Ok(agent.clone());
+        }
+    }
+
+    // Create a new agent for this conversation
+    // Load config and get settings from template agent
+    let config = config::Config::load(None).await?;
+    let (model, plan_mode) = {
+        let template_agent = state.agent.lock().await;
+        (template_agent.model().to_string(), template_agent.plan_mode())
+    };
+
+    // Create new agent with same configuration (yolo_mode always false for web)
+    let mut new_agent = Agent::new_with_plan_mode(config, model, false, plan_mode).await
+        .with_database_manager(state.database.clone())
+        .with_skill_manager(state.skill_manager.clone());
+
+    // Resume the conversation in the new agent
+    new_agent.resume_conversation(conversation_id).await?;
+
+    let agent_arc = Arc::new(Mutex::new(new_agent));
+
+    // Store in pool
+    {
+        let mut agents = state.conversation_agents.lock().await;
+        agents.insert(conversation_id.to_string(), agent_arc.clone());
+    }
+
+    Ok(agent_arc)
+}
+
 fn permission_kind_label(kind: &PermissionKind) -> &'static str {
     match kind {
         PermissionKind::Bash => "bash",
@@ -727,17 +769,19 @@ async fn send_message_to_conversation(
     Path(id): Path<String>,
     Json(payload): Json<MessageRequest>,
 ) -> impl IntoResponse {
-    let mut agent = state.agent.lock_owned().await;
-
-    if agent.current_conversation_id() != Some(id.clone()) {
-        if let Err(e) = agent.resume_conversation(&id).await {
+    // Get or create a dedicated agent for this conversation
+    let agent_arc = match get_or_create_conversation_agent(&state, &id).await {
+        Ok(agent) => agent,
+        Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
                 format!("Failed to load conversation: {}", e),
             )
                 .into_response();
         }
-    }
+    };
+
+    let mut agent = agent_arc.lock().await;
 
     let permission_handler =
         build_permission_handler(state.permission_hub.clone(), Some(id.clone()), None);
@@ -798,23 +842,12 @@ async fn stream_message_to_conversation(
     Path(id): Path<String>,
     Json(payload): Json<MessageRequest>,
 ) -> impl IntoResponse {
-    let mut agent = state.agent.lock_owned().await;
-
-    if agent.current_conversation_id() != Some(id.clone()) {
-        if let Err(e) = agent.resume_conversation(&id).await {
-            return (
-                StatusCode::BAD_REQUEST,
-                format!("Failed to load conversation: {}", e),
-            )
-                .into_response();
-        }
-    }
-
     let (tx, rx) = mpsc::channel::<Result<Bytes, Infallible>>(32);
     let cancellation_flag = Arc::new(AtomicBool::new(false));
     let message = payload.message.clone();
     let permission_hub = state.permission_hub.clone();
     let conversation_id = id.clone();
+    let state_clone = state.clone();
 
     tokio::spawn(async move {
         let stream_sender = tx.clone();
@@ -826,6 +859,23 @@ async fn stream_message_to_conversation(
                 let _ = sender.try_send(Ok(Bytes::from(text + "\n")));
             }
         };
+
+        // Get or create agent for this conversation inside the spawned task
+        let agent_arc = match get_or_create_conversation_agent(&state_clone, &conversation_id).await {
+            Ok(agent) => agent,
+            Err(e) => {
+                send_json(
+                    &stream_sender,
+                    serde_json::json!({
+                        "type": "error",
+                        "error": format!("Failed to load conversation: {}", e)
+                    }),
+                );
+                return;
+            }
+        };
+
+        let mut agent = agent_arc.lock().await;
 
         let on_stream = {
             let sender = tx.clone();
@@ -2239,6 +2289,7 @@ mod tests {
             subagent_manager,
             permission_hub: Arc::new(PermissionHub::new()),
             skill_manager,
+            conversation_agents: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 

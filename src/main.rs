@@ -4,7 +4,7 @@ use chrono::Local;
 use clap::Parser;
 use colored::*;
 use dialoguer::Select;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,32 +17,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info, warn};
 
 #[macro_use]
-mod output;
+extern crate flexorama;
 
-mod agent;
-mod anthropic;
-mod autocomplete;
-mod config;
-mod conversation;
-mod database;
-mod formatter;
-mod gemini;
-mod help;
-mod input;
-mod logo;
-mod mcp;
-mod openai;
-mod security;
-mod skill;
-mod subagent;
-mod tui;
-mod web;
-
-mod llm;
-mod tools;
-
-#[cfg(test)]
-mod formatter_tests;
+use flexorama::*;
 
 use agent::Agent;
 use config::{Config, Provider};
@@ -2744,6 +2721,7 @@ async fn main() -> Result<()> {
             subagent_manager,
             permission_hub: Arc::new(web::PermissionHub::new()),
             skill_manager: skill_manager.clone(),
+            conversation_agents: Arc::new(AsyncMutex::new(HashMap::new())),
         };
 
         web::launch_web_ui(state, cli.web_port).await?;
