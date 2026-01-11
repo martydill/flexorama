@@ -1994,3 +1994,64 @@ async fn save_file_permissions_to_config(agent: &Agent) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_line_short_line() {
+        let line = "Short line";
+        let result = truncate_line(line, 50);
+        assert_eq!(result, "Short line");
+    }
+
+    #[test]
+    fn test_truncate_line_long_line() {
+        let line = "This is a very long line that should be truncated to fit within the maximum character limit";
+        let result = truncate_line(line, 50);
+        assert_eq!(result.len(), 53); // 50 + "..."
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_line_exact_length() {
+        let line = "12345678901234567890123456789012345678901234567890"; // Exactly 50 chars
+        let result = truncate_line(line, 50);
+        assert_eq!(result, line);
+    }
+
+    #[test]
+    fn test_truncate_line_empty() {
+        let line = "";
+        let result = truncate_line(line, 50);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_build_message_preview_empty() {
+        let messages: Vec<crate::database::Message> = vec![];
+        let result = build_message_preview(&messages);
+        assert_eq!(result, "(no messages)");
+    }
+
+    #[test]
+    fn test_format_resume_option() {
+        let conversation = crate::database::Conversation {
+            id: "test-id".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            system_prompt: None,
+            model: "test-model".to_string(),
+            subagent: None,
+            total_tokens: 300,
+            request_count: 5,
+        };
+        let preview = "Test preview";
+        let result = format_resume_option(&conversation, preview);
+
+        assert!(result.contains("test-model"));
+        assert!(result.contains("Test preview"));
+    }
+}
+

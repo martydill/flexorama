@@ -97,3 +97,53 @@ pub async fn process_input(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::formatter::CodeFormatter;
+
+    #[test]
+    fn test_create_streaming_renderer() {
+        let formatter = CodeFormatter::new().unwrap();
+        let (_state, callback) = create_streaming_renderer(&formatter);
+
+        // Test that callback can be called without panicking
+        callback("test content".to_string());
+        callback("".to_string()); // Empty content should be handled
+    }
+
+    #[test]
+    fn test_create_streaming_renderer_with_multiple_chunks() {
+        let formatter = CodeFormatter::new().unwrap();
+        let (state, callback) = create_streaming_renderer(&formatter);
+
+        // Send multiple chunks
+        callback("Hello ".to_string());
+        callback("World".to_string());
+        callback("!".to_string());
+
+        // Verify state is accessible
+        assert!(state.lock().is_ok());
+    }
+
+    #[test]
+    fn test_streaming_renderer_handles_empty_content() {
+        let formatter = CodeFormatter::new().unwrap();
+        let (_state, callback) = create_streaming_renderer(&formatter);
+
+        // Should not panic with empty content
+        callback("".to_string());
+    }
+
+    #[test]
+    fn test_streaming_renderer_state_is_accessible() {
+        let formatter = CodeFormatter::new().unwrap();
+        let (state, _callback) = create_streaming_renderer(&formatter);
+
+        // Verify we can lock the state
+        let lock_result = state.lock();
+        assert!(lock_result.is_ok());
+    }
+}

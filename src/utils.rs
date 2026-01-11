@@ -53,3 +53,54 @@ pub fn get_home_agents_md_path() -> std::path::PathBuf {
         .join(".flexorama")
         .join("AGENTS.md")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn test_get_home_agents_md_path() {
+        let path = get_home_agents_md_path();
+        assert!(path.to_string_lossy().contains(".flexorama"));
+        assert!(path.to_string_lossy().ends_with("AGENTS.md"));
+    }
+
+    #[test]
+    fn test_get_home_agents_md_path_is_absolute() {
+        let path = get_home_agents_md_path();
+        assert!(path.is_absolute() || path.starts_with("."));
+    }
+
+    #[test]
+    fn test_create_spinner_returns_valid_spinner() {
+        let spinner = create_spinner();
+        assert!(!spinner.is_finished());
+    }
+
+    #[test]
+    fn test_spinner_can_be_finished() {
+        let spinner = create_spinner();
+        spinner.finish_and_clear();
+        assert!(spinner.is_finished());
+    }
+
+    #[tokio::test]
+    async fn test_print_usage_stats_with_zero_usage() {
+        let config = Config::default();
+        let agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false
+        ).await;
+
+        // This should not panic with zero usage
+        print_usage_stats(&agent);
+
+        let usage = agent.get_token_usage();
+        assert_eq!(usage.request_count, 0);
+        assert_eq!(usage.total_input_tokens, 0);
+        assert_eq!(usage.total_output_tokens, 0);
+    }
+}

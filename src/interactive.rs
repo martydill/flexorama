@@ -292,3 +292,79 @@ pub async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> R
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use std::fs;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_add_context_files_empty_list() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+        let context_files: Vec<String> = vec![];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_with_nonexistent_file() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+        let context_files = vec!["nonexistent_file.txt".to_string()];
+
+        // Should not panic even if file doesn't exist
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_with_existing_file() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+
+        // Create a temporary file
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+        let mut file = fs::File::create(&file_path).unwrap();
+        writeln!(file, "Test content").unwrap();
+
+        let context_files = vec![file_path.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_multiple_files() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+
+        // Create temporary files
+        let temp_dir = TempDir::new().unwrap();
+        let file1 = temp_dir.path().join("file1.txt");
+        let file2 = temp_dir.path().join("file2.txt");
+
+        fs::File::create(&file1).unwrap();
+        fs::File::create(&file2).unwrap();
+
+        let context_files = vec![
+            file1.to_str().unwrap().to_string(),
+            file2.to_str().unwrap().to_string(),
+        ];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_home_agents_md_path_from_interactive() {
+        let path = get_home_agents_md_path();
+        assert!(path.to_string_lossy().contains(".flexorama"));
+        assert!(path.to_string_lossy().ends_with("AGENTS.md"));
+    }
+}
