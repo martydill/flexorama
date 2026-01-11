@@ -1294,7 +1294,8 @@ mod tests {
     #[test]
     fn test_format_response_multiple_code_blocks() -> Result<()> {
         let formatter = create_code_formatter()?;
-        let input = "First:\n```rust\nfn foo() {}\n```\nSecond:\n```python\ndef bar():\n    pass\n```";
+        let input =
+            "First:\n```rust\nfn foo() {}\n```\nSecond:\n```python\ndef bar():\n    pass\n```";
         let result = formatter.format_response(input)?;
         assert!(result.contains("fn foo"));
         assert!(result.contains("def bar"));

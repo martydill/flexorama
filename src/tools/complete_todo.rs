@@ -3,7 +3,10 @@ use anyhow::Result;
 use serde_json::json;
 
 /// Complete a todo item by marking it as done
-pub async fn complete_todo(call: &ToolCall, todos: &mut Vec<super::create_todo::TodoItem>) -> Result<ToolResult> {
+pub async fn complete_todo(
+    call: &ToolCall,
+    todos: &mut Vec<super::create_todo::TodoItem>,
+) -> Result<ToolResult> {
     let id = call
         .arguments
         .get("id")

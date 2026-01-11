@@ -470,15 +470,14 @@ mod tests {
     async fn create_test_db() -> (Arc<DatabaseManager>, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
-        let db = DatabaseManager::new(db_path)
-            .await
-            .unwrap();
+        let db = DatabaseManager::new(db_path).await.unwrap();
         (Arc::new(db), temp_dir)
     }
 
     #[test]
     fn test_new_without_database() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
         assert!(manager.conversation.is_empty());
         assert!(manager.system_prompt.is_none());
         assert!(manager.current_conversation_id.is_none());
@@ -501,14 +500,18 @@ mod tests {
     #[tokio::test]
     async fn test_new_with_database() {
         let (db, _temp_dir) = create_test_db().await;
-        let manager =
-            ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
         assert!(manager.database_manager.is_some());
     }
 
     #[tokio::test]
     async fn test_start_new_conversation_without_database() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
         let conversation_id = manager.start_new_conversation().await.unwrap();
         assert!(manager.current_conversation_id.is_some());
         assert_eq!(manager.current_conversation_id.unwrap(), conversation_id);
@@ -521,7 +524,10 @@ mod tests {
             ConversationManager::new(None, Some(db), "claude-3-5-sonnet-20241022".to_string());
         let conversation_id = manager.start_new_conversation().await.unwrap();
         assert!(manager.current_conversation_id.is_some());
-        assert_eq!(manager.current_conversation_id.as_ref().unwrap(), &conversation_id);
+        assert_eq!(
+            manager.current_conversation_id.as_ref().unwrap(),
+            &conversation_id
+        );
     }
 
     #[tokio::test]
@@ -546,7 +552,11 @@ mod tests {
     #[tokio::test]
     async fn test_save_message_to_conversation() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
         let conversation_id = manager.start_new_conversation().await.unwrap();
 
         manager
@@ -555,7 +565,10 @@ mod tests {
             .unwrap();
 
         // Verify message was saved
-        let messages = db.get_conversation_messages(&conversation_id).await.unwrap();
+        let messages = db
+            .get_conversation_messages(&conversation_id)
+            .await
+            .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].content, "Hello, world!");
@@ -563,7 +576,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_message_without_database() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
         manager.current_conversation_id = Some("test-id".to_string());
 
         // Should not error even without database
@@ -576,7 +590,11 @@ mod tests {
     #[tokio::test]
     async fn test_update_conversation_model() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
         let conversation_id = manager.start_new_conversation().await.unwrap();
 
         manager
@@ -587,14 +605,22 @@ mod tests {
         assert_eq!(manager.model, "claude-3-opus-20240229");
 
         // Verify model was updated in database using get_conversation
-        let conversation = db.get_conversation(&conversation_id).await.unwrap().unwrap();
+        let conversation = db
+            .get_conversation(&conversation_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(conversation.model, "claude-3-opus-20240229");
     }
 
     #[tokio::test]
     async fn test_update_database_usage_stats() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
 
         manager.update_database_usage_stats(100, 50).await.unwrap();
 
@@ -606,11 +632,19 @@ mod tests {
     #[tokio::test]
     async fn test_save_plan() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
         let conversation_id = manager.start_new_conversation().await.unwrap();
 
         let plan_id = manager
-            .save_plan("Build a new feature", "# Plan\n1. Step one\n2. Step two", Some("Feature Plan".to_string()))
+            .save_plan(
+                "Build a new feature",
+                "# Plan\n1. Step one\n2. Step two",
+                Some("Feature Plan".to_string()),
+            )
             .await
             .unwrap();
 
@@ -626,7 +660,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_plan_without_database() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
         manager.current_conversation_id = Some("test-id".to_string());
 
         let plan_id = manager
@@ -639,7 +674,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_context_files() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Please review @src/main.rs and @tests/test.rs";
         let files = manager.extract_context_files(message);
@@ -651,7 +687,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_context_files_no_files() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Hello, world!";
         let files = manager.extract_context_files(message);
@@ -661,7 +698,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_context_files_multiple_formats() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Check @file1.txt @path/to/file2.rs and @another_file.md";
         let files = manager.extract_context_files(message);
@@ -674,7 +712,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_clean_message() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Please review @src/main.rs and @tests/test.rs";
         let cleaned = manager.clean_message(message);
@@ -684,7 +723,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_clean_message_no_files() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Hello, world!";
         let cleaned = manager.clean_message(message);
@@ -698,7 +738,8 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Test content").await.unwrap();
 
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
         manager
             .add_context_file(file_path.to_str().unwrap())
             .await
@@ -718,7 +759,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_context_file_nonexistent() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
         let result = manager.add_context_file("/nonexistent/file.txt").await;
 
         assert!(result.is_err());
@@ -727,7 +769,11 @@ mod tests {
     #[tokio::test]
     async fn test_clear_conversation_keep_agents_md() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
 
         // Start a conversation and add some messages
         let first_id = manager.start_new_conversation().await.unwrap();
@@ -748,20 +794,24 @@ mod tests {
 
         // Conversation should be cleared (or only have AGENTS.md if it exists)
         // Since we don't have AGENTS.md in test, it should be empty
-        assert!(manager.conversation.is_empty() || manager.conversation.iter().all(|m| {
-            m.content.iter().any(|c| {
-                if let Some(text) = &c.text {
-                    text.contains("AGENTS.md")
-                } else {
-                    false
-                }
-            })
-        }));
+        assert!(
+            manager.conversation.is_empty()
+                || manager.conversation.iter().all(|m| {
+                    m.content.iter().any(|c| {
+                        if let Some(text) = &c.text {
+                            text.contains("AGENTS.md")
+                        } else {
+                            false
+                        }
+                    })
+                })
+        );
     }
 
     #[tokio::test]
     async fn test_set_conversation_from_records() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let messages = vec![
             StoredMessage {
@@ -797,7 +847,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_conversation_from_records_with_tools() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let now = chrono::Utc::now();
         let messages = vec![StoredMessage {
@@ -856,7 +907,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_conversation_timeline_ordering() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let base_time = chrono::Utc::now();
 
@@ -911,7 +963,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_conversation_with_subagent() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         manager.set_conversation_from_records(
             "conv1".to_string(),
@@ -928,7 +981,11 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_conversations() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
 
         let conv1_id = manager.start_new_conversation().await.unwrap();
         manager
@@ -972,7 +1029,8 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Content").await.unwrap();
 
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         // Test that tilde expansion works (if path contains ~)
         // In test environment, just verify absolute path works
@@ -982,7 +1040,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_with_error() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let tool_calls = vec![ToolCallRecord {
             id: "tool1".to_string(),
@@ -1006,15 +1065,13 @@ mod tests {
         assert_eq!(manager.conversation.len(), 2);
 
         // Check that error flag is set
-        assert_eq!(
-            manager.conversation[1].content[0].is_error,
-            Some(true)
-        );
+        assert_eq!(manager.conversation[1].content[0].is_error, Some(true));
     }
 
     #[tokio::test]
     async fn test_tool_call_without_result() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let tool_calls = vec![ToolCallRecord {
             id: "tool1".to_string(),
@@ -1041,7 +1098,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_context_files_with_special_characters() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Check @file-with-dashes.txt and @file_with_underscores.rs";
         let files = manager.extract_context_files(message);
@@ -1053,7 +1111,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_clean_message_preserves_other_at_symbols() {
-        let manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         let message = "Email me at john.doe@email.com about @src/file.rs";
         let cleaned = manager.clean_message(message);
@@ -1067,7 +1126,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_conversation_with_empty_content() {
-        let mut manager = ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
+        let mut manager =
+            ConversationManager::new(None, None, "claude-3-5-sonnet-20241022".to_string());
 
         manager.conversation.push(crate::anthropic::Message {
             role: "user".to_string(),
@@ -1082,7 +1142,11 @@ mod tests {
     #[tokio::test]
     async fn test_save_multiple_messages_to_conversation() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
         let conversation_id = manager.start_new_conversation().await.unwrap();
 
         manager
@@ -1098,7 +1162,10 @@ mod tests {
             .await
             .unwrap();
 
-        let messages = db.get_conversation_messages(&conversation_id).await.unwrap();
+        let messages = db
+            .get_conversation_messages(&conversation_id)
+            .await
+            .unwrap();
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].content, "First message");
         assert_eq!(messages[1].content, "Second message");
@@ -1108,7 +1175,11 @@ mod tests {
     #[tokio::test]
     async fn test_update_usage_stats_accumulation() {
         let (db, _temp_dir) = create_test_db().await;
-        let mut manager = ConversationManager::new(None, Some(db.clone()), "claude-3-5-sonnet-20241022".to_string());
+        let mut manager = ConversationManager::new(
+            None,
+            Some(db.clone()),
+            "claude-3-5-sonnet-20241022".to_string(),
+        );
 
         manager.update_database_usage_stats(100, 50).await.unwrap();
         manager.update_database_usage_stats(200, 75).await.unwrap();
