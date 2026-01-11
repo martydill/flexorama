@@ -2053,5 +2053,396 @@ mod tests {
         assert!(result.contains("test-model"));
         assert!(result.contains("Test preview"));
     }
+
+    #[test]
+    fn test_build_message_preview_with_messages() {
+        let messages = vec![
+            crate::database::Message {
+                id: "msg-1".to_string(),
+                role: "user".to_string(),
+                content: "Hello, how are you?".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+            crate::database::Message {
+                id: "msg-2".to_string(),
+                role: "assistant".to_string(),
+                content: "I'm doing great, thanks for asking!".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ];
+
+        let result = build_message_preview(&messages);
+        // Preview should contain the first message content
+        assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn test_truncate_line_unicode() {
+        let line = "Hello 世界! This is a test with unicode characters.";
+        let result = truncate_line(line, 20);
+        // Unicode characters may take more bytes, so just check it's truncated
+        assert!(result.ends_with("..."));
+        assert!(result.len() > 20); // Should have ... appended
+    }
+
+    #[test]
+    fn test_truncate_line_single_char() {
+        let line = "A";
+        let result = truncate_line(line, 50);
+        assert_eq!(result, "A");
+    }
+
+    #[tokio::test]
+    async fn test_handle_shell_command_empty() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // Empty command should return error
+        let result = handle_shell_command("!", &mut agent).await;
+        assert!(result.is_ok()); // Should handle gracefully
+    }
+
+    #[tokio::test]
+    async fn test_handle_shell_command_with_command() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // Echo command should work
+        let result = handle_shell_command("!echo test", &mut agent).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_agent_command_no_args() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+
+        // No arguments should show help
+        let result = handle_agent_command(&[], &mut agent, &formatter, false).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_agent_command_list() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+
+        let result = handle_agent_command(&["list"], &mut agent, &formatter, false).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_slash_command_help() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_slash_command(
+            "/help",
+            &mut agent,
+            &mcp_manager,
+            &formatter,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_slash_command_stats() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_slash_command(
+            "/stats",
+            &mut agent,
+            &mcp_manager,
+            &formatter,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_slash_command_usage() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_slash_command(
+            "/usage",
+            &mut agent,
+            &mcp_manager,
+            &formatter,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_slash_command_context() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_slash_command(
+            "/context",
+            &mut agent,
+            &mcp_manager,
+            &formatter,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_slash_command_clear() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_slash_command(
+            "/clear",
+            &mut agent,
+            &mcp_manager,
+            &formatter,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_slash_command_reset_stats() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+        let formatter = crate::formatter::CodeFormatter::new().unwrap();
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_slash_command(
+            "/reset-stats",
+            &mut agent,
+            &mcp_manager,
+            &formatter,
+            false,
+            None,
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_skill_command_list() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let result = handle_skill_command("list", &mut agent).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_skill_command_no_args() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // Empty command should show help
+        let result = handle_skill_command("", &mut agent).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_command_list() {
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_mcp_command(&["list"], &mcp_manager).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_command_tools() {
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        let result = handle_mcp_command(&["tools"], &mcp_manager).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_mcp_command_no_args() {
+        let mcp_manager = Arc::new(crate::mcp::McpManager::new());
+
+        // Empty command should show help
+        let result = handle_mcp_command(&[], &mcp_manager).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_permissions_command_no_args() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // No args should display current permissions
+        let result = handle_permissions_command(&[], &mut agent).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_file_permissions_command_no_args() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // No args should display current file permissions
+        let result = handle_file_permissions_command(&[], &mut agent).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_search_command_no_args() {
+        let config = crate::config::Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "test-model".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // No args should show help
+        let result = handle_search_command(&mut agent, "", None).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_resume_option_with_subagent() {
+        let conversation = crate::database::Conversation {
+            id: "test-id-2".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            system_prompt: Some("Custom prompt".to_string()),
+            model: "gpt-4".to_string(),
+            subagent: Some("test-subagent".to_string()),
+            total_tokens: 500,
+            request_count: 10,
+        };
+        let preview = "Another preview";
+        let result = format_resume_option(&conversation, preview);
+
+        assert!(result.contains("gpt-4"));
+        assert!(result.contains("Another preview"));
+    }
+
+    #[test]
+    fn test_truncate_line_with_newlines() {
+        let line = "Line with\nnewline character";
+        let result = truncate_line(line, 50);
+        assert_eq!(result, "Line with\nnewline character");
+    }
+
+    #[test]
+    fn test_truncate_line_boundary_condition() {
+        let line = "12345678901234567890123456789012345678901234567890X"; // 51 chars
+        let result = truncate_line(line, 50);
+        assert_eq!(result.len(), 53); // 50 + "..."
+        assert!(result.ends_with("..."));
+    }
 }
 
