@@ -57,13 +57,15 @@ impl Skill {
         let parts: Vec<&str> = content.split("---").collect();
 
         if parts.len() < 3 {
-            return Err(anyhow!("Invalid SKILL.md format: missing frontmatter delimiters"));
+            return Err(anyhow!(
+                "Invalid SKILL.md format: missing frontmatter delimiters"
+            ));
         }
 
         // Parse YAML frontmatter (second part, index 1)
         let frontmatter_str = parts[1].trim();
-        let frontmatter: SkillFrontmatter = serde_yaml::from_str(frontmatter_str)
-            .context("Failed to parse YAML frontmatter")?;
+        let frontmatter: SkillFrontmatter =
+            serde_yaml::from_str(frontmatter_str).context("Failed to parse YAML frontmatter")?;
 
         // Extract markdown content (everything after second ---)
         let markdown_content = parts[2..].join("---").trim().to_string();
@@ -103,8 +105,9 @@ impl Skill {
             updated_at: Some(self.updated_at),
         };
 
-        let yaml_str = serde_yaml::to_string(&frontmatter)
-            .unwrap_or_else(|_| String::from("name: error\ndescription: Failed to serialize frontmatter"));
+        let yaml_str = serde_yaml::to_string(&frontmatter).unwrap_or_else(|_| {
+            String::from("name: error\ndescription: Failed to serialize frontmatter")
+        });
 
         format!("---\n{}\n---\n\n{}", yaml_str.trim(), self.content)
     }
@@ -181,7 +184,11 @@ impl SkillManager {
             let path = entry.path();
             let skill_file = if path.is_dir() {
                 let candidate = path.join("SKILL.md");
-                if candidate.is_file() { Some(candidate) } else { None }
+                if candidate.is_file() {
+                    Some(candidate)
+                } else {
+                    None
+                }
             } else if path.extension().and_then(|s| s.to_str()) == Some("md") {
                 Some(path)
             } else {
@@ -354,7 +361,9 @@ impl SkillManager {
 
         content.push_str("## What are Skills?\n\n");
         content.push_str("Skills are specialized knowledge modules that provide you with expert capabilities in specific domains. ");
-        content.push_str("Each skill contains detailed instructions, best practices, and guidelines.\n\n");
+        content.push_str(
+            "Each skill contains detailed instructions, best practices, and guidelines.\n\n",
+        );
 
         content.push_str("## How to Use Skills\n\n");
         content.push_str("- Skills are listed below with their descriptions and metadata\n");
@@ -363,7 +372,10 @@ impl SkillManager {
         content.push_str("- Skills may restrict which tools you can use (check allowed_tools and denied_tools)\n");
         content.push_str("- Multiple skills can be active simultaneously - load and combine their knowledge as needed\n\n");
 
-        content.push_str(&format!("## Currently Active Skills ({})\n\n", active.len()));
+        content.push_str(&format!(
+            "## Currently Active Skills ({})\n\n",
+            active.len()
+        ));
 
         // Include metadata for each skill (progressive disclosure - full content loaded via use_skill tool)
         for skill in active {
@@ -384,16 +396,35 @@ impl SkillManager {
                 content.push_str(&format!("**Temperature**: {}\n", temp));
             }
             if !skill.allowed_tools.is_empty() {
-                content.push_str(&format!("**Allowed Tools**: {}\n", skill.allowed_tools.iter().cloned().collect::<Vec<_>>().join(", ")));
+                content.push_str(&format!(
+                    "**Allowed Tools**: {}\n",
+                    skill
+                        .allowed_tools
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
             }
             if !skill.denied_tools.is_empty() {
-                content.push_str(&format!("**Denied Tools**: {}\n", skill.denied_tools.iter().cloned().collect::<Vec<_>>().join(", ")));
+                content.push_str(&format!(
+                    "**Denied Tools**: {}\n",
+                    skill
+                        .denied_tools
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
             }
             if !skill.tags.is_empty() {
                 content.push_str(&format!("**Tags**: {}\n", skill.tags.join(", ")));
             }
 
-            content.push_str(&format!("\n**To use this skill**: Call `use_skill` with name=\"{}\"\n\n", skill.name));
+            content.push_str(&format!(
+                "\n**To use this skill**: Call `use_skill` with name=\"{}\"\n\n",
+                skill.name
+            ));
             content.push_str("---\n\n");
         }
 
@@ -402,11 +433,16 @@ impl SkillManager {
 
     /// Get full content of a specific skill (for progressive disclosure via use_skill tool)
     pub fn get_skill_full_content(&self, skill_name: &str) -> Result<String> {
-        let skill = self.skills.get(skill_name)
+        let skill = self
+            .skills
+            .get(skill_name)
             .ok_or_else(|| anyhow!("Skill '{}' not found", skill_name))?;
 
         if !self.active_skills.contains(skill_name) {
-            return Err(anyhow!("Skill '{}' is not active. Only active skills can be loaded.", skill_name));
+            return Err(anyhow!(
+                "Skill '{}' is not active. Only active skills can be loaded.",
+                skill_name
+            ));
         }
 
         let mut content = String::new();
@@ -423,10 +459,26 @@ impl SkillManager {
             content.push_str(&format!("**Max Tokens**: {}\n", max_tokens));
         }
         if !skill.allowed_tools.is_empty() {
-            content.push_str(&format!("**Allowed Tools**: {}\n", skill.allowed_tools.iter().cloned().collect::<Vec<_>>().join(", ")));
+            content.push_str(&format!(
+                "**Allowed Tools**: {}\n",
+                skill
+                    .allowed_tools
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         if !skill.denied_tools.is_empty() {
-            content.push_str(&format!("**Denied Tools**: {}\n", skill.denied_tools.iter().cloned().collect::<Vec<_>>().join(", ")));
+            content.push_str(&format!(
+                "**Denied Tools**: {}\n",
+                skill
+                    .denied_tools
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         if !skill.tags.is_empty() {
             content.push_str(&format!("**Tags**: {}\n", skill.tags.join(", ")));
@@ -461,7 +513,9 @@ impl SkillManager {
 
     /// Load skill references (progressive disclosure)
     pub async fn load_skill_references(&mut self, skill_name: &str) -> Result<Vec<String>> {
-        let skill = self.skills.get_mut(skill_name)
+        let skill = self
+            .skills
+            .get_mut(skill_name)
             .ok_or_else(|| anyhow!("Skill '{}' not found", skill_name))?;
 
         let mut loaded_content = Vec::new();
@@ -782,7 +836,10 @@ Also check @references/api.md
         let mut updated = manager.get_skill("update-test").unwrap().clone();
         updated.description = "New description".to_string();
 
-        manager.update_skill(&updated).await.expect("Failed to update");
+        manager
+            .update_skill(&updated)
+            .await
+            .expect("Failed to update");
 
         let retrieved = manager.get_skill("update-test").unwrap();
         assert_eq!(retrieved.description, "New description");
@@ -865,9 +922,18 @@ Also check @references/api.md
         let temp_dir = TempDir::new().unwrap();
         let mut manager = create_test_manager(&temp_dir);
 
-        manager.create_skill(create_test_skill("skill1")).await.unwrap();
-        manager.create_skill(create_test_skill("skill2")).await.unwrap();
-        manager.create_skill(create_test_skill("skill3")).await.unwrap();
+        manager
+            .create_skill(create_test_skill("skill1"))
+            .await
+            .unwrap();
+        manager
+            .create_skill(create_test_skill("skill2"))
+            .await
+            .unwrap();
+        manager
+            .create_skill(create_test_skill("skill3"))
+            .await
+            .unwrap();
 
         let skills = manager.list_skills();
         assert_eq!(skills.len(), 3);
@@ -1114,9 +1180,18 @@ More content.
         let temp_dir = TempDir::new().unwrap();
         let mut manager = create_test_manager(&temp_dir);
 
-        manager.create_skill(create_test_skill("skill-a")).await.unwrap();
-        manager.create_skill(create_test_skill("skill-b")).await.unwrap();
-        manager.create_skill(create_test_skill("skill-c")).await.unwrap();
+        manager
+            .create_skill(create_test_skill("skill-a"))
+            .await
+            .unwrap();
+        manager
+            .create_skill(create_test_skill("skill-b"))
+            .await
+            .unwrap();
+        manager
+            .create_skill(create_test_skill("skill-c"))
+            .await
+            .unwrap();
 
         manager.activate_skill("skill-a").await.unwrap();
         manager.activate_skill("skill-b").await.unwrap();

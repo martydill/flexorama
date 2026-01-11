@@ -304,7 +304,13 @@ mod tests {
     #[tokio::test]
     async fn test_add_context_files_empty_list() {
         let config = Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
         let context_files: Vec<String> = vec![];
 
         let result = add_context_files(&mut agent, &context_files).await;
@@ -314,7 +320,13 @@ mod tests {
     #[tokio::test]
     async fn test_add_context_files_with_nonexistent_file() {
         let config = Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
         let context_files = vec!["nonexistent_file.txt".to_string()];
 
         // Should not panic even if file doesn't exist
@@ -325,7 +337,13 @@ mod tests {
     #[tokio::test]
     async fn test_add_context_files_with_existing_file() {
         let config = Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
 
         // Create a temporary file
         let temp_dir = TempDir::new().unwrap();
@@ -342,7 +360,13 @@ mod tests {
     #[tokio::test]
     async fn test_add_context_files_multiple_files() {
         let config = Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(config, "claude-3-5-sonnet-20241022".to_string(), false, false).await;
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
 
         // Create temporary files
         let temp_dir = TempDir::new().unwrap();

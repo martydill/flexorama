@@ -145,10 +145,9 @@ async fn main() -> Result<()> {
     // Initialize SkillManager
     info!("Initializing skill manager...");
     let config_arc = Arc::new(RwLock::new(config.clone()));
-    let skill_manager =
-        Arc::new(AsyncMutex::new(crate::skill::SkillManager::new(
-            config_arc.clone(),
-        )?));
+    let skill_manager = Arc::new(AsyncMutex::new(crate::skill::SkillManager::new(
+        config_arc.clone(),
+    )?));
     agent = agent.with_skill_manager(skill_manager.clone());
 
     let (deactivated, skill_names) = {

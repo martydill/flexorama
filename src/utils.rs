@@ -92,8 +92,9 @@ mod tests {
             config,
             "claude-3-5-sonnet-20241022".to_string(),
             false,
-            false
-        ).await;
+            false,
+        )
+        .await;
 
         // This should not panic with zero usage
         print_usage_stats(&agent);

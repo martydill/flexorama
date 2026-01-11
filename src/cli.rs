@@ -96,11 +96,8 @@ mod tests {
 
     #[test]
     fn test_cli_with_context_files() {
-        let cli = Cli::try_parse_from(vec![
-            "flexorama",
-            "-f", "file1.txt",
-            "-f", "file2.txt",
-        ]).unwrap();
+        let cli =
+            Cli::try_parse_from(vec!["flexorama", "-f", "file1.txt", "-f", "file2.txt"]).unwrap();
         assert_eq!(cli.context_files.len(), 2);
         assert_eq!(cli.context_files[0], "file1.txt");
         assert_eq!(cli.context_files[1], "file2.txt");
@@ -108,11 +105,12 @@ mod tests {
 
     #[test]
     fn test_cli_with_system_prompt() {
-        let cli = Cli::try_parse_from(vec![
-            "flexorama",
-            "-s", "You are a helpful assistant",
-        ]).unwrap();
-        assert_eq!(cli.system_prompt, Some("You are a helpful assistant".to_string()));
+        let cli =
+            Cli::try_parse_from(vec!["flexorama", "-s", "You are a helpful assistant"]).unwrap();
+        assert_eq!(
+            cli.system_prompt,
+            Some("You are a helpful assistant".to_string())
+        );
     }
 
     #[test]
@@ -123,7 +121,8 @@ mod tests {
             "--no-stream",
             "--yolo",
             "--plan-mode",
-        ]).unwrap();
+        ])
+        .unwrap();
 
         assert!(cli.non_interactive);
         assert!(cli.no_stream);
@@ -133,11 +132,7 @@ mod tests {
 
     #[test]
     fn test_cli_web_mode() {
-        let cli = Cli::try_parse_from(vec![
-            "flexorama",
-            "--web",
-            "--web-port", "8080",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(vec!["flexorama", "--web", "--web-port", "8080"]).unwrap();
 
         assert!(cli.web);
         assert_eq!(cli.web_port, 8080);
@@ -145,19 +140,13 @@ mod tests {
 
     #[test]
     fn test_cli_with_config_file() {
-        let cli = Cli::try_parse_from(vec![
-            "flexorama",
-            "-c", "/path/to/config.toml",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(vec!["flexorama", "-c", "/path/to/config.toml"]).unwrap();
         assert_eq!(cli.config, Some("/path/to/config.toml".to_string()));
     }
 
     #[test]
     fn test_cli_with_model() {
-        let cli = Cli::try_parse_from(vec![
-            "flexorama",
-            "--model", "gpt-4",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(vec!["flexorama", "--model", "gpt-4"]).unwrap();
         assert_eq!(cli.model, Some("gpt-4".to_string()));
     }
 
@@ -171,21 +160,33 @@ mod tests {
     fn test_cli_long_and_short_flags() {
         let cli_short = Cli::try_parse_from(vec![
             "flexorama",
-            "-m", "test",
-            "-k", "key",
-            "-f", "file.txt",
-            "-s", "prompt",
-            "-c", "config.toml",
-        ]).unwrap();
+            "-m",
+            "test",
+            "-k",
+            "key",
+            "-f",
+            "file.txt",
+            "-s",
+            "prompt",
+            "-c",
+            "config.toml",
+        ])
+        .unwrap();
 
         let cli_long = Cli::try_parse_from(vec![
             "flexorama",
-            "--message", "test",
-            "--api-key", "key",
-            "--file", "file.txt",
-            "--system", "prompt",
-            "--config", "config.toml",
-        ]).unwrap();
+            "--message",
+            "test",
+            "--api-key",
+            "key",
+            "--file",
+            "file.txt",
+            "--system",
+            "prompt",
+            "--config",
+            "config.toml",
+        ])
+        .unwrap();
 
         assert_eq!(cli_short.message, cli_long.message);
         assert_eq!(cli_short.api_key, cli_long.api_key);

@@ -475,7 +475,13 @@ async fn edit_file_preserves_unix_line_endings() {
 #[tokio::test]
 async fn create_directory_handles_deeply_nested_path() {
     let temp = temp_dir();
-    let deep_path = temp.path().join("a").join("b").join("c").join("d").join("e");
+    let deep_path = temp
+        .path()
+        .join("a")
+        .join("b")
+        .join("c")
+        .join("d")
+        .join("e");
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
@@ -517,10 +523,7 @@ async fn delete_file_removes_directory() {
     tokio::fs::create_dir(&dir_path).await.unwrap();
     let mut file_security_manager = new_file_security_manager();
 
-    let call = make_call(
-        "delete_file",
-        json!({ "path": dir_path.to_string_lossy() }),
-    );
+    let call = make_call("delete_file", json!({ "path": dir_path.to_string_lossy() }));
     let result = delete_file(&call, &mut file_security_manager, false)
         .await
         .unwrap();
@@ -537,10 +540,7 @@ async fn delete_file_handles_nonempty_directory() {
     tokio::fs::write(&file_in_dir, "content").await.unwrap();
     let mut file_security_manager = new_file_security_manager();
 
-    let call = make_call(
-        "delete_file",
-        json!({ "path": dir_path.to_string_lossy() }),
-    );
+    let call = make_call("delete_file", json!({ "path": dir_path.to_string_lossy() }));
     let result = delete_file(&call, &mut file_security_manager, false)
         .await
         .unwrap();
@@ -626,7 +626,9 @@ async fn glob_handles_no_matches() {
     );
     let result = glob_files(&call).await.unwrap();
     assert!(!result.is_error);
-    assert!(result.content.contains("No files found matching the pattern"));
+    assert!(result
+        .content
+        .contains("No files found matching the pattern"));
 }
 
 #[tokio::test]
@@ -637,7 +639,9 @@ async fn glob_handles_recursive_pattern() {
     tokio::fs::write(temp.path().join("root.txt"), "a")
         .await
         .unwrap();
-    tokio::fs::write(subdir.join("nested.txt"), "b").await.unwrap();
+    tokio::fs::write(subdir.join("nested.txt"), "b")
+        .await
+        .unwrap();
 
     let call = make_call(
         "glob",

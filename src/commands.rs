@@ -1031,10 +1031,7 @@ pub async fn handle_skill_command(command: &str, agent: &mut Agent) -> Result<()
         }
         "update" => {
             if rest.is_empty() {
-                app_println!(
-                    "{} Usage: /skill update <path-to-SKILL.md>",
-                    "💡".yellow()
-                );
+                app_println!("{} Usage: /skill update <path-to-SKILL.md>", "💡".yellow());
                 return Ok(());
             }
 
@@ -2095,13 +2092,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_shell_command_empty() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         // Empty command should return error
         let result = handle_shell_command("!", &mut agent).await;
@@ -2111,13 +2104,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_shell_command_with_command() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         // Echo command should work
         let result = handle_shell_command("!echo test", &mut agent).await;
@@ -2127,13 +2116,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_agent_command_no_args() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
 
         // No arguments should show help
@@ -2144,13 +2129,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_agent_command_list() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
 
         let result = handle_agent_command(&["list"], &mut agent, &formatter, false).await;
@@ -2160,88 +2141,51 @@ mod tests {
     #[tokio::test]
     async fn test_handle_slash_command_help() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
         let mcp_manager = Arc::new(crate::mcp::McpManager::new());
 
-        let result = handle_slash_command(
-            "/help",
-            &mut agent,
-            &mcp_manager,
-            &formatter,
-            false,
-            None,
-        )
-        .await;
+        let result =
+            handle_slash_command("/help", &mut agent, &mcp_manager, &formatter, false, None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_handle_slash_command_stats() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
         let mcp_manager = Arc::new(crate::mcp::McpManager::new());
 
-        let result = handle_slash_command(
-            "/stats",
-            &mut agent,
-            &mcp_manager,
-            &formatter,
-            false,
-            None,
-        )
-        .await;
+        let result =
+            handle_slash_command("/stats", &mut agent, &mcp_manager, &formatter, false, None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_handle_slash_command_usage() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
         let mcp_manager = Arc::new(crate::mcp::McpManager::new());
 
-        let result = handle_slash_command(
-            "/usage",
-            &mut agent,
-            &mcp_manager,
-            &formatter,
-            false,
-            None,
-        )
-        .await;
+        let result =
+            handle_slash_command("/usage", &mut agent, &mcp_manager, &formatter, false, None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_handle_slash_command_context() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
         let mcp_manager = Arc::new(crate::mcp::McpManager::new());
 
@@ -2260,38 +2204,23 @@ mod tests {
     #[tokio::test]
     async fn test_handle_slash_command_clear() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
         let mcp_manager = Arc::new(crate::mcp::McpManager::new());
 
-        let result = handle_slash_command(
-            "/clear",
-            &mut agent,
-            &mcp_manager,
-            &formatter,
-            false,
-            None,
-        )
-        .await;
+        let result =
+            handle_slash_command("/clear", &mut agent, &mcp_manager, &formatter, false, None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_handle_slash_command_reset_stats() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
         let formatter = crate::formatter::CodeFormatter::new().unwrap();
         let mcp_manager = Arc::new(crate::mcp::McpManager::new());
 
@@ -2310,13 +2239,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_skill_command_list() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         let result = handle_skill_command("list", &mut agent).await;
         assert!(result.is_ok());
@@ -2325,13 +2250,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_skill_command_no_args() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         // Empty command should show help
         let result = handle_skill_command("", &mut agent).await;
@@ -2366,13 +2287,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_permissions_command_no_args() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         // No args should display current permissions
         let result = handle_permissions_command(&[], &mut agent).await;
@@ -2382,13 +2299,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_file_permissions_command_no_args() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         // No args should display current file permissions
         let result = handle_file_permissions_command(&[], &mut agent).await;
@@ -2398,13 +2311,9 @@ mod tests {
     #[tokio::test]
     async fn test_handle_search_command_no_args() {
         let config = crate::config::Config::default();
-        let mut agent = crate::agent::Agent::new_with_plan_mode(
-            config,
-            "test-model".to_string(),
-            false,
-            false,
-        )
-        .await;
+        let mut agent =
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await;
 
         // No args should show help
         let result = handle_search_command(&mut agent, "", None).await;
@@ -2445,4 +2354,3 @@ mod tests {
         assert!(result.ends_with("..."));
     }
 }
-
