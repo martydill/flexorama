@@ -16,7 +16,8 @@ pub fn get_builtin_tools() -> Vec<Tool> {
         // Todo management tools
         Tool {
             name: "create_todo".to_string(),
-            description: "Create a new todo item. Adds a task to the internal todo list.".to_string(),
+            description: "Create a new todo item. Adds a task to the internal todo list."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -40,7 +41,9 @@ pub fn get_builtin_tools() -> Vec<Tool> {
         },
         Tool {
             name: "complete_todo".to_string(),
-            description: "Mark a todo item as completed. Use the todo ID to identify which item to complete.".to_string(),
+            description:
+                "Mark a todo item as completed. Use the todo ID to identify which item to complete."
+                    .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -64,7 +67,8 @@ pub fn get_builtin_tools() -> Vec<Tool> {
         },
         Tool {
             name: "list_todos".to_string(),
-            description: "List all todo items in the internal todo list, showing their status.".to_string(),
+            description: "List all todo items in the internal todo list, showing their status."
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {},

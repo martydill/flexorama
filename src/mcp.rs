@@ -1249,7 +1249,11 @@ mod tests {
         assert_eq!(serialized["jsonrpc"], "2.0");
         assert_eq!(serialized["id"], "1");
         assert_eq!(serialized["method"], "initialize");
-        assert!(serialized["params"]["capabilities"]["tools"]["list_changed"].as_bool().unwrap());
+        assert!(
+            serialized["params"]["capabilities"]["tools"]["list_changed"]
+                .as_bool()
+                .unwrap()
+        );
     }
 
     #[test]
@@ -1376,10 +1380,7 @@ mod tests {
         let error = response.error.unwrap();
         assert_eq!(error.code, -32600);
         assert!(error.data.is_some());
-        assert_eq!(
-            error.data.unwrap()["details"],
-            "Missing required parameter"
-        );
+        assert_eq!(error.data.unwrap()["details"], "Missing required parameter");
     }
 
     // Tests for McpTool
@@ -1577,10 +1578,9 @@ mod tests {
     async fn test_mcp_manager_initialize() {
         let manager = McpManager::new();
         let mut config = McpConfig::default();
-        config.servers.insert(
-            "test-server".to_string(),
-            test_server_config(),
-        );
+        config
+            .servers
+            .insert("test-server".to_string(), test_server_config());
 
         let result = manager.initialize(config.clone()).await;
         assert!(result.is_ok());
@@ -1594,10 +1594,9 @@ mod tests {
     async fn test_mcp_manager_get_server() {
         let manager = McpManager::new();
         let mut config = McpConfig::default();
-        config.servers.insert(
-            "test-server".to_string(),
-            test_server_config(),
-        );
+        config
+            .servers
+            .insert("test-server".to_string(), test_server_config());
 
         manager.initialize(config).await.unwrap();
 
@@ -1676,10 +1675,9 @@ mod tests {
         let manager = McpManager::new();
         let mut config = McpConfig::default();
 
-        config.servers.insert(
-            "server1".to_string(),
-            test_server_config(),
-        );
+        config
+            .servers
+            .insert("server1".to_string(), test_server_config());
 
         let mut server2_config = test_server_config();
         server2_config.name = "server2".to_string();
@@ -1800,15 +1798,10 @@ mod tests {
     async fn test_mcp_manager_call_tool_not_connected() {
         let manager = McpManager::new();
 
-        let result = manager
-            .call_tool("nonexistent", "test_tool", None)
-            .await;
+        let result = manager.call_tool("nonexistent", "test_tool", None).await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("is not connected"));
+        assert!(result.unwrap_err().to_string().contains("is not connected"));
     }
 
     // Test McpClientCapabilities serialization
@@ -1860,7 +1853,10 @@ mod tests {
 
         let tool: McpTool = serde_json::from_str(json_str).unwrap();
         assert_eq!(tool.name, "no_args_tool");
-        assert!(tool.input_schema["properties"].as_object().unwrap().is_empty());
+        assert!(tool.input_schema["properties"]
+            .as_object()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

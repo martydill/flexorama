@@ -25,6 +25,7 @@ The hybrid cli/web coding agent that works your way.
  - Command line history navigation with up and down arrow keys and Ctrl-R search
  - Support for different LLM APIs (Anthropic, Gemini, OpenAI, Z.AI) with the --provider arg
  - Support for different models for each provider with /model
+ - Todo checklists 
  - Interactive and non-interactive mode
 
 
@@ -33,7 +34,6 @@ The hybrid cli/web coding agent that works your way.
 The optional web UI provides a ChatGPT-style browser-based interface for chats, as well as plan, agent, MCP, skills, and stats functionality
 
 ## Todo 
- - Todo checklists 
  - Git worktrees
  - Token speedometer
  - Hooks

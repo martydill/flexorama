@@ -3,7 +3,10 @@ use anyhow::Result;
 use serde_json::json;
 
 /// List all todo items
-pub async fn list_todos(call: &ToolCall, todos: &[super::create_todo::TodoItem]) -> Result<ToolResult> {
+pub async fn list_todos(
+    call: &ToolCall,
+    todos: &[super::create_todo::TodoItem],
+) -> Result<ToolResult> {
     let tool_use_id = call.id.clone();
 
     if todos.is_empty() {

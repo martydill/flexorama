@@ -423,11 +423,15 @@ async fn get_or_create_conversation_agent(
     let config = config::Config::load(None).await?;
     let (model, plan_mode) = {
         let template_agent = state.agent.lock().await;
-        (template_agent.model().to_string(), template_agent.plan_mode())
+        (
+            template_agent.model().to_string(),
+            template_agent.plan_mode(),
+        )
     };
 
     // Create new agent with same configuration (yolo_mode always false for web)
-    let mut new_agent = Agent::new_with_plan_mode(config, model, false, plan_mode).await
+    let mut new_agent = Agent::new_with_plan_mode(config, model, false, plan_mode)
+        .await
         .with_database_manager(state.database.clone())
         .with_skill_manager(state.skill_manager.clone());
 
@@ -909,7 +913,8 @@ async fn stream_message_to_conversation(
         };
 
         // Get or create agent for this conversation inside the spawned task
-        let agent_arc = match get_or_create_conversation_agent(&state_clone, &conversation_id).await {
+        let agent_arc = match get_or_create_conversation_agent(&state_clone, &conversation_id).await
+        {
             Ok(agent) => agent,
             Err(e) => {
                 send_json(

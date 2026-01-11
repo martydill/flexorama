@@ -602,14 +602,17 @@ impl Tui {
         let input_layout = build_input_layout(&snapshot, size.width as usize);
         let input_height = (input_layout.lines.len() + 2).min(max_input_height as usize) as u16;
         let max_queue_height = size.height.saturating_sub(3 + input_height);
-        let (queue_height, _) = build_queue_layout(&snapshot, size.width as usize, max_queue_height);
+        let (queue_height, _) =
+            build_queue_layout(&snapshot, size.width as usize, max_queue_height);
         let max_todo_height = size
             .height
             .saturating_sub(MIN_OUTPUT_HEIGHT as u16 + input_height + queue_height);
         let (todo_height, _) = build_todo_layout(&snapshot, size.width as usize, max_todo_height);
-        let output_height =
-            size.height
-                .saturating_sub(input_height.saturating_add(queue_height).saturating_add(todo_height));
+        let output_height = size.height.saturating_sub(
+            input_height
+                .saturating_add(queue_height)
+                .saturating_add(todo_height),
+        );
 
         // Check if click is within output area
         if screen_row >= output_height {
@@ -689,8 +692,7 @@ impl Tui {
                         result.push_str(&selected);
                     } else if line_idx == end.line_idx {
                         // Last line - from beginning to end offset
-                        let selected: String =
-                            chars.iter().take(end.char_offset + 1).collect();
+                        let selected: String = chars.iter().take(end.char_offset + 1).collect();
                         result.push_str(&selected);
                     } else {
                         // Middle lines - entire line
@@ -796,9 +798,11 @@ impl TuiScreen {
             let (todo_height, todo_lines) =
                 build_todo_layout(snapshot, size.width as usize, max_todo_height);
 
-            let output_height = size
-                .height
-                .saturating_sub(input_height.saturating_add(queue_height).saturating_add(todo_height));
+            let output_height = size.height.saturating_sub(
+                input_height
+                    .saturating_add(queue_height)
+                    .saturating_add(todo_height),
+            );
 
             let chunks = if todo_height > 0 && queue_height > 0 {
                 Layout::default()
@@ -910,9 +914,11 @@ impl TuiScreen {
             let (todo_height, todo_lines) =
                 build_todo_layout(snapshot, size.width as usize, max_todo_height);
 
-            let output_height = size
-                .height
-                .saturating_sub(input_height.saturating_add(queue_height).saturating_add(todo_height));
+            let output_height = size.height.saturating_sub(
+                input_height
+                    .saturating_add(queue_height)
+                    .saturating_add(todo_height),
+            );
 
             let chunks = if todo_height > 0 && queue_height > 0 {
                 Layout::default()
@@ -1208,41 +1214,44 @@ fn render_line_with_selection(
     use ratatui::text::{Line, Span};
 
     // Determine highlight range within this wrapped segment
-    let (hl_start, hl_end) = if info.line_idx == sel_start.line_idx
-        && info.line_idx == sel_end.line_idx
-    {
-        // Selection on same line
-        (
-            sel_start.char_offset.saturating_sub(info.char_start),
-            (sel_end.char_offset + 1)
-                .saturating_sub(info.char_start)
-                .min(info.char_end - info.char_start),
-        )
-    } else if info.line_idx == sel_start.line_idx {
-        // Selection starts here
-        (
-            sel_start.char_offset.saturating_sub(info.char_start),
-            info.char_end - info.char_start,
-        )
-    } else if info.line_idx == sel_end.line_idx {
-        // Selection ends here
-        (
-            0,
-            (sel_end.char_offset + 1)
-                .saturating_sub(info.char_start)
-                .min(info.char_end - info.char_start),
-        )
-    } else {
-        // Entire line selected
-        (0, info.char_end - info.char_start)
-    };
+    let (hl_start, hl_end) =
+        if info.line_idx == sel_start.line_idx && info.line_idx == sel_end.line_idx {
+            // Selection on same line
+            (
+                sel_start.char_offset.saturating_sub(info.char_start),
+                (sel_end.char_offset + 1)
+                    .saturating_sub(info.char_start)
+                    .min(info.char_end - info.char_start),
+            )
+        } else if info.line_idx == sel_start.line_idx {
+            // Selection starts here
+            (
+                sel_start.char_offset.saturating_sub(info.char_start),
+                info.char_end - info.char_start,
+            )
+        } else if info.line_idx == sel_end.line_idx {
+            // Selection ends here
+            (
+                0,
+                (sel_end.char_offset + 1)
+                    .saturating_sub(info.char_start)
+                    .min(info.char_end - info.char_start),
+            )
+        } else {
+            // Entire line selected
+            (0, info.char_end - info.char_start)
+        };
 
     // Build spans with selection highlight
     let visible = strip_ansi_codes(wrapped_line);
     let chars: Vec<char> = visible.chars().collect();
 
     let before: String = chars.iter().take(hl_start).collect();
-    let selected: String = chars.iter().skip(hl_start).take(hl_end - hl_start).collect();
+    let selected: String = chars
+        .iter()
+        .skip(hl_start)
+        .take(hl_end - hl_start)
+        .collect();
     let after: String = chars.iter().skip(hl_end).collect();
 
     let mut spans = Vec::new();
@@ -1407,7 +1416,11 @@ fn build_todo_layout(snapshot: &TuiSnapshot, width: usize, max_height: u16) -> (
     (height, todo_lines)
 }
 
-fn build_todo_lines(todos: &[crate::tools::create_todo::TodoItem], width: usize, max_lines: usize) -> Vec<String> {
+fn build_todo_lines(
+    todos: &[crate::tools::create_todo::TodoItem],
+    width: usize,
+    max_lines: usize,
+) -> Vec<String> {
     if width == 0 || max_lines == 0 {
         return Vec::new();
     }
@@ -2626,12 +2639,3 @@ mod tests {
         assert_eq!(built[1], "World");
     }
 }
-
-
-
-
-
-
-
-
-

@@ -113,7 +113,8 @@ pub struct Agent {
     active_skills: Vec<String>,
     // Todo management
     todos: Arc<AsyncMutex<Vec<crate::tools::create_todo::TodoItem>>>,
-    todos_by_conversation: Arc<AsyncMutex<HashMap<String, Vec<crate::tools::create_todo::TodoItem>>>>,
+    todos_by_conversation:
+        Arc<AsyncMutex<HashMap<String, Vec<crate::tools::create_todo::TodoItem>>>>,
 }
 
 impl Agent {
@@ -369,7 +370,10 @@ impl Agent {
         self
     }
 
-    pub fn with_skill_manager(mut self, skill_manager: Arc<AsyncMutex<crate::skill::SkillManager>>) -> Self {
+    pub fn with_skill_manager(
+        mut self,
+        skill_manager: Arc<AsyncMutex<crate::skill::SkillManager>>,
+    ) -> Self {
         self.skill_manager = Some(skill_manager);
         self
     }
@@ -378,7 +382,11 @@ impl Agent {
     pub async fn list_skills(&self) -> Result<Vec<crate::skill::Skill>> {
         if let Some(skill_manager) = &self.skill_manager {
             let manager = skill_manager.lock().await;
-            Ok(manager.list_skills().iter().map(|skill| (*skill).clone()).collect())
+            Ok(manager
+                .list_skills()
+                .iter()
+                .map(|skill| (*skill).clone())
+                .collect())
         } else {
             Err(anyhow!("Skill manager not initialized"))
         }
@@ -428,7 +436,8 @@ impl Agent {
             let mut manager = skill_manager.lock().await;
 
             // Get the skill
-            let skill = manager.get_skill(name)
+            let skill = manager
+                .get_skill(name)
                 .ok_or_else(|| anyhow!("Skill '{}' not found", name))?
                 .clone();
 
@@ -805,7 +814,11 @@ impl Agent {
 
             if !skills_content.is_empty() {
                 // Prepend skills to system prompt
-                let current_prompt = self.conversation_manager.system_prompt.clone().unwrap_or_default();
+                let current_prompt = self
+                    .conversation_manager
+                    .system_prompt
+                    .clone()
+                    .unwrap_or_default();
                 let enhanced_prompt = format!("{}\n\n{}", skills_content, current_prompt);
                 self.conversation_manager.system_prompt = Some(enhanced_prompt);
             }
@@ -1395,11 +1408,14 @@ impl Agent {
     /// Execute a tool with the new display system
     async fn execute_tool_with_display(&self, call: &ToolCall) -> ToolResult {
         if is_todo_tool(&call.name) {
-            return self.execute_tool_internal(call).await.unwrap_or_else(|e| ToolResult {
-                tool_use_id: call.id.clone(),
-                content: e.to_string(),
-                is_error: true,
-            });
+            return self
+                .execute_tool_internal(call)
+                .await
+                .unwrap_or_else(|e| ToolResult {
+                    tool_use_id: call.id.clone(),
+                    content: e.to_string(),
+                    is_error: true,
+                });
         }
 
         // Use the new display system
@@ -1511,7 +1527,9 @@ impl Agent {
         } else if call.name == "use_skill" {
             // Handle use_skill tool for progressive disclosure
             if let Some(skill_manager) = &self.skill_manager {
-                let skill_name = call.arguments.get("name")
+                let skill_name = call
+                    .arguments
+                    .get("name")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| anyhow!("Missing 'name' parameter for use_skill"))?;
 
@@ -2281,7 +2299,10 @@ mod tests {
             Some("Original system")
         );
         assert_eq!(
-            agent.conversation_manager.current_conversation_id.as_deref(),
+            agent
+                .conversation_manager
+                .current_conversation_id
+                .as_deref(),
             Some("conv-1")
         );
         assert_eq!(agent.model, "test-model");
@@ -2349,8 +2370,7 @@ mod tests {
     #[tokio::test]
     async fn new_with_plan_mode_adds_use_skill_tool() {
         let config = Config::default();
-        let agent =
-            Agent::new_with_plan_mode(config, "test-model".to_string(), false, false).await;
+        let agent = Agent::new_with_plan_mode(config, "test-model".to_string(), false, false).await;
 
         let tools = agent.tools.read().await;
         assert!(tools.contains_key("use_skill"));
