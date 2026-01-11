@@ -809,7 +809,9 @@ async function loadConversations() {
   const data = await api("/api/conversations");
   mergeConversations(data);
   renderConversationList();
-  if (!state.activeConversationId && data.length > 0) {
+  const hasActiveConv = state.activeConversationId &&
+    data.some(c => String(c.id) === String(state.activeConversationId));
+  if (!hasActiveConv && data.length > 0) {
     await selectConversation(data[0].id);
   }
 }

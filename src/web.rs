@@ -503,9 +503,53 @@ fn build_permission_handler(
     })
 }
 
+
+async fn ensure_default_conversation(state: &WebState) -> Result<Option<String>> {
+    // Check for conversations with messages (not just empty conversations)
+    let existing = state.database.get_recent_conversations(1, None).await?;
+    eprintln!("DEBUG: Found {} conversations with messages", existing.len());
+
+    if !existing.is_empty() {
+        eprintln!("DEBUG: Conversations exist, not creating default");
+        return Ok(None);
+    }
+
+    eprintln!("DEBUG: Creating default conversation");
+    let (model, system_prompt, subagent) = {
+        let agent = state.agent.lock().await;
+        (
+            agent.model().to_string(),
+            agent.get_system_prompt().cloned(),
+            agent.active_subagent_name(),
+        )
+    };
+
+    let conversation_id = state
+        .database
+        .create_conversation(system_prompt, &model, subagent.as_deref())
+        .await?;
+    eprintln!("DEBUG: Created conversation: {}", conversation_id);
+
+    state
+        .database
+        .add_message(
+            &conversation_id,
+            "assistant",
+            "Welcome to Flexorama. Send a message to start chatting.",
+            &model,
+            0,
+        )
+        .await?;
+    eprintln!("DEBUG: Added welcome message");
+
+    Ok(Some(conversation_id))
+}
+
 pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     app_println!("🌐 Web UI starting on http://{} (Ctrl+C to stop)", addr);
+
+    ensure_default_conversation(&state).await?;
 
     let router = Router::new()
         .route("/", get(serve_index))
@@ -602,12 +646,15 @@ async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse 
 
     match result {
         Ok(conversations) => {
+            eprintln!("DEBUG: list_conversations found {} conversations", conversations.len());
             let mut items = Vec::new();
             for conversation in conversations {
+                eprintln!("DEBUG: Processing conversation {}", conversation.id);
                 let messages = db
                     .get_conversation_messages(&conversation.id)
                     .await
                     .unwrap_or_default();
+                eprintln!("DEBUG: Conversation {} has {} messages", conversation.id, messages.len());
                 let first_user = messages
                     .iter()
                     .find(|m| m.role == "user")
@@ -627,6 +674,7 @@ async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse 
                 };
                 items.push(item);
             }
+            eprintln!("DEBUG: Returning {} conversation items", items.len());
             Json(items).into_response()
         }
         Err(e) => (
@@ -2534,6 +2582,56 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["message_count"], 1);
         assert_eq!(items[0]["last_message"], "Hello");
+    }
+
+    #[tokio::test]
+    async fn test_ensure_default_conversation_creates_when_empty() {
+        let state = build_test_state().await;
+        let created = ensure_default_conversation(&state)
+            .await
+            .expect("ensure default conversation");
+        assert!(created.is_some());
+
+        let conversations = state
+            .database
+            .get_recent_conversations(10, None)
+            .await
+            .expect("list conversations");
+        assert_eq!(conversations.len(), 1);
+        let messages = state
+            .database
+            .get_conversation_messages(&conversations[0].id)
+            .await
+            .expect("get messages");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "assistant");
+    }
+
+    #[tokio::test]
+    async fn test_ensure_default_conversation_noop_when_existing() {
+        let state = build_test_state().await;
+        let conversation_id = state
+            .database
+            .create_conversation(None, "test-model", None)
+            .await
+            .expect("create conversation");
+        state
+            .database
+            .add_message(&conversation_id, "user", "Hello", "test-model", 1)
+            .await
+            .expect("add message");
+
+        let created = ensure_default_conversation(&state)
+            .await
+            .expect("ensure default conversation");
+        assert!(created.is_none());
+
+        let conversations = state
+            .database
+            .get_recent_conversations(10, None)
+            .await
+            .expect("list conversations");
+        assert_eq!(conversations.len(), 1);
     }
 
     #[tokio::test]
