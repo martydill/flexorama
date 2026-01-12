@@ -2353,4 +2353,76 @@ mod tests {
         assert_eq!(result.len(), 53); // 50 + "..."
         assert!(result.ends_with("..."));
     }
+
+
+    #[test]
+    fn test_build_message_preview_whitespace_only() {
+        let messages = vec![
+            crate::database::Message {
+                id: "msg-1".to_string(),
+                role: "user".to_string(),
+                content: "   \n\n   ".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+            crate::database::Message {
+                id: "msg-2".to_string(),
+                role: "assistant".to_string(),
+                content: "Actual content".to_string(),
+                created_at: chrono::Utc::now(),
+            },
+        ];
+        let result = build_message_preview(&messages);
+        assert!(result.contains("Actual content"));
+    }
+
+    #[test]
+    fn test_build_message_preview_multiline() {
+        let messages = vec![crate::database::Message {
+            id: "msg-1".to_string(),
+            role: "user".to_string(),
+            content: "First line\nSecond line\nThird line".to_string(),
+            created_at: chrono::Utc::now(),
+        }];
+        let result = build_message_preview(&messages);
+        // Should only show first line
+        assert!(result.contains("First line"));
+        assert!(!result.contains("Second line"));
+    }
+
+    #[test]
+    fn test_create_spinner() {
+        let spinner = create_spinner();
+        assert!(!spinner.is_finished());
+    }
+
+    #[test]
+    fn test_print_usage_stats() {
+        let config = crate::config::Config::default();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let agent = rt.block_on(async {
+            crate::agent::Agent::new_with_plan_mode(
+                config,
+                "test-model".to_string(),
+                false,
+                false,
+            )
+            .await
+        });
+        // Should not panic
+        print_usage_stats(&agent);
+    }
+
+    #[test]
+    fn test_truncate_line_special_characters() {
+        let line = "Special: @#$%^&*()!";
+        let result = truncate_line(line, 50);
+        assert_eq!(result, "Special: @#$%^&*()!");
+    }
+
+    #[test]
+    fn test_truncate_line_mixed_unicode_ascii() {
+        let line = "Mix: Hello 世界 World!";
+        let result = truncate_line(line, 50);
+        assert!(result.len() <= 50 || result.ends_with("..."));
+    }
 }

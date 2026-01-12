@@ -2638,4 +2638,340 @@ mod tests {
         assert_eq!(built[0], "Hello");
         assert_eq!(built[1], "World");
     }
+
+    // =============================================================================
+    // Additional Edge Cases and Integration Tests
+    // =============================================================================
+
+    #[test]
+    fn test_output_buffer_mixed_line_endings() {
+        let mut buffer = OutputBuffer::new(100);
+        buffer.push_text("Line 1\r\nLine 2\nLine 3\rLine 4");
+        assert_eq!(buffer.lines.len(), 4);
+        assert_eq!(buffer.lines[0], "Line 1");
+        assert_eq!(buffer.lines[1], "Line 2");
+        assert_eq!(buffer.lines[2], "Line 3");
+        assert_eq!(buffer.lines[3], "Line 4");
+    }
+
+    #[test]
+    fn test_output_buffer_consecutive_newlines() {
+        let mut buffer = OutputBuffer::new(100);
+        buffer.push_text("Line 1\n\n\nLine 2");
+        assert_eq!(buffer.lines.len(), 4);
+        assert_eq!(buffer.lines[0], "Line 1");
+        assert_eq!(buffer.lines[1], "");
+        assert_eq!(buffer.lines[2], "");
+        assert_eq!(buffer.lines[3], "Line 2");
+    }
+
+    #[test]
+    fn test_output_buffer_only_newlines() {
+        let mut buffer = OutputBuffer::new(100);
+        buffer.push_text("\n\n\n");
+        assert_eq!(buffer.lines.len(), 4);
+        for line in &buffer.lines {
+            assert_eq!(line, "");
+        }
+    }
+
+    #[test]
+    fn test_output_buffer_max_lines_exact() {
+        let mut buffer = OutputBuffer::new(3);
+        buffer.push_text("Line 1\nLine 2\nLine 3");
+        assert_eq!(buffer.lines.len(), 3);
+        assert_eq!(buffer.lines[0], "Line 1");
+        assert_eq!(buffer.lines[1], "Line 2");
+        assert_eq!(buffer.lines[2], "Line 3");
+    }
+
+    #[test]
+    fn test_text_position_equality() {
+        let pos1 = TextPosition::new(5, 10);
+        let pos2 = TextPosition::new(5, 10);
+        assert_eq!(pos1, pos2);
+    }
+
+    #[test]
+    fn test_text_position_min_max_boundary() {
+        let pos1 = TextPosition::new(0, 0);
+        let pos2 = TextPosition::new(1000, 1000);
+        let (min, max) = pos1.min_max(pos2);
+        assert_eq!(min.line_idx, 0);
+        assert_eq!(min.char_offset, 0);
+        assert_eq!(max.line_idx, 1000);
+        assert_eq!(max.char_offset, 1000);
+    }
+
+    #[test]
+    fn test_strip_ansi_codes_complex_sequence() {
+        let input = "\x1b[1;31;40mBold Red on Black\x1b[0m";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, "Bold Red on Black");
+    }
+
+    #[test]
+    fn test_strip_ansi_codes_multiple_resets() {
+        let input = "\x1b[31mRed\x1b[0m\x1b[0m\x1b[32mGreen\x1b[0m\x1b[0m";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, "RedGreen");
+    }
+
+    #[test]
+    fn test_strip_ansi_codes_unterminated() {
+        let input = "\x1b[31mRed text";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, "Red text");
+    }
+
+    #[test]
+    fn test_screen_col_to_char_offset_edge_cases() {
+        let line = "abc";
+        assert_eq!(screen_col_to_char_offset(line, 0), 0);
+        assert_eq!(screen_col_to_char_offset(line, 1), 1);
+        assert_eq!(screen_col_to_char_offset(line, 2), 2);
+        assert_eq!(screen_col_to_char_offset(line, 3), 3);
+        // Beyond end should return length
+        assert_eq!(screen_col_to_char_offset(line, 100), 3);
+    }
+
+    #[test]
+    fn test_wrap_ansi_line_single_character() {
+        let line = "A";
+        let result = wrap_ansi_line(line, 1);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "A");
+    }
+
+    #[test]
+    fn test_wrap_ansi_line_with_only_ansi() {
+        let line = "\x1b[31m\x1b[0m";
+        let result = wrap_ansi_line(line, 10);
+        // Should return empty or minimal wrapping
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_cursor_pos_at_boundary() {
+        let text = "Hello";
+        assert_eq!(normalize_cursor_pos(text, 5), 5);
+        assert_eq!(normalize_cursor_pos(text, 6), 5);
+    }
+
+    #[test]
+    fn test_previous_char_boundary_at_start() {
+        let text = "Hello";
+        assert_eq!(previous_char_boundary(text, 0), 0);
+    }
+
+    #[test]
+    fn test_next_char_boundary_at_end() {
+        let text = "Hello";
+        assert_eq!(next_char_boundary(text, 5), 5);
+    }
+
+    #[test]
+    fn test_cursor_position_in_lines_trailing_newline() {
+        let text = "Line 1\n";
+        assert_eq!(cursor_position_in_lines(text, 6), (0, 6));
+        assert_eq!(cursor_position_in_lines(text, 7), (1, 0));
+    }
+
+    #[test]
+    fn test_build_output_lines_with_long_lines() {
+        let lines = vec!["A".repeat(1000)];
+        let result = build_output_lines(&lines, 10);
+        assert_eq!(result.len(), 100); // Should wrap into 100 lines
+    }
+
+    #[test]
+    fn test_build_queue_lines_single_item() {
+        let queue = vec!["Single item".to_string()];
+        let result = build_queue_lines(&queue, 50, 10);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "1) Single item");
+    }
+
+    #[test]
+    fn test_build_queue_lines_with_newlines() {
+        let queue = vec!["Item\nwith\nnewlines".to_string()];
+        let result = build_queue_lines(&queue, 50, 10);
+        assert!(result.len() >= 1);
+        assert!(result[0].starts_with("1) "));
+    }
+
+    #[test]
+    fn test_build_input_layout_cursor_at_end() {
+        let snapshot = TuiSnapshot {
+            output_lines: vec![],
+            queued: vec![],
+            input_display: "Test".to_string(),
+            input_raw: "Test".to_string(),
+            cursor_pos: 4,
+            output_scroll: 0,
+            selection_range: None,
+            todos: vec![],
+        };
+        let layout = build_input_layout(&snapshot, 80);
+        assert_eq!(layout.cursor_col, 6); // 2 for "> " + 4 for "Test"
+    }
+
+    #[test]
+    fn test_build_input_layout_with_unicode() {
+        let text = "Hello 世界";
+        let snapshot = TuiSnapshot {
+            output_lines: vec![],
+            queued: vec![],
+            input_display: text.to_string(),
+            input_raw: text.to_string(),
+            cursor_pos: text.len(), // Use actual byte length
+            output_scroll: 0,
+            selection_range: None,
+            todos: vec![],
+        };
+        let layout = build_input_layout(&snapshot, 80);
+        assert!(layout.lines.len() >= 1);
+        assert!(layout.lines[0].contains("Hello 世界"));
+    }
+
+    #[test]
+    fn test_output_buffer_incremental_push() {
+        let mut buffer = OutputBuffer::new(100);
+        buffer.push_text("First");
+        assert_eq!(buffer.lines.len(), 1);
+        assert_eq!(buffer.lines[0], "First");
+
+        buffer.push_text(" Second");
+        assert_eq!(buffer.lines.len(), 1);
+        assert_eq!(buffer.lines[0], "First Second");
+
+        buffer.push_text("\nThird");
+        assert_eq!(buffer.lines.len(), 2);
+        assert_eq!(buffer.lines[1], "Third");
+    }
+
+    #[test]
+    fn test_text_position_min_max_same_line_reverse() {
+        let pos1 = TextPosition::new(5, 20);
+        let pos2 = TextPosition::new(5, 10);
+        let (min, max) = pos1.min_max(pos2);
+        assert_eq!(min.line_idx, 5);
+        assert_eq!(min.char_offset, 10);
+        assert_eq!(max.line_idx, 5);
+        assert_eq!(max.char_offset, 20);
+    }
+
+    #[test]
+    fn test_cursor_position_in_lines_only_newlines() {
+        let text = "\n\n\n";
+        assert_eq!(cursor_position_in_lines(text, 0), (0, 0));
+        assert_eq!(cursor_position_in_lines(text, 1), (1, 0));
+        assert_eq!(cursor_position_in_lines(text, 2), (2, 0));
+        assert_eq!(cursor_position_in_lines(text, 3), (3, 0));
+    }
+
+    #[test]
+    fn test_normalize_cursor_pos_with_multibyte() {
+        let text = "Hello 世界 World";
+        // Test various cursor positions
+        let pos = normalize_cursor_pos(text, 0);
+        assert_eq!(pos, 0);
+        let pos = normalize_cursor_pos(text, 6);
+        assert_eq!(pos, 6);
+        let pos = normalize_cursor_pos(text, text.len());
+        assert_eq!(pos, text.len());
+        let pos = normalize_cursor_pos(text, text.len() + 100);
+        assert_eq!(pos, text.len());
+    }
+
+    #[test]
+    fn test_wrap_ansi_line_exact_boundary() {
+        let line = "12345";
+        let result = wrap_ansi_line(line, 5);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "12345");
+    }
+
+    #[test]
+    fn test_wrap_ansi_line_one_over_boundary() {
+        let line = "123456";
+        let result = wrap_ansi_line(line, 5);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "12345");
+        assert_eq!(result[1], "6");
+    }
+
+    #[test]
+    fn test_build_output_lines_single_empty_line() {
+        let lines = vec![String::new()];
+        let result = build_output_lines(&lines, 80);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "");
+    }
+
+    #[test]
+    fn test_build_queue_lines_very_wide_width() {
+        let queue = vec!["Item 1".to_string(), "Item 2".to_string()];
+        let result = build_queue_lines(&queue, 1000, 10);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], "1) Item 1");
+        assert_eq!(result[1], "2) Item 2");
+    }
+
+    #[test]
+    fn test_strip_ansi_complex_nesting() {
+        let input = "\x1b[1m\x1b[31m\x1b[4mBold Red Underline\x1b[0m";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, "Bold Red Underline");
+    }
+
+    #[test]
+    fn test_previous_char_boundary_multibyte_boundary() {
+        let text = "世界";
+        // Each character is 3 bytes
+        assert_eq!(previous_char_boundary(text, 6), 3);
+        assert_eq!(previous_char_boundary(text, 3), 0);
+        assert_eq!(previous_char_boundary(text, 0), 0);
+    }
+
+    #[test]
+    fn test_next_char_boundary_multibyte_boundary() {
+        let text = "世界";
+        // Each character is 3 bytes
+        assert_eq!(next_char_boundary(text, 0), 3);
+        assert_eq!(next_char_boundary(text, 3), 6);
+        assert_eq!(next_char_boundary(text, 6), 6);
+    }
+
+    #[test]
+    fn test_output_buffer_very_long_line() {
+        let mut buffer = OutputBuffer::new(100);
+        let long_line = "A".repeat(10000);
+        buffer.push_text(&long_line);
+        assert_eq!(buffer.lines.len(), 1);
+        assert_eq!(buffer.lines[0].len(), 10000);
+    }
+
+    #[test]
+    fn test_cursor_position_single_char() {
+        let text = "A";
+        assert_eq!(cursor_position_in_lines(text, 0), (0, 0));
+        assert_eq!(cursor_position_in_lines(text, 1), (0, 1));
+    }
+
+    #[test]
+    fn test_build_input_layout_with_very_long_input() {
+        let snapshot = TuiSnapshot {
+            output_lines: vec![],
+            queued: vec![],
+            input_display: "A".repeat(500),
+            input_raw: "A".repeat(500),
+            cursor_pos: 250,
+            output_scroll: 0,
+            selection_range: None,
+            todos: vec![],
+        };
+        let layout = build_input_layout(&snapshot, 80);
+        assert!(layout.lines.len() > 1);
+    }
 }

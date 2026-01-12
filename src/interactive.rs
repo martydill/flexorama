@@ -391,4 +391,324 @@ mod tests {
         assert!(path.to_string_lossy().contains(".flexorama"));
         assert!(path.to_string_lossy().ends_with("AGENTS.md"));
     }
+
+    #[tokio::test]
+    async fn test_add_context_files_with_temp_directory() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // Create a temporary directory with test files
+        let temp_dir = TempDir::new().unwrap();
+        let file1 = temp_dir.path().join("file1.txt");
+        let file2 = temp_dir.path().join("file2.txt");
+        let file3 = temp_dir.path().join("file3.txt");
+
+        fs::File::create(&file1).unwrap();
+        fs::File::create(&file2).unwrap();
+        fs::File::create(&file3).unwrap();
+
+        let context_files = vec![
+            file1.to_str().unwrap().to_string(),
+            file2.to_str().unwrap().to_string(),
+            file3.to_str().unwrap().to_string(),
+        ];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_mixed_existing_nonexisting() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let existing_file = temp_dir.path().join("exists.txt");
+        fs::File::create(&existing_file).unwrap();
+
+        let context_files = vec![
+            existing_file.to_str().unwrap().to_string(),
+            "nonexistent1.txt".to_string(),
+            "nonexistent2.txt".to_string(),
+        ];
+
+        // Should handle both existing and non-existing files gracefully
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_with_special_characters() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_with_spaces = temp_dir.path().join("file with spaces.txt");
+        fs::File::create(&file_with_spaces).unwrap();
+
+        let context_files = vec![file_with_spaces.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_large_number() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut context_files = Vec::new();
+
+        // Create 20 test files
+        for i in 0..20 {
+            let file = temp_dir.path().join(format!("file{}.txt", i));
+            fs::File::create(&file).unwrap();
+            context_files.push(file.to_str().unwrap().to_string());
+        }
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_with_content() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("content.txt");
+        let mut file = fs::File::create(&file_path).unwrap();
+        writeln!(file, "This is test content\nWith multiple lines\nAnd more text").unwrap();
+
+        let context_files = vec![file_path.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_empty_file() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let empty_file = temp_dir.path().join("empty.txt");
+        fs::File::create(&empty_file).unwrap();
+
+        let context_files = vec![empty_file.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_relative_paths() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let context_files = vec![
+            "./relative/path/file.txt".to_string(),
+            "../parent/file.txt".to_string(),
+        ];
+
+        // Should handle gracefully even if paths don't exist
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_absolute_paths() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("absolute.txt");
+        fs::File::create(&file).unwrap();
+
+        let context_files = vec![file.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_duplicate_paths() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let file = temp_dir.path().join("duplicate.txt");
+        fs::File::create(&file).unwrap();
+
+        let file_str = file.to_str().unwrap().to_string();
+        let context_files = vec![file_str.clone(), file_str.clone(), file_str];
+
+        // Should handle duplicate paths gracefully
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_with_subdirectories() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let subdir = temp_dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        let file = subdir.join("file.txt");
+        fs::File::create(&file).unwrap();
+
+        let context_files = vec![file.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_binary_file() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let binary_file = temp_dir.path().join("binary.bin");
+        let mut file = fs::File::create(&binary_file).unwrap();
+        // Write some binary data
+        file.write_all(&[0u8, 1, 2, 3, 4, 255, 254, 253]).unwrap();
+
+        let context_files = vec![binary_file.to_str().unwrap().to_string()];
+
+        // Should handle binary files gracefully
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_home_agents_md_path_consistency() {
+        let path1 = get_home_agents_md_path();
+        let path2 = get_home_agents_md_path();
+        assert_eq!(path1, path2);
+    }
+
+    #[test]
+    fn test_get_home_agents_md_path_is_absolute() {
+        let path = get_home_agents_md_path();
+        assert!(path.is_absolute());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_unicode_content() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        let temp_dir = TempDir::new().unwrap();
+        let unicode_file = temp_dir.path().join("unicode.txt");
+        let mut file = fs::File::create(&unicode_file).unwrap();
+        writeln!(file, "Hello 世界 مرحبا Привет").unwrap();
+
+        let context_files = vec![unicode_file.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_context_files_very_long_path() {
+        let config = Config::default();
+        let mut agent = crate::agent::Agent::new_with_plan_mode(
+            config,
+            "claude-3-5-sonnet-20241022".to_string(),
+            false,
+            false,
+        )
+        .await;
+
+        // Create a path with many nested directories
+        let temp_dir = TempDir::new().unwrap();
+        let mut long_path = temp_dir.path().to_path_buf();
+        for i in 0..10 {
+            long_path = long_path.join(format!("dir{}", i));
+        }
+        fs::create_dir_all(&long_path).unwrap();
+        let file = long_path.join("file.txt");
+        fs::File::create(&file).unwrap();
+
+        let context_files = vec![file.to_str().unwrap().to_string()];
+
+        let result = add_context_files(&mut agent, &context_files).await;
+        assert!(result.is_ok());
+    }
 }
