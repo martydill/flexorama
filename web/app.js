@@ -977,6 +977,8 @@ async function sendMessageStreaming(text) {
       }
     }
 
+    // Refresh conversation from backend to ensure UI matches persisted state
+    // This is necessary so messages persist when switching between conversations
     setStatus("Refreshing chat...");
     await selectConversation(state.activeConversationId);
     await loadConversations();

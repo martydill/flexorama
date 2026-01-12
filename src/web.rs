@@ -707,9 +707,19 @@ async fn get_conversation(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let db = state.database.clone();
+
+    // First check if there's a dedicated agent for this conversation in the pool
     let snapshot = {
-        let agent_guard = state.agent.lock().await;
-        agent_guard.snapshot_conversation()
+        let agents = state.conversation_agents.lock().await;
+        if let Some(agent_arc) = agents.get(&id) {
+            // Use the dedicated conversation agent's snapshot (most up-to-date)
+            let agent = agent_arc.lock().await;
+            agent.snapshot_conversation()
+        } else {
+            // Fall back to main agent's snapshot
+            let agent_guard = state.agent.lock().await;
+            agent_guard.snapshot_conversation()
+        }
     };
     let conversation = db.get_conversation(&id).await;
 
