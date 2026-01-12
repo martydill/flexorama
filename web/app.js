@@ -73,7 +73,7 @@ const state = {
   activeModel: null,
   theme: "dark",
   activeTab: "chats",
-  streaming: localStorage.getItem("flexorama-stream") === "true",
+  streaming: true,
   planMode: false,
   pendingPermissions: new Set(),
   todos: [],
@@ -865,11 +865,7 @@ async function sendMessage() {
   appendMessage("user", text);
   updateConversationPreview(state.activeConversationId, text);
   input.value = "";
-  if (state.streaming) {
-    await sendMessageStreaming(text);
-  } else {
-    await sendMessageOnce(text);
-  }
+  await sendMessageStreaming(text);
 }
 
 async function sendMessageOnce(text) {
@@ -1677,14 +1673,6 @@ function bindEvents() {
       sendMessage();
     }
   });
-  const streamToggle = document.getElementById("stream-toggle");
-  if (streamToggle) {
-    streamToggle.checked = state.streaming;
-    streamToggle.addEventListener("change", (e) => {
-      state.streaming = e.target.checked;
-      localStorage.setItem("flexorama-stream", String(state.streaming));
-    });
-  }
   document.getElementById("new-conversation").addEventListener("click", createConversation);
   const todoToggle = document.getElementById("todo-toggle");
   if (todoToggle) {
