@@ -8,9 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
-#[macro_use]
-extern crate flexorama;
-
+use flexorama::{app_eprintln, app_println};
 use flexorama::*;
 
 use agent::Agent;

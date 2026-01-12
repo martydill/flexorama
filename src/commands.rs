@@ -5,25 +5,21 @@ use dialoguer::Select;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, warn};
 use serde_json;
-use std::collections::HashSet;
-use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::fs as async_fs;
 
-use crate::agent::{Agent, StreamToolEvent};
+use crate::agent::Agent;
 use crate::config;
 use crate::database::{Conversation as StoredConversation, Message as StoredMessage};
-use crate::formatter::{self, CodeFormatter};
+use crate::formatter;
 use crate::help::{
     print_agent_help, print_file_permissions_help, print_help, print_mcp_help,
     print_permissions_help, print_skill_help,
 };
 use crate::mcp::McpManager;
 use crate::processing::create_streaming_renderer;
-use crate::skill::Skill;
 use crate::subagent;
 use crate::tools;
 use crate::tui;

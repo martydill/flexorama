@@ -807,7 +807,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_save_and_load() {
         let temp_dir = TempDir::new().unwrap();
-        let mut manager = create_test_manager(&temp_dir);
+        let manager = create_test_manager(&temp_dir);
 
         let mut skill = create_test_skill("save-load");
         skill.description = "Updated description".to_string();
@@ -1012,7 +1012,7 @@ Also check @references/api.md
     #[tokio::test]
     async fn test_skill_manager_load_all_skills() {
         let temp_dir = TempDir::new().unwrap();
-        let mut manager = create_test_manager(&temp_dir);
+        let manager = create_test_manager(&temp_dir);
 
         // Create skills manually in the directory
         let skill1 = create_test_skill("auto-load-1");

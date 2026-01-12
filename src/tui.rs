@@ -843,7 +843,6 @@ impl TuiScreen {
             };
 
             let output_rect = chunks[0];
-            let mut chunk_idx = 1;
 
             let (queue_rect, todo_rect, input_rect) = if queue_height > 0 && todo_height > 0 {
                 (Some(chunks[1]), Some(chunks[2]), chunks[3])

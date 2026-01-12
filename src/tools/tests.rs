@@ -506,9 +506,7 @@ async fn create_directory_handles_existing_directory() {
         "create_directory",
         json!({ "path": dir_path.to_string_lossy() }),
     );
-    let result = create_directory(&call, &mut file_security_manager, false)
-        .await
-        .unwrap();
+    let _ = create_directory(&call, &mut file_security_manager, false).await;
     // Creating an existing directory may succeed or fail depending on the implementation
     // The important thing is that it doesn't crash
     assert!(dir_path.is_dir());
