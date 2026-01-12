@@ -2818,12 +2818,13 @@ mod tests {
 
     #[test]
     fn test_build_input_layout_with_unicode() {
+        let text = "Hello 世界";
         let snapshot = TuiSnapshot {
             output_lines: vec![],
             queued: vec![],
-            input_display: "Hello 世界".to_string(),
-            input_raw: "Hello 世界".to_string(),
-            cursor_pos: 11,
+            input_display: text.to_string(),
+            input_raw: text.to_string(),
+            cursor_pos: text.len(), // Use actual byte length
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
