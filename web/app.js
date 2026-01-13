@@ -905,9 +905,16 @@ async function sendMessageStreaming(text) {
   const poller = startPermissionPolling();
 
   try {
+    const headers = { "Content-Type": "application/json" };
+
+    // Add CSRF token for state-changing operations
+    if (state.csrfToken) {
+      headers["X-CSRF-Token"] = state.csrfToken;
+    }
+
     const res = await fetch(`/api/conversations/${state.activeConversationId}/message/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers,
       body: JSON.stringify({ message: text }),
     });
 
