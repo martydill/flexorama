@@ -47,6 +47,7 @@ chrono = { version = "0.4", features = ["serde"] }
 serde_yaml = "0.9"
 bytes = "1"
 arboard = "3.0"
+tower-http = { version = "0.5", features = ["cors"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

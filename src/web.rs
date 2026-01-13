@@ -25,6 +25,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
+use tower_http::cors::{Any, CorsLayer};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -555,6 +556,16 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
 
     ensure_default_conversation(&state).await?;
 
+    // Configure CORS to only allow requests from the same origin
+    let allowed_origin = format!("http://127.0.0.1:{}", port)
+        .parse::<axum::http::HeaderValue>()
+        .expect("Invalid origin");
+
+    let cors = CorsLayer::new()
+        .allow_origin(allowed_origin)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let router = Router::new()
         .route("/", get(serve_index))
         .route("/app.js", get(serve_app_js))
@@ -626,7 +637,8 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             "/api/stats/conversations-by-subagent",
             get(get_conversation_stats_by_subagent),
         )
-        .with_state(state);
+        .with_state(state)
+        .layer(cors);
 
     axum::serve(tokio::net::TcpListener::bind(addr).await?, router).await?;
     Ok(())
