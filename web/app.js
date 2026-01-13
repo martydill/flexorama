@@ -854,13 +854,14 @@ async function createConversation() {
     created_at: new Date().toISOString(),
   };
   state.activeConversationId = newId;
+  localStorage.setItem("flexorama-active-conversation", String(newId));
   mergeConversations([placeholder]);
+  renderConversationList();
   if (newId) {
     await selectConversation(newId);
   }
   const input = document.getElementById("message-input");
   if (input) input.focus();
-  await loadConversations();
   await loadModels();
 }
 

@@ -14,7 +14,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{header, Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use bytes::Bytes;
 use chrono::{Duration, Utc};
