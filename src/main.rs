@@ -14,6 +14,7 @@ use flexorama::*;
 use agent::Agent;
 use cli::Cli;
 use config::{Config, Provider};
+use csrf::CsrfManager;
 use database::{get_database_path, DatabaseManager};
 use formatter::create_code_formatter;
 use help::{display_mcp_yolo_warning, display_yolo_warning};
@@ -353,6 +354,7 @@ async fn run_web_mode(
         permission_hub: Arc::new(web::PermissionHub::new()),
         skill_manager,
         conversation_agents: Arc::new(AsyncMutex::new(HashMap::new())),
+        csrf_manager: Arc::new(CsrfManager::new()),
     };
 
     web::launch_web_ui(state, cli.web_port).await?;
