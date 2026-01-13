@@ -38,6 +38,7 @@ pub struct DisplayContext {
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputMode {
     Pretty,
+    Simple,
 }
 
 /// Registry for managing tool metadata

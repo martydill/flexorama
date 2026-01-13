@@ -17,6 +17,7 @@ pub trait ToolDisplay: Send {
 
 pub mod factory;
 pub mod pretty;
+pub mod simple;
 
 // Re-export for convenience
 pub use factory::DisplayFactory;

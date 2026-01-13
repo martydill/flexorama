@@ -38,12 +38,9 @@ A comprehensive display system for tool calls that includes:
 - Duration timing
 - Truncated results for readability
 
-### 2. Updated Dependencies
+### 2. Dependencies
 
-Added to `Cargo.toml`:
-```toml
-atty = "0.2"  # For terminal detection
-```
+No extra dependency needed for terminal detection; uses `std::io::IsTerminal`.
 
 ### 3. Integration Points
 

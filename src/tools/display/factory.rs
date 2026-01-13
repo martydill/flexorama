@@ -1,5 +1,6 @@
 use crate::tools::registry::{DisplayContext, OutputMode};
 use serde_json::Value;
+use std::io::IsTerminal;
 use std::time::Instant;
 
 /// Factory for creating tool display instances
@@ -29,17 +30,20 @@ impl DisplayFactory {
 
         match context.output_mode {
             OutputMode::Pretty => Box::new(super::pretty::PrettyDisplay::new(context)),
+            OutputMode::Simple => Box::new(super::simple::SimpleDisplay::new(context)),
         }
     }
 
     /// Detect the appropriate output mode based on environment
     fn detect_output_mode() -> OutputMode {
-        // For now, always use pretty output
-        // In the future, this could check for:
-        // - TTY detection
-        // - Environment variables
-        // - Configuration settings
-        // - Output redirection
-        OutputMode::Pretty
+        if crate::output::is_tui_active() {
+            return OutputMode::Pretty;
+        }
+
+        if std::io::stdout().is_terminal() {
+            OutputMode::Pretty
+        } else {
+            OutputMode::Simple
+        }
     }
 }
