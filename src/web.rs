@@ -2,6 +2,7 @@ use crate::agent::{Agent, ConversationSnapshot, StreamToolEvent};
 use crate::anthropic::ContentBlock;
 use crate::config;
 use crate::conversation::ConversationManager;
+use crate::csrf::CsrfManager;
 use crate::database::{Conversation, DatabaseManager, ToolCallRecord};
 use crate::mcp::{McpManager, McpServerConfig};
 use crate::security::{PermissionHandler, PermissionKind, PermissionPrompt};
@@ -10,9 +11,10 @@ use crate::subagent::{SubagentConfig, SubagentManager};
 use anyhow::Result;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, Request, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use bytes::Bytes;
 use chrono::{Duration, Utc};
@@ -36,6 +38,7 @@ pub struct WebState {
     pub permission_hub: Arc<PermissionHub>,
     pub skill_manager: Arc<Mutex<SkillManager>>,
     pub conversation_agents: Arc<Mutex<HashMap<String, Arc<Mutex<Agent>>>>>,
+    pub csrf_manager: Arc<CsrfManager>,
 }
 
 #[derive(Serialize)]
@@ -549,21 +552,40 @@ async fn ensure_default_conversation(state: &WebState) -> Result<Option<String>>
     Ok(Some(conversation_id))
 }
 
+/// CSRF token validation middleware
+async fn csrf_middleware(
+    State(state): State<WebState>,
+    request: Request<Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // Extract CSRF token from X-CSRF-Token header
+    let token = request
+        .headers()
+        .get("X-CSRF-Token")
+        .and_then(|v| v.to_str().ok());
+
+    match token {
+        Some(token) => {
+            // Validate the token (but don't consume it - allow reuse within the session)
+            if state.csrf_manager.validate_token(token).await {
+                Ok(next.run(request).await)
+            } else {
+                Err(StatusCode::FORBIDDEN)
+            }
+        }
+        None => Err(StatusCode::FORBIDDEN),
+    }
+}
+
 pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     app_println!("🌐 Web UI starting on http://{} (Ctrl+C to stop)", addr);
 
     ensure_default_conversation(&state).await?;
 
-    let router = Router::new()
-        .route("/", get(serve_index))
-        .route("/app.js", get(serve_app_js))
-        .route("/api/health", get(health))
-        .route(
-            "/api/conversations",
-            get(list_conversations).post(create_conversation),
-        )
-        .route("/api/conversations/:id", get(get_conversation))
+    // Routes that require CSRF protection (state-changing operations)
+    let protected_routes = Router::new()
+        .route("/api/conversations", post(create_conversation))
         .route(
             "/api/conversations/:id/message",
             post(send_message_to_conversation),
@@ -572,47 +594,53 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             "/api/conversations/:id/message/stream",
             post(stream_message_to_conversation),
         )
-        .route("/api/models", get(get_models).post(set_model))
-        .route("/api/plans", get(list_plans).post(create_plan))
-        .route(
-            "/api/plans/:id",
-            get(get_plan).put(update_plan).delete(delete_plan),
-        )
-        .route(
-            "/api/mcp/servers",
-            get(list_mcp_servers).post(upsert_mcp_server),
-        )
+        .route("/api/models", post(set_model))
+        .route("/api/plans", post(create_plan))
+        .route("/api/plans/:id", put(update_plan).delete(delete_plan))
+        .route("/api/mcp/servers", post(upsert_mcp_server))
         .route(
             "/api/mcp/servers/:name",
-            get(get_mcp_server)
-                .put(upsert_mcp_server_named)
-                .delete(delete_mcp_server),
+            put(upsert_mcp_server_named).delete(delete_mcp_server),
         )
         .route("/api/mcp/servers/:name/connect", post(connect_mcp_server))
         .route(
             "/api/mcp/servers/:name/disconnect",
             post(disconnect_mcp_server),
         )
-        .route("/api/agents", get(list_agents).post(create_agent))
-        .route(
-            "/api/agents/:name",
-            get(get_agent).put(update_agent).delete(delete_agent),
-        )
-        .route(
-            "/api/agents/active",
-            get(get_active_agent).post(set_active_agent),
-        )
-        .route("/api/skills", get(list_skills).post(create_skill))
-        .route(
-            "/api/skills/:name",
-            get(get_skill).put(update_skill).delete(delete_skill),
-        )
+        .route("/api/agents", post(create_agent))
+        .route("/api/agents/:name", put(update_agent).delete(delete_agent))
+        .route("/api/agents/active", post(set_active_agent))
+        .route("/api/skills", post(create_skill))
+        .route("/api/skills/:name", put(update_skill).delete(delete_skill))
         .route("/api/skills/:name/activate", post(activate_skill))
         .route("/api/skills/:name/deactivate", post(deactivate_skill))
+        .route("/api/permissions/respond", post(resolve_permission_request))
+        .route("/api/plan-mode", post(set_plan_mode))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            csrf_middleware,
+        ));
+
+    // Public routes (no CSRF protection needed for GET requests)
+    let router = Router::new()
+        .route("/", get(serve_index))
+        .route("/app.js", get(serve_app_js))
+        .route("/api/health", get(health))
+        .route("/api/conversations", get(list_conversations))
+        .route("/api/conversations/:id", get(get_conversation))
+        .route("/api/models", get(get_models))
+        .route("/api/plans", get(list_plans))
+        .route("/api/plans/:id", get(get_plan))
+        .route("/api/mcp/servers", get(list_mcp_servers))
+        .route("/api/mcp/servers/:name", get(get_mcp_server))
+        .route("/api/agents", get(list_agents))
+        .route("/api/agents/:name", get(get_agent))
+        .route("/api/agents/active", get(get_active_agent))
+        .route("/api/skills", get(list_skills))
+        .route("/api/skills/:name", get(get_skill))
         .route("/api/skills/active", get(get_active_skills))
         .route("/api/permissions/pending", get(list_pending_permissions))
-        .route("/api/permissions/respond", post(resolve_permission_request))
-        .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
+        .route("/api/plan-mode", get(get_plan_mode))
         .route("/api/todos", get(list_todos))
         .route("/api/stats/overview", get(get_stats_overview))
         .route("/api/stats/usage", get(get_usage_stats))
@@ -626,14 +654,24 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             "/api/stats/conversations-by-subagent",
             get(get_conversation_stats_by_subagent),
         )
+        .merge(protected_routes)
         .with_state(state);
 
     axum::serve(tokio::net::TcpListener::bind(addr).await?, router).await?;
     Ok(())
 }
 
-async fn serve_index() -> impl IntoResponse {
-    Html(INDEX_HTML)
+async fn serve_index(State(state): State<WebState>) -> impl IntoResponse {
+    // Generate CSRF token and inject it into the HTML
+    let csrf_token = state.csrf_manager.generate_token().await;
+    let html_with_token = INDEX_HTML.replace(
+        "</head>",
+        &format!(
+            r#"<script>window.FLEXORAMA_CSRF_TOKEN = "{}";</script></head>"#,
+            csrf_token
+        ),
+    );
+    Html(html_with_token)
 }
 
 async fn serve_app_js() -> impl IntoResponse {
@@ -2353,6 +2391,7 @@ mod tests {
             permission_hub: Arc::new(PermissionHub::new()),
             skill_manager,
             conversation_agents: Arc::new(Mutex::new(HashMap::new())),
+            csrf_manager: Arc::new(CsrfManager::new()),
         }
     }
 

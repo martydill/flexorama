@@ -100,6 +100,7 @@ const state = {
   statsStartDate: null,
   statsEndDate: null,
   todosCollapsed: localStorage.getItem("flexorama-todos-collapsed") === "true",
+  csrfToken: null,
 };
 
 function setPlanForm(plan) {
@@ -144,6 +145,12 @@ async function api(path, options = {}) {
   const opts = { headers: { "Content-Type": "application/json" }, ...options };
   if (opts.body && typeof opts.body !== "string") {
     opts.body = JSON.stringify(opts.body);
+  }
+
+  // Add CSRF token for state-changing operations
+  const method = (opts.method || "GET").toUpperCase();
+  if (["POST", "PUT", "DELETE"].includes(method) && state.csrfToken) {
+    opts.headers["X-CSRF-Token"] = state.csrfToken;
   }
 
   const res = await fetch(path, opts);
@@ -2183,6 +2190,12 @@ async function loadStats() {
 }
 
 async function bootstrap() {
+  // Load CSRF token from injected global variable
+  state.csrfToken = window.FLEXORAMA_CSRF_TOKEN || null;
+  if (!state.csrfToken) {
+    console.error("CSRF token not found in page");
+  }
+
   // Restore tab from URL
   const url = new URL(window.location);
   const tabFromUrl = url.searchParams.get("tab");

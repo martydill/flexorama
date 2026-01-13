@@ -9,6 +9,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod conversation;
+pub mod csrf;
 pub mod database;
 pub mod formatter;
 pub mod gemini;
