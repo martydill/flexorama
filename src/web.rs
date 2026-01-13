@@ -27,6 +27,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
+use tower_http::cors::{Any, CorsLayer};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -584,6 +585,16 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
     ensure_default_conversation(&state).await?;
 
     // Routes that require CSRF protection (state-changing operations)
+    // Configure CORS to only allow requests from the same origin
+    let allowed_origin = format!("http://127.0.0.1:{}", port)
+        .parse::<axum::http::HeaderValue>()
+        .expect("Invalid origin");
+
+    let cors = CorsLayer::new()
+        .allow_origin(allowed_origin)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let protected_routes = Router::new()
         .route("/api/conversations", post(create_conversation))
         .route(
@@ -655,7 +666,8 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
             get(get_conversation_stats_by_subagent),
         )
         .merge(protected_routes)
-        .with_state(state);
+        .with_state(state)
+        .layer(cors);
 
     axum::serve(tokio::net::TcpListener::bind(addr).await?, router).await?;
     Ok(())
