@@ -1682,12 +1682,216 @@ function initTheme() {
   }
 }
 
+// File autocomplete functionality
+let autocompleteState = {
+  isVisible: false,
+  selectedIndex: -1,
+  files: [],
+  atPosition: -1,
+  prefix: "",
+};
+
+async function fetchFileAutocomplete(prefix) {
+  try {
+    const response = await fetch(`/api/file-autocomplete?prefix=${encodeURIComponent(prefix)}`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.files || [];
+  } catch (err) {
+    console.error("File autocomplete error:", err);
+    return [];
+  }
+}
+
+function showAutocomplete(files, atPos, prefix) {
+  const dropdown = document.getElementById("file-autocomplete-dropdown");
+  if (!dropdown) return;
+
+  autocompleteState.isVisible = true;
+  autocompleteState.files = files;
+  autocompleteState.selectedIndex = 0;
+  autocompleteState.atPosition = atPos;
+  autocompleteState.prefix = prefix;
+
+  dropdown.innerHTML = "";
+
+  if (files.length === 0) {
+    dropdown.classList.remove("visible");
+    autocompleteState.isVisible = false;
+    return;
+  }
+
+  files.forEach((file, index) => {
+    const item = document.createElement("div");
+    item.className = "autocomplete-item" + (file.is_directory ? " directory" : "");
+    if (index === 0) item.classList.add("selected");
+
+    const icon = document.createElement("span");
+    icon.className = "file-icon";
+    icon.textContent = file.is_directory ? "📁" : "📄";
+
+    const path = document.createElement("span");
+    path.className = "file-path";
+    path.textContent = file.path;
+
+    item.appendChild(icon);
+    item.appendChild(path);
+
+    item.addEventListener("click", () => {
+      selectAutocompleteItem(index);
+    });
+
+    item.addEventListener("mouseenter", () => {
+      updateAutocompleteSelection(index);
+    });
+
+    dropdown.appendChild(item);
+  });
+
+  dropdown.classList.add("visible");
+}
+
+function hideAutocomplete() {
+  const dropdown = document.getElementById("file-autocomplete-dropdown");
+  if (dropdown) {
+    dropdown.classList.remove("visible");
+  }
+  autocompleteState.isVisible = false;
+  autocompleteState.selectedIndex = -1;
+  autocompleteState.files = [];
+  autocompleteState.atPosition = -1;
+  autocompleteState.prefix = "";
+}
+
+function updateAutocompleteSelection(newIndex) {
+  if (newIndex < 0 || newIndex >= autocompleteState.files.length) return;
+
+  const dropdown = document.getElementById("file-autocomplete-dropdown");
+  if (!dropdown) return;
+
+  const items = dropdown.querySelectorAll(".autocomplete-item");
+  items.forEach((item, i) => {
+    if (i === newIndex) {
+      item.classList.add("selected");
+      item.scrollIntoView({ block: "nearest" });
+    } else {
+      item.classList.remove("selected");
+    }
+  });
+
+  autocompleteState.selectedIndex = newIndex;
+}
+
+function selectAutocompleteItem(index) {
+  if (index < 0 || index >= autocompleteState.files.length) return;
+
+  const file = autocompleteState.files[index];
+  const input = document.getElementById("message-input");
+  if (!input) return;
+
+  const text = input.value;
+  const beforeAt = text.substring(0, autocompleteState.atPosition);
+  const afterPrefix = text.substring(autocompleteState.atPosition + 1 + autocompleteState.prefix.length);
+
+  // Insert the file path
+  input.value = beforeAt + "@" + file.path + (file.is_directory ? "/" : " ") + afterPrefix;
+
+  // Set cursor position
+  const cursorPos = beforeAt.length + 1 + file.path.length + (file.is_directory ? 1 : 1);
+  input.setSelectionRange(cursorPos, cursorPos);
+
+  hideAutocomplete();
+  input.focus();
+}
+
+async function handleAutocompleteInput() {
+  const input = document.getElementById("message-input");
+  if (!input) return;
+
+  const text = input.value;
+  const cursorPos = input.selectionStart;
+
+  // Find the last @ before cursor
+  let atPos = -1;
+  for (let i = cursorPos - 1; i >= 0; i--) {
+    if (text[i] === "@") {
+      atPos = i;
+      break;
+    }
+    // Stop if we hit whitespace before finding @
+    if (text[i] === " " || text[i] === "\n") {
+      break;
+    }
+  }
+
+  if (atPos === -1) {
+    hideAutocomplete();
+    return;
+  }
+
+  // Extract the prefix after @
+  const prefix = text.substring(atPos + 1, cursorPos);
+
+  // Only show autocomplete if @ is at start or preceded by whitespace
+  if (atPos > 0 && text[atPos - 1] !== " " && text[atPos - 1] !== "\n") {
+    hideAutocomplete();
+    return;
+  }
+
+  // Fetch and show autocomplete
+  const files = await fetchFileAutocomplete(prefix);
+  showAutocomplete(files, atPos, prefix);
+}
+
 function bindEvents() {
   document.getElementById("send-message").addEventListener("click", sendMessage);
-  document.getElementById("message-input").addEventListener("keydown", (e) => {
+
+  const messageInput = document.getElementById("message-input");
+
+  // Handle keyboard events
+  messageInput.addEventListener("keydown", (e) => {
+    // Handle autocomplete navigation
+    if (autocompleteState.isVisible) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const newIndex = (autocompleteState.selectedIndex + 1) % autocompleteState.files.length;
+        updateAutocompleteSelection(newIndex);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const newIndex = (autocompleteState.selectedIndex - 1 + autocompleteState.files.length) % autocompleteState.files.length;
+        updateAutocompleteSelection(newIndex);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        selectAutocompleteItem(autocompleteState.selectedIndex);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        hideAutocomplete();
+        return;
+      }
+    }
+
+    // Send message on Enter (without Shift)
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
+    }
+  });
+
+  // Handle input changes for autocomplete
+  messageInput.addEventListener("input", () => {
+    handleAutocompleteInput();
+  });
+
+  // Hide autocomplete when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".composer")) {
+      hideAutocomplete();
     }
   });
   document.getElementById("new-conversation").addEventListener("click", createConversation);

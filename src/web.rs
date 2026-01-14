@@ -227,6 +227,22 @@ struct PlanModeResponse {
     enabled: bool,
 }
 
+#[derive(Deserialize)]
+struct FileAutocompleteQuery {
+    prefix: String,
+}
+
+#[derive(Serialize)]
+struct FileAutocompleteResponse {
+    files: Vec<FileAutocompleteItem>,
+}
+
+#[derive(Serialize)]
+struct FileAutocompleteItem {
+    path: String,
+    is_directory: bool,
+}
+
 // Skill-related DTOs
 #[derive(Serialize)]
 struct SkillDto {
@@ -653,6 +669,7 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
         .route("/api/permissions/pending", get(list_pending_permissions))
         .route("/api/plan-mode", get(get_plan_mode))
         .route("/api/todos", get(list_todos))
+        .route("/api/file-autocomplete", get(get_file_autocomplete))
         .route("/api/stats/overview", get(get_stats_overview))
         .route("/api/stats/usage", get(get_usage_stats))
         .route("/api/stats/models", get(get_model_stats))
@@ -1958,6 +1975,87 @@ fn extract_provider_from_model(model: &str) -> String {
         "Z.AI".to_string()
     } else {
         "Other".to_string()
+    }
+}
+
+async fn get_file_autocomplete(
+    axum::extract::Query(params): axum::extract::Query<FileAutocompleteQuery>,
+) -> impl IntoResponse {
+    use glob::glob;
+    use std::path::Path;
+
+    let prefix = params.prefix.trim();
+
+    // Determine the search directory and filter pattern
+    let (search_dir, filter_prefix) = if prefix.is_empty() {
+        (".", "")
+    } else if prefix.ends_with('/') || prefix.ends_with('\\') {
+        // If prefix ends with separator, list contents of that directory
+        (prefix, "")
+    } else {
+        // Split the prefix into directory and filename parts
+        let path = Path::new(prefix);
+        if let Some(parent) = path.parent() {
+            let parent_str = if parent.as_os_str().is_empty() { "." } else { parent.to_str().unwrap_or(".") };
+            let file_part = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            (parent_str, file_part)
+        } else {
+            (".", prefix)
+        }
+    };
+
+    // Build glob pattern to get all files in the directory
+    let search_pattern = if search_dir == "." {
+        format!("./*")
+    } else {
+        format!("{}/*", search_dir)
+    };
+
+    match glob(&search_pattern) {
+        Ok(entries) => {
+            let mut files: Vec<FileAutocompleteItem> = Vec::new();
+            let filter_lower = filter_prefix.to_lowercase();
+
+            for entry in entries {
+                if let Ok(path) = entry {
+                    if let Some(path_str) = path.to_str() {
+                        // Extract just the filename for filtering
+                        let filename = path.file_name()
+                            .and_then(|f| f.to_str())
+                            .unwrap_or("");
+
+                        // Case-insensitive prefix match
+                        if filter_prefix.is_empty() || filename.to_lowercase().starts_with(&filter_lower) {
+                            files.push(FileAutocompleteItem {
+                                path: path_str.to_string(),
+                                is_directory: path.is_dir(),
+                            });
+
+                            // Limit to 50 results
+                            if files.len() >= 50 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sort directories first, then files, alphabetically within each group
+            files.sort_by(|a, b| {
+                match (a.is_directory, b.is_directory) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
+                }
+            });
+
+            Json(FileAutocompleteResponse { files }).into_response()
+        }
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid glob pattern: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -3340,5 +3438,299 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["period"], "lifetime");
         assert!(body["data"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_empty_prefix() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create test files and directories
+        std::fs::write(root.join("test.txt"), "content").expect("create file");
+        std::fs::write(root.join("example.rs"), "code").expect("create file");
+        std::fs::create_dir(root.join("src")).expect("create dir");
+
+        // Change to temp directory for test
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["files"].is_array());
+        let files = body["files"].as_array().expect("files array");
+        assert!(files.len() > 0);
+
+        // Check that we got our test files
+        let paths: Vec<String> = files
+            .iter()
+            .map(|f| f["path"].as_str().unwrap().to_string())
+            .collect();
+        assert!(paths.iter().any(|p| p.ends_with("test.txt")));
+        assert!(paths.iter().any(|p| p.ends_with("example.rs")));
+        assert!(paths.iter().any(|p| p.ends_with("src")));
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_case_insensitive() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create test files with various cases
+        std::fs::write(root.join("Cargo.toml"), "content").expect("create file");
+        std::fs::write(root.join("CARGO.lock"), "content").expect("create file");
+        std::fs::write(root.join("cargo.rs"), "content").expect("create file");
+        std::fs::write(root.join("test.txt"), "content").expect("create file");
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        // Test lowercase prefix matching uppercase files
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=car")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+
+        // Should match all cargo files regardless of case
+        let paths: Vec<String> = files
+            .iter()
+            .map(|f| f["path"].as_str().unwrap().to_string())
+            .collect();
+        assert!(paths.iter().any(|p| p.ends_with("Cargo.toml")), "Should find Cargo.toml");
+        assert!(paths.iter().any(|p| p.ends_with("CARGO.lock")), "Should find CARGO.lock");
+        assert!(paths.iter().any(|p| p.ends_with("cargo.rs")), "Should find cargo.rs");
+        assert!(!paths.iter().any(|p| p.ends_with("test.txt")), "Should not find test.txt");
+        assert_eq!(files.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_with_prefix() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create test files
+        std::fs::write(root.join("test.txt"), "content").expect("create file");
+        std::fs::write(root.join("testing.rs"), "code").expect("create file");
+        std::fs::write(root.join("example.rs"), "code").expect("create file");
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=test")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+
+        let paths: Vec<String> = files
+            .iter()
+            .map(|f| f["path"].as_str().unwrap().to_string())
+            .collect();
+        assert!(paths.iter().any(|p| p.ends_with("test.txt")), "Should find test.txt");
+        assert!(paths.iter().any(|p| p.ends_with("testing.rs")), "Should find testing.rs");
+        assert!(!paths.iter().any(|p| p.ends_with("example.rs")), "Should not find example.rs");
+        assert_eq!(files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_directory_flag() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create files and directories
+        std::fs::write(root.join("file.txt"), "content").expect("create file");
+        std::fs::create_dir(root.join("src")).expect("create dir");
+        std::fs::create_dir(root.join("target")).expect("create dir");
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+
+        // Check directory flags
+        for file in files.iter() {
+            let path = file["path"].as_str().expect("path");
+            let is_dir = file["is_directory"].as_bool().expect("is_directory");
+
+            if path.contains("src") || path.contains("target") {
+                assert!(is_dir, "Directory should be flagged as is_directory");
+            } else if path.contains("file.txt") {
+                assert!(!is_dir, "File should not be flagged as is_directory");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_sorts_directories_first() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create mix of files and directories
+        std::fs::write(root.join("afile.txt"), "content").expect("create file");
+        std::fs::create_dir(root.join("zdir")).expect("create dir");
+        std::fs::write(root.join("bfile.rs"), "code").expect("create file");
+        std::fs::create_dir(root.join("mdir")).expect("create dir");
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+
+        // Find indices of directories and files
+        let mut first_dir_idx = None;
+        let mut last_dir_idx = None;
+        let mut first_file_idx = None;
+
+        for (i, file) in files.iter().enumerate() {
+            let is_dir = file["is_directory"].as_bool().expect("is_directory");
+            if is_dir {
+                if first_dir_idx.is_none() {
+                    first_dir_idx = Some(i);
+                }
+                last_dir_idx = Some(i);
+            } else if first_file_idx.is_none() {
+                first_file_idx = Some(i);
+            }
+        }
+
+        // Directories should come before files
+        if let (Some(last_dir), Some(first_file)) = (last_dir_idx, first_file_idx) {
+            assert!(
+                last_dir < first_file,
+                "All directories should appear before files"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_subdirectory_prefix() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create subdirectory with files
+        let src_dir = root.join("src");
+        std::fs::create_dir(&src_dir).expect("create dir");
+        std::fs::write(src_dir.join("main.rs"), "code").expect("create file");
+        std::fs::write(src_dir.join("lib.rs"), "code").expect("create file");
+        std::fs::write(root.join("other.txt"), "content").expect("create file");
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=src/m")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+
+        // Should only match main.rs in src directory
+        assert_eq!(files.len(), 1);
+        let path = files[0]["path"].as_str().expect("path");
+        assert!(path.contains("main.rs"));
+    }
+
+    #[tokio::test]
+    async fn test_file_autocomplete_limit_50_results() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+
+        // Create more than 50 files
+        for i in 0..100 {
+            std::fs::write(root.join(format!("file{:03}.txt", i)), "content")
+                .expect("create file");
+        }
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=file")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+
+        // Should be limited to 50 results
+        assert_eq!(files.len(), 50);
     }
 }
