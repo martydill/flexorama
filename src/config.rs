@@ -14,6 +14,7 @@ pub enum Provider {
     OpenAI,
     #[serde(rename = "z.ai")]
     Zai,
+    Ollama,
 }
 
 impl Default for Provider {
@@ -31,6 +32,7 @@ impl std::str::FromStr for Provider {
             "gemini" => Ok(Provider::Gemini),
             "openai" => Ok(Provider::OpenAI),
             "z.ai" | "zai" => Ok(Provider::Zai),
+            "ollama" => Ok(Provider::Ollama),
             other => Err(format!("Unsupported provider '{}'", other)),
         }
     }
@@ -43,6 +45,7 @@ impl std::fmt::Display for Provider {
             Provider::Gemini => write!(f, "gemini"),
             Provider::OpenAI => write!(f, "openai"),
             Provider::Zai => write!(f, "z.ai"),
+            Provider::Ollama => write!(f, "ollama"),
         }
     }
 }
@@ -129,6 +132,7 @@ pub fn provider_default_api_key(provider: Provider) -> String {
             .unwrap_or_default(),
         Provider::OpenAI => std::env::var("OPENAI_API_KEY").unwrap_or_default(),
         Provider::Zai => std::env::var("ZAI_API_KEY").unwrap_or_default(),
+        Provider::Ollama => std::env::var("OLLAMA_API_KEY").unwrap_or_default(),
     }
 }
 
@@ -142,6 +146,8 @@ pub fn provider_default_base_url(provider: Provider) -> String {
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
         Provider::Zai => std::env::var("ZAI_BASE_URL")
             .unwrap_or_else(|_| "https://api.z.ai/api/anthropic".to_string()),
+        Provider::Ollama => std::env::var("OLLAMA_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string()),
     }
 }
 
@@ -151,6 +157,7 @@ pub fn provider_default_model(provider: Provider) -> String {
         Provider::Gemini => "gemini-flash-latest".to_string(),
         Provider::OpenAI => "gpt-5.2".to_string(),
         Provider::Zai => "glm-4.7".to_string(),
+        Provider::Ollama => "llama2".to_string(),
     }
 }
 
@@ -202,6 +209,7 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
             "gpt-3.5-turbo",
         ],
         Provider::Zai => &["glm-4.7", "glm-4.6", "glm-4.5"],
+        Provider::Ollama => &["llama2", "gemma3:1b"],
     }
 }
 

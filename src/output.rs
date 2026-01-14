@@ -92,7 +92,21 @@ impl log::Log for OutputLogger {
 pub fn init_logger(default_level: LevelFilter) {
     let level = std::env::var("RUST_LOG")
         .ok()
-        .and_then(|value| value.parse::<LevelFilter>().ok())
+        .and_then(|value| {
+            // Try parsing as-is first
+            value.parse::<LevelFilter>().ok().or_else(|| {
+                // If that fails, try case-insensitive matching
+                match value.to_lowercase().as_str() {
+                    "trace" => Some(LevelFilter::Trace),
+                    "debug" => Some(LevelFilter::Debug),
+                    "info" => Some(LevelFilter::Info),
+                    "warn" | "warning" => Some(LevelFilter::Warn),
+                    "error" => Some(LevelFilter::Error),
+                    "off" => Some(LevelFilter::Off),
+                    _ => None,
+                }
+            })
+        })
         .unwrap_or(default_level);
 
     let logger = OutputLogger::new(level);

@@ -1,6 +1,7 @@
 use crate::anthropic::{AnthropicClient, AnthropicResponse, ContentBlock, Message};
 use crate::config::Provider;
 use crate::gemini::GeminiClient;
+use crate::ollama::OllamaClient;
 use crate::openai::OpenAIClient;
 use crate::tools::{Tool, ToolCall};
 use anyhow::Result;
@@ -15,6 +16,7 @@ pub struct LlmClient {
     anthropic: Option<AnthropicClient>,
     gemini: Option<GeminiClient>,
     openai: Option<OpenAIClient>,
+    ollama: Option<OllamaClient>,
 }
 
 impl LlmClient {
@@ -25,24 +27,35 @@ impl LlmClient {
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
                 gemini: None,
                 openai: None,
+                ollama: None,
             },
             Provider::Gemini => Self {
                 provider,
                 anthropic: None,
                 gemini: Some(GeminiClient::new(api_key, base_url)),
                 openai: None,
+                ollama: None,
             },
             Provider::OpenAI => Self {
                 provider,
                 anthropic: None,
                 gemini: None,
                 openai: Some(OpenAIClient::new(api_key, base_url)),
+                ollama: None,
             },
             Provider::Zai => Self {
                 provider,
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
                 gemini: None,
                 openai: None,
+                ollama: None,
+            },
+            Provider::Ollama => Self {
+                provider,
+                anthropic: None,
+                gemini: None,
+                openai: None,
+                ollama: Some(OllamaClient::new(api_key, base_url)),
             },
         }
     }
@@ -138,6 +151,21 @@ impl LlmClient {
                     )
                     .await
             }
+            Provider::Ollama => {
+                self.ollama
+                    .as_ref()
+                    .expect("Ollama client should be initialized")
+                    .create_message(
+                        model,
+                        messages,
+                        tools,
+                        max_tokens,
+                        temperature,
+                        system_prompt,
+                        cancellation_flag,
+                    )
+                    .await
+            }
         }
     }
 
@@ -205,6 +233,22 @@ impl LlmClient {
                 self.anthropic
                     .as_ref()
                     .expect("Z.ai client should be initialized")
+                    .create_message_stream(
+                        model,
+                        messages,
+                        tools,
+                        max_tokens,
+                        temperature,
+                        system_prompt,
+                        on_content,
+                        cancellation_flag,
+                    )
+                    .await
+            }
+            Provider::Ollama => {
+                self.ollama
+                    .as_ref()
+                    .expect("Ollama client should be initialized")
                     .create_message_stream(
                         model,
                         messages,

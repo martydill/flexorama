@@ -25,6 +25,7 @@ The hybrid cli/web coding agent that works your way.
  - Command line history navigation with up and down arrow keys and Ctrl-R search
  - Support for different LLM APIs (Anthropic, Gemini, OpenAI, Z.AI) with the --provider arg
  - Support for different models for each provider with /model
+ - Local model suppurt using the ollama provider with Ollama
  - Todo checklists 
  - Interactive and non-interactive mode
 
@@ -54,6 +55,7 @@ Supported providers:
  - gemini
  - z.ai
  - anthropic
+ - ollama
 
 ### API token: 
 Specify api token on the command line with --api-key, OR set an env var for your provider

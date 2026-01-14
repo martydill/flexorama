@@ -92,12 +92,13 @@ async fn main() -> Result<()> {
     }
 
     // Validate API key without exposing it
-    if config.api_key.is_empty() {
+    if config.api_key.is_empty() && config.provider != Provider::Ollama {
         let env_hint = match config.provider {
             Provider::Anthropic => "ANTHROPIC_AUTH_TOKEN",
             Provider::Gemini => "GEMINI_API_KEY or GOOGLE_API_KEY",
             Provider::OpenAI => "OPENAI_API_KEY",
             Provider::Zai => "ZAI_API_KEY",
+            Provider::Ollama => "OLLAMA_API_KEY (optional for local instances)",
         };
         app_eprintln!(
             "{}",

@@ -11,7 +11,6 @@ use std::sync::Arc;
 use tokio::fs as async_fs;
 
 use crate::agent::Agent;
-use crate::config;
 use crate::database::{Conversation as StoredConversation, Message as StoredMessage};
 use crate::formatter;
 use crate::help::{
@@ -729,14 +728,15 @@ pub async fn handle_slash_command(
         }
         "/model" => {
             let provider = agent.provider();
-            let available = config::provider_models(provider);
+            let available_models = agent.get_available_models().await;
+            let available: Vec<&str> = available_models.iter().map(|s| s.as_str()).collect();
             if parts.len() == 1 {
                 app_println!("{}", "LLM Model".cyan().bold());
                 app_println!("  Provider: {}", provider);
                 app_println!("  Current: {}", agent.model());
                 if !available.is_empty() {
                     app_println!("  Available:");
-                    for model in available {
+                    for model in &available {
                         app_println!("    - {}", model);
                     }
                 }
@@ -751,7 +751,7 @@ pub async fn handle_slash_command(
                     if available.is_empty() {
                         app_println!("  (no default models configured)");
                     } else {
-                        for model in available {
+                        for model in &available {
                             app_println!("  - {}", model);
                         }
                     }
@@ -783,7 +783,7 @@ pub async fn handle_slash_command(
                     } else {
                         let selected = Select::new()
                             .with_prompt("Select a model")
-                            .items(available)
+                            .items(&available)
                             .default(0)
                             .interact_opt()?;
                         if let Some(index) = selected {

@@ -1228,7 +1228,8 @@ fn render_line_with_selection(
     use ratatui::text::{Line, Span};
 
     // Determine highlight range within this wrapped segment
-    let (hl_start, hl_end) =
+    let segment_len = info.char_end.saturating_sub(info.char_start);
+    let (mut hl_start, mut hl_end) =
         if info.line_idx == sel_start.line_idx && info.line_idx == sel_end.line_idx {
             // Selection on same line
             (
@@ -1255,6 +1256,11 @@ fn render_line_with_selection(
             // Entire line selected
             (0, info.char_end - info.char_start)
         };
+    hl_start = hl_start.min(segment_len);
+    hl_end = hl_end.min(segment_len);
+    if hl_end < hl_start {
+        hl_end = hl_start;
+    }
 
     // Build spans with selection highlight
     let visible = strip_ansi_codes(wrapped_line);

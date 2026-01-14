@@ -115,6 +115,8 @@ pub struct Agent {
     todos: Arc<AsyncMutex<Vec<crate::tools::create_todo::TodoItem>>>,
     todos_by_conversation:
         Arc<AsyncMutex<HashMap<String, Vec<crate::tools::create_todo::TodoItem>>>>,
+    // Available models for the current provider
+    available_models: Arc<RwLock<Vec<String>>>,
 }
 
 impl Agent {
@@ -165,6 +167,13 @@ impl Agent {
         let todos = Arc::new(AsyncMutex::new(Vec::new()));
         let todos_by_conversation = Arc::new(AsyncMutex::new(HashMap::new()));
 
+        // Initialize available models with defaults from config
+        let default_models = crate::config::provider_models(config.provider)
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let available_models = Arc::new(RwLock::new(default_models));
+
         Self {
             client,
             model,
@@ -186,6 +195,7 @@ impl Agent {
             active_skills: Vec::new(),
             todos,
             todos_by_conversation,
+            available_models,
         }
     }
 
@@ -280,6 +290,10 @@ impl Agent {
 
         // Apply plan mode filtering
         let _ = agent.apply_plan_mode_filtering().await;
+
+        // Fetch Ollama models if using Ollama provider
+        let _ = agent.fetch_ollama_models().await;
+
         agent
     }
 
@@ -293,6 +307,34 @@ impl Agent {
             tools.retain(|name, _| registry.is_readonly(name));
         }
         Ok(())
+    }
+
+    /// Fetch available models from Ollama if using Ollama provider
+    pub async fn fetch_ollama_models(&self) -> Result<()> {
+        if self.provider == Provider::Ollama {
+            // Try to fetch models from Ollama
+            let ollama_client = crate::ollama::OllamaClient::new(
+                String::new(), // API key not needed for local Ollama
+                self.base_url.clone(),
+            );
+
+            match ollama_client.fetch_available_models().await {
+                Ok(models) => {
+                    let mut available = self.available_models.write().await;
+                    *available = models;
+                    debug!("Fetched {} models from Ollama", available.len());
+                }
+                Err(e) => {
+                    warn!("Failed to fetch Ollama models: {}. Using defaults.", e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Get list of available models for the current provider
+    pub async fn get_available_models(&self) -> Vec<String> {
+        self.available_models.read().await.clone()
     }
 
     fn derive_plan_title(plan_markdown: &str) -> Option<String> {

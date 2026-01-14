@@ -1973,6 +1973,8 @@ fn extract_provider_from_model(model: &str) -> String {
         "Gemini".to_string()
     } else if lower.contains("glm") {
         "Z.AI".to_string()
+    } else if lower.contains("llama") || lower.contains("gemma") {
+        "Ollama".to_string()
     } else {
         "Other".to_string()
     }
