@@ -27,15 +27,11 @@ path-absolutize = "3.0"
 uuid = { version = "1.0", features = ["v4"] }
 axum = { version = "0.7", features = ["macros", "json"] }
 toml = "0.8"
-syntect = "5.0"
-console = "0.15"
-log = "0.4"
-env_logger = "0.10"
+log = { version = "0.4", features = ["std"] }
 indicatif = "0.17"
 futures-util = "0.3"
 tokio-stream = "0.1"
 tokio-tungstenite = "0.20"
-url = "2.0"
 which = "4.0"
 glob = "0.3"
 crossterm = "0.29"
@@ -50,6 +46,5 @@ tower-http = { version = "0.5", features = ["cors"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
-hyper = "1"
 tempfile = "3"
 tower = "0.5"
