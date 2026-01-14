@@ -126,7 +126,12 @@ pub async fn run_tui_interactive(
                 let _ = input_tx.send(InputEvent::Exit);
                 break;
             }
-            Err(_) => break,
+            Err(e) => {
+                // On Windows, rapid clicking in the console can cause transient
+                // crossterm errors. Log and continue rather than exiting.
+                debug!("TUI input error (continuing): {}", e);
+                continue;
+            }
         }
     });
 

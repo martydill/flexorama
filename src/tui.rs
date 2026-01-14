@@ -220,8 +220,20 @@ impl Tui {
 
     pub fn read_input(&self) -> Result<InputResult> {
         loop {
-            if event::poll(Duration::from_millis(50))? {
-                match event::read()? {
+            // Handle poll errors gracefully - on Windows, rapid clicking can cause transient errors
+            let has_event = match event::poll(Duration::from_millis(50)) {
+                Ok(ready) => ready,
+                Err(_) => continue,
+            };
+
+            if has_event {
+                // Handle read errors gracefully as well
+                let evt = match event::read() {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+
+                match evt {
                     Event::Key(key_event) => {
                         if let Some(result) = self.handle_key_event(key_event)? {
                             return Ok(result);
@@ -231,15 +243,18 @@ impl Tui {
                         self.handle_paste(&pasted)?;
                     }
                     Event::Mouse(mouse_event) => {
-                        self.handle_mouse_event(mouse_event)?;
+                        // Ignore mouse event errors - they're non-critical
+                        let _ = self.handle_mouse_event(mouse_event);
                     }
                     Event::Resize(_, _) => {
                         let mut guard = self.state.lock().expect("tui state lock");
                         guard.output_dirty = true;
                         drop(guard);
-                        self.render()?;
+                        let _ = self.render();
                     }
-                    _ => {}
+                    Event::FocusGained | Event::FocusLost => {
+                        // Ignore focus events
+                    }
                 }
             }
         }
