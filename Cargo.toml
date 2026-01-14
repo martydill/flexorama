@@ -48,3 +48,4 @@ tower-http = { version = "0.5", features = ["cors"] }
 http-body-util = "0.1"
 tempfile = "3"
 tower = "0.5"
+serial_test = "3.0"

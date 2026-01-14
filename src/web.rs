@@ -2322,6 +2322,7 @@ mod tests {
     use axum::routing::{delete, put};
     use chrono::TimeZone;
     use http_body_util::BodyExt;
+    use serial_test::serial;
     use std::sync::OnceLock;
     use tempfile::tempdir;
     use tower::util::ServiceExt;
@@ -3441,6 +3442,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_empty_prefix() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
@@ -3484,6 +3486,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_case_insensitive() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
@@ -3527,6 +3530,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_with_prefix() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
@@ -3566,6 +3570,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_directory_flag() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
@@ -3608,6 +3613,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_sorts_directories_first() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
@@ -3664,6 +3670,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_subdirectory_prefix() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
@@ -3701,6 +3708,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_file_autocomplete_limit_50_results() {
         let temp_dir = tempdir().expect("create tempdir");
         let root = temp_dir.path();
