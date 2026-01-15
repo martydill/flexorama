@@ -1,7 +1,7 @@
 use crossterm::{cursor, style::Print, terminal, ExecutableCommand, QueueableCommand};
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 #[cfg(test)]
 mod tests {
@@ -102,6 +102,15 @@ mod tests {
         let result = get_completion(input, cursor_pos);
 
         // Should not complete @file-permissions as a file path
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parent_traversal_blocked() {
+        let input = "@../";
+        let cursor_pos = input.len();
+        let result = get_completion(input, cursor_pos);
+
         assert!(result.is_none());
     }
 }
@@ -257,6 +266,33 @@ fn check_file_completion(input: &str, cursor_pos: usize) -> Option<String> {
     }
 }
 
+fn resolve_search_dir(dir_part: &str) -> Option<PathBuf> {
+    let base_dir = std::env::current_dir().ok()?;
+    if dir_part.is_empty() {
+        return Some(base_dir);
+    }
+
+    let mut resolved = base_dir.clone();
+    let base_depth = resolved.components().count();
+    let rel_path = Path::new(dir_part);
+
+    for component in rel_path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(part) => resolved.push(part),
+            Component::ParentDir => {
+                if resolved.components().count() <= base_depth {
+                    return None;
+                }
+                resolved.pop();
+            }
+            Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+
+    Some(resolved)
+}
+
 /// Complete file paths for @ syntax
 fn complete_file_path(path_part: &str) -> Option<String> {
     let (dir_part, file_prefix) = if let Some(last_slash) = path_part.rfind('/') {
@@ -267,13 +303,9 @@ fn complete_file_path(path_part: &str) -> Option<String> {
         ("", path_part)
     };
 
-    let search_dir = if dir_part.is_empty() {
-        Path::new(".")
-    } else {
-        Path::new(dir_part)
-    };
+    let search_dir = resolve_search_dir(dir_part)?;
 
-    if let Ok(entries) = fs::read_dir(search_dir) {
+    if let Ok(entries) = fs::read_dir(&search_dir) {
         let mut matches: Vec<String> = entries
             .filter_map(|entry| entry.ok())
             .filter(|entry| {

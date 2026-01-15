@@ -1983,10 +1983,41 @@ fn extract_provider_from_model(model: &str) -> String {
 async fn get_file_autocomplete(
     axum::extract::Query(params): axum::extract::Query<FileAutocompleteQuery>,
 ) -> impl IntoResponse {
-    use glob::glob;
-    use std::path::Path;
+    use std::path::{Component, Path, PathBuf};
 
     let prefix = params.prefix.trim();
+    let root = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(_) => {
+            return Json(FileAutocompleteResponse { files: Vec::new() }).into_response();
+        }
+    };
+
+    fn resolve_search_dir(root: &Path, dir_part: &str) -> Option<PathBuf> {
+        if dir_part.is_empty() || dir_part == "." {
+            return Some(root.to_path_buf());
+        }
+
+        let mut resolved = root.to_path_buf();
+        let base_depth = resolved.components().count();
+        let rel_path = Path::new(dir_part);
+
+        for component in rel_path.components() {
+            match component {
+                Component::CurDir => {}
+                Component::Normal(part) => resolved.push(part),
+                Component::ParentDir => {
+                    if resolved.components().count() <= base_depth {
+                        return None;
+                    }
+                    resolved.pop();
+                }
+                Component::RootDir | Component::Prefix(_) => return None,
+            }
+        }
+
+        Some(resolved)
+    }
 
     // Determine the search directory and filter pattern
     let (search_dir, filter_prefix) = if prefix.is_empty() {
@@ -2006,59 +2037,56 @@ async fn get_file_autocomplete(
         }
     };
 
-    // Build glob pattern to get all files in the directory
-    let search_pattern = if search_dir == "." {
-        format!("./*")
-    } else {
-        format!("{}/*", search_dir)
+    let search_dir_path = match resolve_search_dir(&root, search_dir) {
+        Some(path) => path,
+        None => {
+            return Json(FileAutocompleteResponse { files: Vec::new() }).into_response();
+        }
     };
 
-    match glob(&search_pattern) {
-        Ok(entries) => {
-            let mut files: Vec<FileAutocompleteItem> = Vec::new();
-            let filter_lower = filter_prefix.to_lowercase();
+    let entries = match std::fs::read_dir(&search_dir_path) {
+        Ok(entries) => entries,
+        Err(_) => {
+            return Json(FileAutocompleteResponse { files: Vec::new() }).into_response();
+        }
+    };
 
-            for entry in entries {
-                if let Ok(path) = entry {
-                    if let Some(path_str) = path.to_str() {
-                        // Extract just the filename for filtering
-                        let filename = path.file_name()
-                            .and_then(|f| f.to_str())
-                            .unwrap_or("");
+    let mut files: Vec<FileAutocompleteItem> = Vec::new();
+    let filter_lower = filter_prefix.to_lowercase();
 
-                        // Case-insensitive prefix match
-                        if filter_prefix.is_empty() || filename.to_lowercase().starts_with(&filter_lower) {
-                            files.push(FileAutocompleteItem {
-                                path: path_str.to_string(),
-                                is_directory: path.is_dir(),
-                            });
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            let filename = path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("");
 
-                            // Limit to 50 results
-                            if files.len() >= 50 {
-                                break;
-                            }
-                        }
-                    }
+            if filter_prefix.is_empty() || filename.to_lowercase().starts_with(&filter_lower) {
+                let relative_path = match path.strip_prefix(&root) {
+                    Ok(rel_path) => rel_path,
+                    Err(_) => continue,
+                };
+
+                files.push(FileAutocompleteItem {
+                    path: relative_path.to_string_lossy().to_string(),
+                    is_directory: path.is_dir(),
+                });
+
+                if files.len() >= 50 {
+                    break;
                 }
             }
-
-            // Sort directories first, then files, alphabetically within each group
-            files.sort_by(|a, b| {
-                match (a.is_directory, b.is_directory) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
-                }
-            });
-
-            Json(FileAutocompleteResponse { files }).into_response()
         }
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            format!("Invalid glob pattern: {}", e),
-        )
-            .into_response(),
     }
+
+    files.sort_by(|a, b| match (a.is_directory, b.is_directory) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.path.to_lowercase().cmp(&b.path.to_lowercase()),
+    });
+
+    Json(FileAutocompleteResponse { files }).into_response()
 }
 
 fn calculate_date_range(
@@ -3707,6 +3735,38 @@ mod tests {
         assert_eq!(files.len(), 1);
         let path = files[0]["path"].as_str().expect("path");
         assert!(path.contains("main.rs"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_file_autocomplete_blocks_parent_traversal() {
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path();
+        let parent = root.parent().expect("parent dir");
+
+        std::fs::write(root.join("safe.txt"), "content").expect("create file");
+        std::fs::write(parent.join("outside.txt"), "content").expect("create file");
+
+        let original_dir = std::env::current_dir().expect("get current dir");
+        std::env::set_current_dir(root).expect("change dir");
+
+        let router = Router::new()
+            .route("/api/file-autocomplete", get(get_file_autocomplete));
+
+        let request = axum::http::Request::builder()
+            .uri("/api/file-autocomplete?prefix=../")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+
+        let (status, body) = json_response(&router, request).await;
+
+        std::env::set_current_dir(original_dir).expect("restore dir");
+        let _ = std::fs::remove_file(parent.join("outside.txt"));
+
+        assert_eq!(status, StatusCode::OK);
+        let files = body["files"].as_array().expect("files array");
+        assert!(files.is_empty());
     }
 
     #[tokio::test]
