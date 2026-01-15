@@ -1,0 +1,42 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'web/**'
+      - 'tests/e2e/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'web/**'
+      - 'tests/e2e/**'
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+    
+    - name: Install dependencies
+      working-directory: tests/e2e
+      run: npm ci
+      
+    - name: Install Playwright Browsers
+      working-directory: tests/e2e
+      run: npx playwright install --with-deps chromium
+      
+    - name: Run Playwright tests
+      working-directory: tests/e2e
+      run: npx playwright test
+      
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report
+        path: tests/e2e/playwright-report/
+        retention-days: 30
