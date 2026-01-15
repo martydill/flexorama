@@ -1,9 +1,8 @@
+use crate::tools::path::expand_and_absolutize;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::debug;
-use path_absolutize::*;
 use serde_json::json;
-use shellexpand;
 use std::path::Path;
 use tokio::task;
 
@@ -24,8 +23,7 @@ pub async fn search_in_files(call: &ToolCall) -> Result<ToolResult> {
     debug!("TOOL CALL: search_in_files('{}', '{}')", path, query);
 
     let tool_use_id = call.id.clone();
-    let expanded_path = shellexpand::tilde(path);
-    let search_root = Path::new(&*expanded_path).absolutize()?.to_path_buf();
+    let search_root = expand_and_absolutize(path)?;
     let absolute_path_display = search_root.display().to_string();
     let query_owned = query.to_string();
     let max_results = 200usize;

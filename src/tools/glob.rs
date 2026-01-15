@@ -1,11 +1,10 @@
+use crate::tools::path::expand_and_absolutize;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use glob::glob;
 use log::debug;
-use path_absolutize::*;
 use serde_json::json;
 use shellexpand;
-use std::path::Path;
 
 pub async fn glob_files(call: &ToolCall) -> Result<ToolResult> {
     let pattern = call
@@ -28,8 +27,7 @@ pub async fn glob_files(call: &ToolCall) -> Result<ToolResult> {
     let tool_use_id = call.id.clone();
 
     // Expand and resolve base path
-    let expanded_base_path = shellexpand::tilde(base_path);
-    let absolute_base_path = Path::new(&*expanded_base_path).absolutize()?;
+    let absolute_base_path = expand_and_absolutize(base_path)?;
 
     // Combine base path with pattern
     let full_pattern = if pattern.contains('/') {
