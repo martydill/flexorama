@@ -1,11 +1,9 @@
 use crate::security::FileSecurityManager;
+use crate::tools::path::resolve_project_path;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::{debug, info};
-use path_absolutize::*;
 use serde_json::json;
-use shellexpand;
-use std::path::Path;
 use tokio::fs;
 
 // Detect the line ending type used in the content
@@ -54,8 +52,16 @@ pub async fn edit_file(
 
     let tool_use_id = call.id.clone();
 
-    let expanded_path = shellexpand::tilde(path);
-    let absolute_path = Path::new(&*expanded_path).absolutize()?;
+    let absolute_path = match resolve_project_path(path) {
+        Ok(path) => path,
+        Err(error) => {
+            return Ok(ToolResult {
+                tool_use_id,
+                content: format!("Invalid path for edit_file: {}", error),
+                is_error: true,
+            });
+        }
+    };
 
     // Check file security permissions
     if yolo_mode {
@@ -230,13 +236,20 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tempfile::TempDir;
 
-    fn temp_file_path(prefix: &str) -> std::path::PathBuf {
+    fn temp_file_path(prefix: &str) -> (TempDir, std::path::PathBuf) {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_nanos();
-        std::env::temp_dir().join(format!("{}_{}_{}.txt", prefix, std::process::id(), nanos))
+        let temp_dir =
+            tempfile::tempdir_in(std::env::current_dir().expect("current dir")).expect("temp dir");
+        let file_path =
+            temp_dir
+                .path()
+                .join(format!("{}_{}_{}.txt", prefix, std::process::id(), nanos));
+        (temp_dir, file_path)
     }
 
     #[test]
@@ -254,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_file_replaces_with_windows_line_endings() {
-        let path = temp_file_path("edit_file_windows");
+        let (_temp_dir, path) = temp_file_path("edit_file_windows");
         let original = "first\r\nsecond\r\nthird\r\n";
         tokio::fs::write(&path, original)
             .await
@@ -283,15 +296,11 @@ mod tests {
             .await
             .expect("read updated file");
         assert_eq!(updated, "first\r\nalpha\r\nbeta\r\n");
-
-        tokio::fs::remove_file(&path)
-            .await
-            .expect("cleanup temp file");
     }
 
     #[tokio::test]
     async fn edit_file_reports_text_not_found() {
-        let path = temp_file_path("edit_file_missing");
+        let (_temp_dir, path) = temp_file_path("edit_file_missing");
         tokio::fs::write(&path, "alpha\r\nbeta\r\n")
             .await
             .expect("write temp file");
@@ -314,9 +323,5 @@ mod tests {
 
         assert!(result.is_error);
         assert!(result.content.contains("Text not found in file"));
-
-        tokio::fs::remove_file(&path)
-            .await
-            .expect("cleanup temp file");
     }
 }

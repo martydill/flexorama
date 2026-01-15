@@ -20,7 +20,8 @@ fn make_call(name: &str, arguments: serde_json::Value) -> ToolCall {
 }
 
 fn temp_dir() -> TempDir {
-    tempfile::tempdir().expect("temp dir")
+    let current_dir = std::env::current_dir().expect("current dir");
+    tempfile::tempdir_in(current_dir).expect("temp dir")
 }
 
 fn new_file_security_manager() -> FileSecurityManager {
@@ -87,6 +88,54 @@ async fn write_file_success_and_error() {
         .unwrap();
     assert!(result.is_error);
     assert!(result.content.contains("Error writing to file"));
+}
+
+#[tokio::test]
+async fn file_editing_commands_reject_out_of_project_paths() {
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call(
+        "write_file",
+        json!({
+            "path": "../outside.txt",
+            "content": "blocked",
+        }),
+    );
+    let result = write_file(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for write_file"));
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call("create_directory", json!({ "path": "../outside-dir" }));
+    let result = create_directory(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for create_directory"));
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call("delete_file", json!({ "path": "../outside-delete" }));
+    let result = delete_file(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for delete_file"));
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call(
+        "edit_file",
+        json!({
+            "path": "../outside-edit.txt",
+            "old_text": "old",
+            "new_text": "new",
+        }),
+    );
+    let result = edit_file(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for edit_file"));
 }
 
 #[tokio::test]
