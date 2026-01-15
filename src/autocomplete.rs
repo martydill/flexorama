@@ -1,7 +1,8 @@
+use crate::tools::path::resolve_project_path;
 use crossterm::{cursor, style::Print, terminal, ExecutableCommand, QueueableCommand};
 use std::fs;
 use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 
 #[cfg(test)]
 mod tests {
@@ -267,30 +268,8 @@ fn check_file_completion(input: &str, cursor_pos: usize) -> Option<String> {
 }
 
 fn resolve_search_dir(dir_part: &str) -> Option<PathBuf> {
-    let base_dir = std::env::current_dir().ok()?;
-    if dir_part.is_empty() {
-        return Some(base_dir);
-    }
-
-    let mut resolved = base_dir.clone();
-    let base_depth = resolved.components().count();
-    let rel_path = Path::new(dir_part);
-
-    for component in rel_path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Normal(part) => resolved.push(part),
-            Component::ParentDir => {
-                if resolved.components().count() <= base_depth {
-                    return None;
-                }
-                resolved.pop();
-            }
-            Component::RootDir | Component::Prefix(_) => return None,
-        }
-    }
-
-    Some(resolved)
+    let candidate = if dir_part.is_empty() { "." } else { dir_part };
+    resolve_project_path(candidate).ok()
 }
 
 /// Complete file paths for @ syntax

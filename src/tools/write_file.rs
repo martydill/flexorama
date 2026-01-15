@@ -1,11 +1,9 @@
 use crate::security::FileSecurityManager;
+use crate::tools::path::resolve_project_path;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::{debug, info};
-use path_absolutize::*;
 use serde_json::json;
-use shellexpand;
-use std::path::Path;
 use tokio::fs;
 
 pub async fn write_file(
@@ -29,8 +27,16 @@ pub async fn write_file(
 
     let tool_use_id = call.id.clone();
 
-    let expanded_path = shellexpand::tilde(path);
-    let absolute_path = Path::new(&*expanded_path).absolutize()?;
+    let absolute_path = match resolve_project_path(path) {
+        Ok(path) => path,
+        Err(error) => {
+            return Ok(ToolResult {
+                tool_use_id,
+                content: format!("Invalid path for write_file: {}", error),
+                is_error: true,
+            });
+        }
+    };
 
     // Check file security permissions
     if yolo_mode {
