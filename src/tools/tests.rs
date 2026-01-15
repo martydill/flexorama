@@ -139,6 +139,63 @@ async fn file_editing_commands_reject_out_of_project_paths() {
 }
 
 #[tokio::test]
+async fn file_editing_commands_reject_absolute_outside_paths() {
+    let outside_path = std::env::temp_dir().join("flexorama-outside.txt");
+    let outside_dir = std::env::temp_dir().join("flexorama-outside-dir");
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call(
+        "write_file",
+        json!({
+            "path": outside_path.to_string_lossy(),
+            "content": "blocked",
+        }),
+    );
+    let result = write_file(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for write_file"));
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call(
+        "create_directory",
+        json!({ "path": outside_dir.to_string_lossy() }),
+    );
+    let result = create_directory(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for create_directory"));
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call(
+        "delete_file",
+        json!({ "path": outside_path.to_string_lossy() }),
+    );
+    let result = delete_file(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for delete_file"));
+
+    let mut file_security_manager = new_file_security_manager();
+    let call = make_call(
+        "edit_file",
+        json!({
+            "path": outside_path.to_string_lossy(),
+            "old_text": "old",
+            "new_text": "new",
+        }),
+    );
+    let result = edit_file(&call, &mut file_security_manager, false)
+        .await
+        .unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for edit_file"));
+}
+
+#[tokio::test]
 async fn create_directory_success_and_error() {
     let temp = temp_dir();
     let dir_path = temp.path().join("nested");

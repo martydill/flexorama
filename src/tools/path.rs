@@ -30,3 +30,37 @@ pub fn resolve_project_path(path: &str) -> Result<PathBuf> {
 
     Ok(absolute_path.to_path_buf())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_project_path_rejects_parent_traversal() {
+        let result = resolve_project_path("../outside");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_project_path_rejects_absolute_outside_project() {
+        let outside_path = std::env::temp_dir().join("flexorama-outside");
+        let result = resolve_project_path(&outside_path.to_string_lossy());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_project_path_accepts_relative_inside_project() {
+        let result = resolve_project_path("src");
+        assert!(result.is_ok());
+        let resolved = result.expect("resolved path");
+        assert!(resolved.ends_with("src"));
+    }
+
+    #[test]
+    fn resolve_project_path_accepts_absolute_inside_project() {
+        let project_root = std::env::current_dir().expect("current dir");
+        let absolute = project_root.join("Cargo.toml");
+        let result = resolve_project_path(&absolute.to_string_lossy());
+        assert!(result.is_ok());
+    }
+}
