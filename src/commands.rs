@@ -23,7 +23,6 @@ use crate::processing::create_streaming_renderer;
 use crate::subagent;
 use crate::tools;
 use crate::tui;
-use crate::{app_eprintln, app_println};
 
 pub async fn handle_agent_command(
     args: &[&str],
