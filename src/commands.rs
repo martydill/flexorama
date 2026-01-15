@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tokio::fs as async_fs;
 
 use crate::agent::Agent;
+use crate::custom_commands;
 use crate::database::{Conversation as StoredConversation, Message as StoredMessage};
 use crate::formatter;
 use crate::help::{
@@ -933,12 +934,52 @@ pub async fn handle_slash_command(
             std::process::exit(0);
         }
         _ => {
-            app_println!(
-                "{} Unknown command: {}. Type /help for available commands.",
-                "⚠️".yellow(),
-                cmd
-            );
-            Ok(true) // Command was handled (as unknown)
+            match custom_commands::render_custom_command_input(command).await {
+                Ok(Some(rendered)) => {
+                    if let Some(model) = rendered.command.model.clone() {
+                        agent.set_model(model).await?;
+                    }
+                    let cancellation_flag = Arc::new(AtomicBool::new(false));
+                    if stream {
+                        let (streaming_state, stream_callback) =
+                            create_streaming_renderer(formatter);
+                        let response = agent
+                            .process_message_with_stream(
+                                &rendered.message,
+                                Some(Arc::clone(&stream_callback)),
+                                None,
+                                cancellation_flag,
+                            )
+                            .await;
+                        if let Ok(mut renderer) = streaming_state.lock() {
+                            if let Err(e) = renderer.finish() {
+                                app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);
+                            }
+                        }
+                        response?;
+                    } else {
+                        let spinner = create_spinner();
+                        let response = agent
+                            .process_message(&rendered.message, cancellation_flag)
+                            .await?;
+                        spinner.finish_and_clear();
+                        formatter.print_formatted(&response)?;
+                    }
+                    Ok(true)
+                }
+                Ok(None) => {
+                    app_println!(
+                        "{} Unknown command: {}. Type /help for available commands.",
+                        "⚠️".yellow(),
+                        cmd
+                    );
+                    Ok(true) // Command was handled (as unknown)
+                }
+                Err(e) => {
+                    app_println!("{} {}", "⚠️".yellow(), e);
+                    Ok(true)
+                }
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ pub mod anthropic;
 pub mod autocomplete;
 pub mod cli;
 pub mod commands;
+pub mod custom_commands;
 pub mod config;
 pub mod conversation;
 pub mod csrf;

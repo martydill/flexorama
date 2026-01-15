@@ -3,6 +3,7 @@ use crate::anthropic::ContentBlock;
 use crate::config;
 use crate::conversation::ConversationManager;
 use crate::csrf::CsrfManager;
+use crate::custom_commands;
 use crate::database::{Conversation, DatabaseManager, ToolCallRecord};
 use crate::mcp::{McpManager, McpServerConfig};
 use crate::security::{PermissionHandler, PermissionKind, PermissionPrompt};
@@ -284,6 +285,36 @@ struct SkillUpdateRequest {
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     tags: Vec<String>,
+}
+
+// Custom command DTOs
+#[derive(Serialize)]
+struct CustomCommandDto {
+    name: String,
+    description: String,
+    argument_hint: Option<String>,
+    allowed_tools: Vec<String>,
+    model: Option<String>,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct NewCustomCommandRequest {
+    name: String,
+    description: String,
+    argument_hint: Option<String>,
+    allowed_tools: Vec<String>,
+    model: Option<String>,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct CustomCommandUpdateRequest {
+    description: String,
+    argument_hint: Option<String>,
+    allowed_tools: Vec<String>,
+    model: Option<String>,
+    content: String,
 }
 
 #[derive(Deserialize)]
@@ -641,6 +672,11 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
         .route("/api/skills/:name", put(update_skill).delete(delete_skill))
         .route("/api/skills/:name/activate", post(activate_skill))
         .route("/api/skills/:name/deactivate", post(deactivate_skill))
+        .route("/api/commands", post(create_custom_command))
+        .route(
+            "/api/commands/:name",
+            put(update_custom_command).delete(delete_custom_command),
+        )
         .route("/api/permissions/respond", post(resolve_permission_request))
         .route("/api/plan-mode", post(set_plan_mode))
         .route_layer(middleware::from_fn_with_state(
@@ -666,6 +702,8 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
         .route("/api/skills", get(list_skills))
         .route("/api/skills/:name", get(get_skill))
         .route("/api/skills/active", get(get_active_skills))
+        .route("/api/commands", get(list_custom_commands))
+        .route("/api/commands/:name", get(get_custom_command))
         .route("/api/permissions/pending", get(list_pending_permissions))
         .route("/api/plan-mode", get(get_plan_mode))
         .route("/api/todos", get(list_todos))
@@ -918,10 +956,25 @@ async fn send_message_to_conversation(
 
     let cancellation_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    match agent
-        .process_message(&payload.message, cancellation_flag)
-        .await
-    {
+    let mut message = payload.message.clone();
+    match custom_commands::render_custom_command_input(&message).await {
+        Ok(Some(rendered)) => {
+            if let Some(model) = rendered.command.model {
+                if let Err(e) = agent.set_model(model).await {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to set command model: {}", e),
+                    )
+                        .into_response();
+                }
+            }
+            message = rendered.message;
+        }
+        Ok(None) => {}
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    }
+
+    match agent.process_message(&message, cancellation_flag).await {
         Ok(response) => Json(HashMap::from([("response", response)])).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1027,9 +1080,39 @@ async fn stream_message_to_conversation(
         );
         agent.set_permission_handler(Some(permission_handler)).await;
 
+        let mut resolved_message = message.clone();
+        match custom_commands::render_custom_command_input(&message).await {
+            Ok(Some(rendered)) => {
+                if let Some(model) = rendered.command.model {
+                    if let Err(e) = agent.set_model(model).await {
+                        send_json(
+                            &stream_sender,
+                            serde_json::json!({
+                                "type": "error",
+                                "error": format!("Failed to set command model: {}", e)
+                            }),
+                        );
+                        return;
+                    }
+                }
+                resolved_message = rendered.message;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                send_json(
+                    &stream_sender,
+                    serde_json::json!({
+                        "type": "error",
+                        "error": e.to_string()
+                    }),
+                );
+                return;
+            }
+        }
+
         let result = agent
             .process_message_with_stream(
-                &message,
+                &resolved_message,
                 Some(on_stream),
                 Some(Arc::new(move |evt: StreamToolEvent| {
                     send_json(
@@ -1700,6 +1783,144 @@ async fn get_active_skills(State(state): State<WebState>) -> impl IntoResponse {
     Json(active_skills).into_response()
 }
 
+fn normalize_optional(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+// Custom command API handlers
+async fn list_custom_commands(State(_state): State<WebState>) -> impl IntoResponse {
+    match custom_commands::list_custom_commands().await {
+        Ok(commands) => {
+            let dtos: Vec<CustomCommandDto> = commands
+                .into_iter()
+                .map(|command| CustomCommandDto {
+                    name: command.name,
+                    description: command.description.unwrap_or_default(),
+                    argument_hint: command.argument_hint,
+                    allowed_tools: command.allowed_tools,
+                    model: command.model,
+                    content: command.content,
+                })
+                .collect();
+            Json(dtos).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list commands: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_custom_command(
+    State(_state): State<WebState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match custom_commands::load_custom_command(&name).await {
+        Ok(Some(command)) => Json(CustomCommandDto {
+            name: command.name,
+            description: command.description.unwrap_or_default(),
+            argument_hint: command.argument_hint,
+            allowed_tools: command.allowed_tools,
+            model: command.model,
+            content: command.content,
+        })
+        .into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "Command not found".to_string()).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to fetch command: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_custom_command(
+    State(_state): State<WebState>,
+    Json(payload): Json<NewCustomCommandRequest>,
+) -> impl IntoResponse {
+    let command = custom_commands::CustomCommand {
+        name: payload.name.clone(),
+        description: normalize_optional(payload.description),
+        argument_hint: payload.argument_hint.and_then(normalize_optional),
+        allowed_tools: payload.allowed_tools,
+        model: payload.model.and_then(normalize_optional),
+        content: payload.content,
+    };
+
+    match custom_commands::save_custom_command(&command).await {
+        Ok(_) => {
+            let name = custom_commands::load_custom_command(&payload.name)
+                .await
+                .ok()
+                .flatten()
+                .map(|cmd| cmd.name)
+                .unwrap_or(payload.name);
+            Json(HashMap::from([("name", name)])).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create command: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn update_custom_command(
+    State(_state): State<WebState>,
+    Path(name): Path<String>,
+    Json(payload): Json<CustomCommandUpdateRequest>,
+) -> impl IntoResponse {
+    let existing = match custom_commands::load_custom_command(&name).await {
+        Ok(Some(command)) => command,
+        Ok(None) => return (StatusCode::NOT_FOUND, "Command not found".to_string()).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load command: {}", e),
+            )
+                .into_response()
+        }
+    };
+
+    let updated = custom_commands::CustomCommand {
+        name: existing.name.clone(),
+        description: normalize_optional(payload.description),
+        argument_hint: payload.argument_hint.and_then(normalize_optional),
+        allowed_tools: payload.allowed_tools,
+        model: payload.model.and_then(normalize_optional),
+        content: payload.content,
+    };
+
+    match custom_commands::save_custom_command(&updated).await {
+        Ok(_) => Json(HashMap::from([("name", existing.name)])).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to update command: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_custom_command(
+    State(_state): State<WebState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match custom_commands::delete_custom_command(&name).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to delete command: {}", e),
+        )
+            .into_response(),
+    }
+}
+
 async fn list_pending_permissions(
     State(state): State<WebState>,
     axum::extract::Query(query): axum::extract::Query<PermissionPendingQuery>,
@@ -2357,6 +2578,28 @@ mod tests {
     use tempfile::tempdir;
     use tower::util::ServiceExt;
 
+    struct EnvGuard {
+        commands_dir: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set_commands_dir(path: &std::path::Path) -> Self {
+            let commands_dir = std::env::var_os("FLEXORAMA_COMMANDS_DIR");
+            std::env::set_var("FLEXORAMA_COMMANDS_DIR", path);
+            Self { commands_dir }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(value) = self.commands_dir.take() {
+                std::env::set_var("FLEXORAMA_COMMANDS_DIR", value);
+            } else {
+                std::env::remove_var("FLEXORAMA_COMMANDS_DIR");
+            }
+        }
+    }
+
     #[test]
     fn test_extract_provider_from_model() {
         assert_eq!(extract_provider_from_model("claude-3-opus"), "Anthropic");
@@ -2570,6 +2813,13 @@ mod tests {
             .route("/api/skills/:name/activate", post(activate_skill))
             .route("/api/skills/:name/deactivate", post(deactivate_skill))
             .route("/api/skills/active", get(get_active_skills))
+            .route("/api/commands", get(list_custom_commands).post(create_custom_command))
+            .route(
+                "/api/commands/:name",
+                get(get_custom_command)
+                    .put(update_custom_command)
+                    .delete(delete_custom_command),
+            )
             .with_state(state)
     }
 
@@ -2749,6 +2999,101 @@ mod tests {
             .unwrap();
         let response = router.clone().oneshot(request).await.expect("delete");
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_custom_commands_crud() {
+        let state = build_test_state().await;
+        let commands_root = tempdir().expect("commands dir");
+        let _guard = EnvGuard::set_commands_dir(commands_root.path());
+        let router = build_test_router(state);
+
+        let payload = serde_json::json!({
+            "name": "cmd-alpha",
+            "description": "Command alpha",
+            "argument_hint": "[issue-number]",
+            "allowed_tools": ["Bash(git status:*)"],
+            "model": "test-model",
+            "content": "Fix issue $ARGUMENTS"
+        });
+        let request = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/commands")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("name").and_then(|v| v.as_str()), Some("cmd-alpha"));
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/commands")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let commands = body.as_array().expect("commands array");
+        assert!(commands.iter().any(|cmd| cmd["name"] == "cmd-alpha"));
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/commands/cmd-alpha")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["description"], "Command alpha");
+        assert_eq!(body["argument_hint"], "[issue-number]");
+        assert_eq!(body["allowed_tools"][0], "Bash(git status:*)");
+        assert_eq!(body["model"], "test-model");
+
+        let update = serde_json::json!({
+            "description": "Updated",
+            "argument_hint": "[ticket]",
+            "allowed_tools": [],
+            "model": null,
+            "content": "Updated content $1"
+        });
+        let request = axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/commands/cmd-alpha")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(update.to_string()))
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("name").and_then(|v| v.as_str()), Some("cmd-alpha"));
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/commands/cmd-alpha")
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["description"], "Updated");
+        assert_eq!(body["argument_hint"], "[ticket]");
+        assert!(body["allowed_tools"].as_array().expect("allowed tools").is_empty());
+        assert!(body["model"].is_null());
+        assert_eq!(body["content"], "Updated content $1");
+
+        let request = axum::http::Request::builder()
+            .method("DELETE")
+            .uri("/api/commands/cmd-alpha")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.expect("delete");
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/commands/cmd-alpha")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.expect("get missing");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

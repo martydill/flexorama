@@ -8,6 +8,7 @@ The hybrid cli/web coding agent that works your way.
 ## Features
  - Built-in file editing, bash, code search, and glob tools
  - Claude-style skills support and management with /skills
+ - Claude-style custom slash command via ~/.flexorama/commands/
  - Syntax highlighting for code snippets
  - Direct bash command execution with !
  - Adding context files with @path_to_file_name
@@ -25,7 +26,7 @@ The hybrid cli/web coding agent that works your way.
  - Command line history navigation with up and down arrow keys and Ctrl-R search
  - Support for different LLM APIs (Anthropic, Gemini, OpenAI, Z.AI) with the --provider arg
  - Support for different models for each provider with /model
- - Local model suppurt using the ollama provider with Ollama
+ - Local model support using the ollama provider with Ollama
  - Todo checklists 
  - Interactive and non-interactive mode
 
@@ -41,7 +42,6 @@ The optional web UI provides a ChatGPT-style browser-based interface for chats, 
  - Web search tool
  - Compacting
  - Pasting or referencing images
- - Custom slash commands
  - Memory editing
  - Sandboxing 
 
@@ -72,9 +72,6 @@ Supported env vars:
 
 ### Web version
 ```cargo run -- --web --provider <provider>```
-
-### Example
-```cargo run -- --provider openai --api-key ABCDasdfxxx...```
 
 
 ## License

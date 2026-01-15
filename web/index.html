@@ -163,7 +163,7 @@
     .top-tabs {
       display: flex;
       flex: 1;
-      max-width: 700px;
+      max-width: 900px;
       gap: 6px;
       background: var(--tabs-bg);
       padding: 3px 4px;
@@ -935,6 +935,7 @@
         <button class="top-tab" data-tab="mcp">MCP Servers</button>
         <button class="top-tab" data-tab="agents">Agents</button>
         <button class="top-tab" data-tab="skills">Skills</button>
+        <button class="top-tab" data-tab="commands">Commands</button>
         <button class="top-tab" data-tab="stats">Stats</button>
       </div>
       <div class="top-actions">
@@ -1113,6 +1114,36 @@
               <button class="primary" id="save-skill">Save Skill</button>
               <button class="secondary" id="toggle-skill-activation" style="display:none">Activate</button>
               <button class="secondary danger" id="delete-skill" style="display:none">Delete</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-commands">
+      <div class="split-layout">
+        <aside class="sidebar-panel">
+          <div class="stack" style="justify-content: space-between; align-items: center;">
+            <div class="muted" style="font-weight:600;">Commands</div>
+            <button class="secondary" id="new-command">New</button>
+          </div>
+          <div class="list" id="command-list"></div>
+        </aside>
+        <section class="panel">
+          <div class="tab-body">
+            <div class="section-title">Command Details</div>
+            <div class="muted" style="margin-bottom:6px;">View, edit, and create custom slash commands.</div>
+            <div class="form-grid">
+              <input id="command-name" placeholder="Name (without /)">
+              <input id="command-argument-hint" placeholder="Argument hint (optional)">
+              <input id="command-model" placeholder="Model (optional)">
+            </div>
+            <input id="command-description" placeholder="Description (optional)">
+            <input id="command-allowed-tools" placeholder="Allowed tools (comma separated)">
+            <textarea id="command-content" style="min-height:200px;" placeholder="Command content (markdown)"></textarea>
+            <div class="stack" style="margin-top:8px;">
+              <button class="primary" id="save-command">Save Command</button>
+              <button class="secondary danger" id="delete-command" style="display:none">Delete</button>
             </div>
           </div>
         </section>

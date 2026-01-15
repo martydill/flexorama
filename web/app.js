@@ -68,6 +68,8 @@ const state = {
   activeAgentEditing: localStorage.getItem("flexorama-active-agent-edit"),
   skills: [],
   activeSkillEditing: localStorage.getItem("flexorama-active-skill-edit"),
+  commands: [],
+  activeCommandEditing: localStorage.getItem("flexorama-active-command-edit"),
   provider: null,
   models: [],
   activeModel: null,
@@ -1531,6 +1533,117 @@ async function deleteSkill() {
   }
 }
 
+// Commands
+async function loadCommands() {
+  state.commands = await api("/api/commands");
+  renderCommands();
+}
+
+function renderCommands() {
+  const list = document.getElementById("command-list");
+  if (!list) return;
+  list.innerHTML = "";
+  state.commands.forEach((command) => {
+    const item = document.createElement("div");
+    item.className =
+      "list-item" + (command.name === state.activeCommandEditing ? " active" : "");
+    const hint = command.argument_hint ? ` ${command.argument_hint}` : "";
+    item.innerHTML = `
+      <div style="font-weight:700;">/${command.name}${hint}</div>
+      <small class="muted">${command.description || "No description"}</small>
+    `;
+    item.addEventListener("click", () => {
+      setCommandForm(command);
+      renderCommands();
+    });
+    list.appendChild(item);
+  });
+}
+
+function resetCommandForm() {
+  state.activeCommandEditing = null;
+  localStorage.removeItem("flexorama-active-command-edit");
+  document.getElementById("command-name").value = "";
+  document.getElementById("command-description").value = "";
+  document.getElementById("command-argument-hint").value = "";
+  document.getElementById("command-model").value = "";
+  document.getElementById("command-allowed-tools").value = "";
+  document.getElementById("command-content").value = "";
+  const deleteBtn = document.getElementById("delete-command");
+  if (deleteBtn) deleteBtn.style.display = "none";
+  renderCommands();
+}
+
+function setCommandForm(command) {
+  state.activeCommandEditing = command.name;
+  localStorage.setItem("flexorama-active-command-edit", command.name);
+  document.getElementById("command-name").value = command.name;
+  document.getElementById("command-description").value = command.description || "";
+  document.getElementById("command-argument-hint").value = command.argument_hint || "";
+  document.getElementById("command-model").value = command.model || "";
+  document.getElementById("command-allowed-tools").value =
+    (command.allowed_tools || []).join(", ");
+  document.getElementById("command-content").value = command.content || "";
+  const deleteBtn = document.getElementById("delete-command");
+  if (deleteBtn) deleteBtn.style.display = "inline-block";
+  renderCommands();
+}
+
+function selectFirstCommand() {
+  if (state.commands.length === 0) {
+    resetCommandForm();
+    return;
+  }
+  const saved = state.commands.find((c) => c.name === state.activeCommandEditing);
+  const target = saved || state.commands[0];
+  setCommandForm(target);
+  renderCommands();
+}
+
+async function saveCommand() {
+  const rawName = document.getElementById("command-name").value.trim();
+  const name = rawName.startsWith("/") ? rawName.slice(1) : rawName;
+  if (!name) return;
+
+  const payload = {
+    description: document.getElementById("command-description").value.trim(),
+    argument_hint: document.getElementById("command-argument-hint").value.trim() || null,
+    allowed_tools: splitList(document.getElementById("command-allowed-tools").value),
+    model: document.getElementById("command-model").value.trim() || null,
+    content: document.getElementById("command-content").value,
+  };
+
+  if (state.commands.some((c) => c.name === name)) {
+    await api(`/api/commands/${name}`, { method: "PUT", body: payload });
+  } else {
+    await api("/api/commands", { method: "POST", body: { ...payload, name } });
+  }
+  state.activeCommandEditing = name;
+  await loadCommands();
+
+  const command = state.commands.find((c) => c.name === name);
+  if (command) {
+    setCommandForm(command);
+  }
+}
+
+async function deleteCommand() {
+  const rawName = document.getElementById("command-name").value.trim();
+  const name = rawName.startsWith("/") ? rawName.slice(1) : rawName;
+  if (!name) return;
+  const idx = state.commands.findIndex((c) => c.name === name);
+  await api(`/api/commands/${name}`, { method: "DELETE" });
+  state.activeCommandEditing = null;
+  await loadCommands();
+  if (state.commands.length > 0) {
+    const next = state.commands[Math.min(Math.max(idx, 0), state.commands.length - 1)];
+    setCommandForm(next);
+    renderCommands();
+  } else {
+    resetCommandForm();
+  }
+}
+
 async function loadModels() {
   const data = await api("/api/models");
   state.provider = data.provider;
@@ -1630,6 +1743,13 @@ async function restoreSelections() {
   if (skillMatch) {
     setSkillForm(skillMatch);
   }
+
+  const savedCommandEdit = localStorage.getItem("flexorama-active-command-edit");
+  const commandMatch =
+    savedCommandEdit && state.commands.find((c) => c.name === savedCommandEdit);
+  if (commandMatch) {
+    setCommandForm(commandMatch);
+  }
 }
 
 // Tabs
@@ -1658,6 +1778,9 @@ function initTabs() {
           break;
         case "skills":
           selectFirstSkill();
+          break;
+        case "commands":
+          selectFirstCommand();
           break;
         case "stats":
           loadStats();
@@ -1959,6 +2082,13 @@ function bindEvents() {
   const skillActiveCheckbox = document.getElementById("skill-active");
   if (skillActiveCheckbox) skillActiveCheckbox.addEventListener("change", toggleSkillActivation);
   document.getElementById("new-skill").addEventListener("click", resetSkillForm);
+
+  const saveCommandBtn = document.getElementById("save-command");
+  if (saveCommandBtn) saveCommandBtn.addEventListener("click", saveCommand);
+  const deleteCommandBtn = document.getElementById("delete-command");
+  if (deleteCommandBtn) deleteCommandBtn.addEventListener("click", deleteCommand);
+  const newCommandBtn = document.getElementById("new-command");
+  if (newCommandBtn) newCommandBtn.addEventListener("click", resetCommandForm);
 
   document.getElementById("model-selector").addEventListener("change", async (e) => {
     const model = e.target.value;
@@ -2431,6 +2561,7 @@ async function bootstrap() {
     await loadMcp();
     await loadAgents();
     await loadSkills();
+    await loadCommands();
     await loadPlanMode();
     await loadTodos();
     await restoreSelections();
@@ -2446,6 +2577,9 @@ async function bootstrap() {
         break;
       case "skills":
         selectFirstSkill();
+        break;
+      case "commands":
+        selectFirstCommand();
         break;
       case "stats":
         await loadStats();
