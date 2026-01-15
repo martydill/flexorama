@@ -184,10 +184,7 @@ impl super::ToolDisplay for PrettyDisplay {
             format!("{:.2}s", duration.as_secs_f64()).dimmed()
         );
 
-        // Add formatted result content
-        for line in self.format_result_content(result, false) {
-            app_println!("{}", line);
-        }
+        let _ = result;
 
         app_println!(
             "{}",
@@ -233,10 +230,7 @@ impl super::ToolDisplay for PrettyDisplay {
             format!("{:.2}s", duration.as_secs_f64()).dimmed()
         );
 
-        // Add formatted error content
-        for line in self.format_result_content(error, true) {
-            app_println!("{}", line);
-        }
+        let _ = error;
 
         app_println!(
             "{}",
