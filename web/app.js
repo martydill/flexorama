@@ -523,6 +523,15 @@ function renderMessageBubble(msg) {
     bubble.classList.add("tool-result-bubble");
   }
   blocks.forEach((block) => bubble.appendChild(renderBlock(block)));
+
+  if (msg.role === "assistant") {
+    const text = blocks
+      .filter((b) => b.type === "text" || !b.type)
+      .map((b) => b.text || b.content || "")
+      .join("\n");
+    checkAndAppendPlanButton(bubble, text);
+  }
+
   return bubble;
 }
 
@@ -756,6 +765,28 @@ function summarizeToolInput(name, input) {
   return safeVal(parsed) || "(no input)";
 }
 
+function checkAndAppendPlanButton(bubble, text) {
+  const match = /_Plan saved with ID: `(.*?)`\._/.exec(text);
+  if (match) {
+    if (bubble.querySelector("button.secondary")) return;
+    const planId = match[1];
+    const button = document.createElement("button");
+    button.className = "secondary";
+    button.textContent = "Edit Plan";
+    button.style.marginTop = "8px";
+    button.addEventListener("click", async () => {
+      const tabBtn = document.querySelector('.top-tab[data-tab="plans"]');
+      if (tabBtn) tabBtn.click();
+      await loadPlans();
+      const plan = state.plans.find((p) => String(p.id) === String(planId));
+      if (plan) {
+        setPlanForm(plan);
+      }
+    });
+    bubble.appendChild(button);
+  }
+}
+
 function updateBubbleContent(bubble, text) {
   let target = bubble;
   if (!target) {
@@ -766,6 +797,7 @@ function updateBubbleContent(bubble, text) {
   }
   target.innerHTML = "";
   target.appendChild(renderBlock({ type: "text", text }));
+  checkAndAppendPlanButton(target, text);
   target.scrollIntoView({ block: "end" });
   highlightCodes(target);
 }
