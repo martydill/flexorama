@@ -1996,14 +1996,11 @@ async fn list_todos(
 
 // Stats API handlers
 async fn get_stats_overview(State(state): State<WebState>) -> impl IntoResponse {
-    match state.database.get_stats_overview().await {
-        Ok(overview) => Json(overview).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load stats overview: {}", e),
-        )
-            .into_response(),
-    }
+    db_result_to_response(
+        state.database.get_stats_overview().await,
+        "Failed to load stats overview",
+        |overview| Json(overview).into_response(),
+    )
 }
 
 async fn get_usage_stats(
@@ -2011,15 +2008,17 @@ async fn get_usage_stats(
     axum::extract::Query(params): axum::extract::Query<StatsQueryParams>,
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
+    let period = params.period.unwrap_or_else(|| "month".to_string());
 
-    match state
-        .database
-        .get_usage_stats_range(start_date, end_date)
-        .await
-    {
-        Ok(stats) => {
+    db_result_to_response(
+        state
+            .database
+            .get_usage_stats_range(start_date, end_date)
+            .await,
+        "Failed to load usage stats",
+        |stats| {
             let response = UsageStatsResponse {
-                period: params.period.unwrap_or_else(|| "month".to_string()),
+                period,
                 data: stats
                     .into_iter()
                     .map(|s| UsageStatsPoint {
@@ -2032,13 +2031,8 @@ async fn get_usage_stats(
                     .collect(),
             };
             Json(response).into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load usage stats: {}", e),
-        )
-            .into_response(),
-    }
+        },
+    )
 }
 
 async fn get_model_stats(
@@ -2046,15 +2040,17 @@ async fn get_model_stats(
     axum::extract::Query(params): axum::extract::Query<StatsQueryParams>,
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
+    let period = params.period.unwrap_or_else(|| "month".to_string());
 
-    match state
-        .database
-        .get_stats_by_model(start_date, end_date)
-        .await
-    {
-        Ok(stats) => {
+    db_result_to_response(
+        state
+            .database
+            .get_stats_by_model(start_date, end_date)
+            .await,
+        "Failed to load model stats",
+        |stats| {
             let response = ModelStatsResponse {
-                period: params.period.unwrap_or_else(|| "month".to_string()),
+                period,
                 data: stats
                     .into_iter()
                     .map(|s| ModelStatsPoint {
@@ -2067,13 +2063,8 @@ async fn get_model_stats(
                     .collect(),
             };
             Json(response).into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load model stats: {}", e),
-        )
-            .into_response(),
-    }
+        },
+    )
 }
 
 async fn get_conversation_stats(
@@ -2081,28 +2072,25 @@ async fn get_conversation_stats(
     axum::extract::Query(params): axum::extract::Query<StatsQueryParams>,
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
+    let period = params.period.unwrap_or_else(|| "month".to_string());
 
-    match state
-        .database
-        .get_conversation_counts_by_date(start_date, end_date)
-        .await
-    {
-        Ok(counts) => {
+    db_result_to_response(
+        state
+            .database
+            .get_conversation_counts_by_date(start_date, end_date)
+            .await,
+        "Failed to load conversation stats",
+        |counts| {
             let response = ConversationStatsResponse {
-                period: params.period.unwrap_or_else(|| "month".to_string()),
+                period,
                 data: counts
                     .into_iter()
                     .map(|(date, count)| ConversationStatsPoint { date, count })
                     .collect(),
             };
             Json(response).into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load conversation stats: {}", e),
-        )
-            .into_response(),
-    }
+        },
+    )
 }
 
 async fn get_conversation_stats_by_provider(
@@ -2110,13 +2098,15 @@ async fn get_conversation_stats_by_provider(
     axum::extract::Query(params): axum::extract::Query<StatsQueryParams>,
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
+    let period = params.period.unwrap_or_else(|| "month".to_string());
 
-    match state
-        .database
-        .get_conversation_counts_by_date_and_model(start_date, end_date)
-        .await
-    {
-        Ok(counts) => {
+    db_result_to_response(
+        state
+            .database
+            .get_conversation_counts_by_date_and_model(start_date, end_date)
+            .await,
+        "Failed to load conversation stats by provider",
+        |counts| {
             // Aggregate by (date, provider) since multiple models can map to the same provider
             let mut aggregated: HashMap<(String, String), i32> = HashMap::new();
 
@@ -2136,17 +2126,12 @@ async fn get_conversation_stats_by_provider(
                 .collect();
 
             let response = ConversationsByProviderResponse {
-                period: params.period.unwrap_or_else(|| "month".to_string()),
+                period,
                 data,
             };
             Json(response).into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load conversation stats by provider: {}", e),
-        )
-            .into_response(),
-    }
+        },
+    )
 }
 
 async fn get_conversation_stats_by_subagent(
@@ -2154,13 +2139,15 @@ async fn get_conversation_stats_by_subagent(
     axum::extract::Query(params): axum::extract::Query<StatsQueryParams>,
 ) -> impl IntoResponse {
     let (start_date, end_date) = calculate_date_range(&params);
+    let period = params.period.unwrap_or_else(|| "month".to_string());
 
-    match state
-        .database
-        .get_conversation_counts_by_date_and_subagent(start_date, end_date)
-        .await
-    {
-        Ok(counts) => {
+    db_result_to_response(
+        state
+            .database
+            .get_conversation_counts_by_date_and_subagent(start_date, end_date)
+            .await,
+        "Failed to load conversation stats by subagent",
+        |counts| {
             let data: Vec<ConversationsBySubagentPoint> = counts
                 .into_iter()
                 .map(|(date, subagent, count)| ConversationsBySubagentPoint {
@@ -2171,17 +2158,12 @@ async fn get_conversation_stats_by_subagent(
                 .collect();
 
             let response = ConversationsBySubagentResponse {
-                period: params.period.unwrap_or_else(|| "month".to_string()),
+                period,
                 data,
             };
             Json(response).into_response()
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load conversation stats by subagent: {}", e),
-        )
-            .into_response(),
-    }
+        },
+    )
 }
 
 fn extract_provider_from_model(model: &str) -> String {
@@ -2308,6 +2290,21 @@ async fn get_file_autocomplete(
     });
 
     Json(FileAutocompleteResponse { files }).into_response()
+}
+
+/// Helper to handle database results and convert to HTTP responses with consistent error handling
+fn db_result_to_response<T, F>(result: Result<T>, error_msg: &str, transform: F) -> Response
+where
+    F: FnOnce(T) -> Response,
+{
+    match result {
+        Ok(data) => transform(data),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("{}: {}", error_msg, e),
+        )
+            .into_response(),
+    }
 }
 
 fn calculate_date_range(
