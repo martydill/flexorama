@@ -81,12 +81,7 @@ pub async fn bash(
     security_manager: &mut BashSecurityManager,
     yolo_mode: bool,
 ) -> Result<ToolResult> {
-    let command = call
-        .arguments
-        .get("command")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing 'command' argument"))?
-        .to_string();
+    let command = extract_string_arg!(call, "command").to_string();
 
     debug!("TOOL CALL: bash('{}')", command);
 

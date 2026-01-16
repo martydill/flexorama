@@ -7,11 +7,7 @@ pub async fn complete_todo(
     call: &ToolCall,
     todos: &mut Vec<super::create_todo::TodoItem>,
 ) -> Result<ToolResult> {
-    let id = call
-        .arguments
-        .get("id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing 'id' argument"))?;
+    let id = extract_string_arg!(call, "id");
 
     let tool_use_id = call.id.clone();
 

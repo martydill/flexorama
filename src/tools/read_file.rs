@@ -1,26 +1,19 @@
+use crate::tools::path::expand_and_absolutize;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::debug;
-use path_absolutize::*;
 use serde_json::json;
-use shellexpand;
-use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
 pub async fn read_file(call: &ToolCall) -> Result<ToolResult> {
-    let path = call
-        .arguments
-        .get("path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing 'path' argument"))?;
+    let path = extract_string_arg!(call, "path");
 
     debug!("TOOL CALL: read_file('{}')", path);
 
     let tool_use_id = call.id.clone();
 
-    let expanded_path = shellexpand::tilde(path);
-    let absolute_path = Path::new(&*expanded_path).absolutize()?;
+    let absolute_path = expand_and_absolutize(path)?;
 
     match fs::File::open(&absolute_path).await {
         Ok(mut file) => {

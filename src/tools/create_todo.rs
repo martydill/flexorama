@@ -4,11 +4,7 @@ use serde_json::json;
 
 /// Create a new todo item
 pub async fn create_todo(call: &ToolCall, todos: &mut Vec<TodoItem>) -> Result<ToolResult> {
-    let description = call
-        .arguments
-        .get("description")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing 'description' argument"))?;
+    let description = extract_string_arg!(call, "description");
 
     let tool_use_id = call.id.clone();
 

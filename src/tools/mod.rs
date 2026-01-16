@@ -1,5 +1,8 @@
 // Tools module - re-exports all tool functionality
 
+#[macro_use]
+pub mod arg_macros;
+
 pub mod bash;
 pub mod builtin;
 pub mod complete_todo;
@@ -14,6 +17,7 @@ pub mod mcp;
 pub mod path;
 pub mod read_file;
 pub mod search_in_files;
+pub mod security_utils;
 pub mod types;
 pub mod write_file;
 

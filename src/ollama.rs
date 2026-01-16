@@ -119,23 +119,41 @@ impl OllamaClient {
         }
     }
 
-    /// Fetch available models from Ollama server
-    pub async fn fetch_available_models(&self) -> Result<Vec<String>> {
-        let endpoint = format!("{}/api/tags", self.base_url);
-
-        debug!("Fetching available Ollama models from {}", endpoint);
-
+    /// Helper to build authenticated request with optional JSON body
+    fn build_authenticated_request(
+        &self,
+        method: reqwest::Method,
+        endpoint: &str,
+        json_body: Option<&impl Serialize>,
+    ) -> reqwest::RequestBuilder {
         let mut request_builder = self
             .client
-            .get(&endpoint)
+            .request(method, endpoint)
             .header("content-type", "application/json");
+
+        if let Some(body) = json_body {
+            request_builder = request_builder.json(body);
+        }
 
         // Only add authorization header if API key is not empty
         if !self.api_key.is_empty() {
             request_builder = request_builder.header("authorization", format!("Bearer {}", self.api_key));
         }
 
-        let response = match request_builder.send().await {
+        request_builder
+    }
+
+    /// Fetch available models from Ollama server
+    pub async fn fetch_available_models(&self) -> Result<Vec<String>> {
+        let endpoint = format!("{}/api/tags", self.base_url);
+
+        debug!("Fetching available Ollama models from {}", endpoint);
+
+        let response = match self
+            .build_authenticated_request(reqwest::Method::GET, &endpoint, None::<&()>)
+            .send()
+            .await
+        {
             Ok(resp) => resp,
             Err(e) => {
                 warn!("Failed to fetch Ollama models: {}. Using default models.", e);
@@ -212,18 +230,10 @@ impl OllamaClient {
         debug!("Tools count: {}", tools.len());
         debug!("Request body:\n{}", request_json);
 
-        let mut request_builder = self
-            .client
-            .post(&endpoint)
-            .header("content-type", "application/json")
-            .json(&request);
-
-        // Only add authorization header if API key is not empty
-        if !self.api_key.is_empty() {
-            request_builder = request_builder.header("authorization", format!("Bearer {}", self.api_key));
-        }
-
-        let response = request_builder.send().await?;
+        let response = self
+            .build_authenticated_request(reqwest::Method::POST, &endpoint, Some(&request))
+            .send()
+            .await?;
 
         let status = response.status();
         let response_text = response.text().await?;
@@ -290,18 +300,10 @@ impl OllamaClient {
         debug!("Tools count: {}", tools.len());
         debug!("Request body:\n{}", request_json);
 
-        let mut request_builder = self
-            .client
-            .post(&endpoint)
-            .header("content-type", "application/json")
-            .json(&request);
-
-        // Only add authorization header if API key is not empty
-        if !self.api_key.is_empty() {
-            request_builder = request_builder.header("authorization", format!("Bearer {}", self.api_key));
-        }
-
-        let response = request_builder.send().await?;
+        let response = self
+            .build_authenticated_request(reqwest::Method::POST, &endpoint, Some(&request))
+            .send()
+            .await?;
 
         let status = response.status();
         if !status.is_success() {

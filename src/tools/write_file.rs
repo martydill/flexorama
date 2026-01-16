@@ -1,8 +1,9 @@
 use crate::security::FileSecurityManager;
 use crate::tools::path::resolve_project_path;
+use crate::tools::security_utils::check_file_security;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
-use log::{debug, info};
+use log::debug;
 use serde_json::json;
 use tokio::fs;
 
@@ -11,17 +12,8 @@ pub async fn write_file(
     file_security_manager: &mut FileSecurityManager,
     yolo_mode: bool,
 ) -> Result<ToolResult> {
-    let path = call
-        .arguments
-        .get("path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing 'path' argument"))?;
-
-    let content = call
-        .arguments
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Missing 'content' argument"))?;
+    let path = extract_string_arg!(call, "path");
+    let content = extract_string_arg!(call, "content");
 
     debug!("TOOL CALL: write_file('{}', {} bytes)", path, content.len());
 
@@ -39,61 +31,16 @@ pub async fn write_file(
     };
 
     // Check file security permissions
-    if yolo_mode {
-        debug!(
-            "YOLO MODE: Bypassing file security for 'write_file' on '{}'",
-            absolute_path.display()
-        );
-    } else {
-        match file_security_manager
-            .check_file_permission("write_file", &absolute_path.to_string_lossy())
-        {
-            crate::security::FilePermissionResult::Allowed => {
-                debug!(
-                    "File operation 'write_file' on '{}' is allowed by security policy",
-                    absolute_path.display()
-                );
-            }
-            crate::security::FilePermissionResult::Denied => {
-                return Ok(ToolResult {
-                    tool_use_id,
-                    content: format!("🔒 Security: File write operation on '{}' is not allowed by security policy.", absolute_path.display()),
-                    is_error: true,
-                });
-            }
-            crate::security::FilePermissionResult::RequiresPermission => {
-                // Ask user for permission
-                match file_security_manager
-                    .ask_file_permission("write_file", &absolute_path.to_string_lossy())
-                    .await
-                {
-                    Ok(Some(_)) => {
-                        // User granted permission
-                        info!(
-                            "User granted permission for file write operation: {}",
-                            absolute_path.display()
-                        );
-                    }
-                    Ok(None) => {
-                        return Ok(ToolResult {
-                            tool_use_id,
-                            content: format!(
-                                "🔒 Security: Permission denied for file write operation on '{}'",
-                                absolute_path.display()
-                            ),
-                            is_error: true,
-                        });
-                    }
-                    Err(e) => {
-                        return Ok(ToolResult {
-                            tool_use_id,
-                            content: format!("🔒 Security: Error checking permission for file write operation on '{}': {}", absolute_path.display(), e),
-                            is_error: true,
-                        });
-                    }
-                }
-            }
-        }
+    if let Some(result) = check_file_security(
+        "write_file",
+        &absolute_path,
+        tool_use_id.clone(),
+        file_security_manager,
+        yolo_mode,
+    )
+    .await?
+    {
+        return Ok(result);
     }
 
     // Create parent directory if it doesn't exist

@@ -2,6 +2,19 @@ use anyhow::{bail, Result};
 use path_absolutize::*;
 use std::path::{Component, Path, PathBuf};
 
+/// Expand tilde (~) and convert to absolute path without security restrictions.
+/// This is used for read-only operations where path traversal is allowed.
+///
+/// # Example
+/// ```ignore
+/// let abs_path = expand_and_absolutize("~/config.txt")?;
+/// ```
+pub fn expand_and_absolutize(path: &str) -> Result<PathBuf> {
+    let expanded_path = shellexpand::tilde(path);
+    let absolute_path = Path::new(&*expanded_path).absolutize()?;
+    Ok(absolute_path.to_path_buf())
+}
+
 pub fn resolve_project_path(path: &str) -> Result<PathBuf> {
     let expanded_path = shellexpand::tilde(path);
     let raw_path = Path::new(expanded_path.as_ref());
