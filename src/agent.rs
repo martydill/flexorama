@@ -51,9 +51,8 @@ use crate::database::{Conversation as StoredConversation, DatabaseManager};
 use crate::llm::LlmClient;
 use crate::subagent;
 use crate::tools::{
-    bash, create_bash_tool, create_create_directory_tool, create_delete_file_tool,
-    create_directory, create_edit_file_tool, create_write_file_tool, delete_file, edit_file,
-    get_builtin_tools, write_file, Tool, ToolCall, ToolRegistry, ToolResult,
+    bash, create_directory, delete_file, edit_file, get_builtin_tools, write_file, Tool,
+    ToolCall, ToolRegistry, ToolResult,
 };
 
 #[derive(Debug, Clone)]
@@ -208,50 +207,15 @@ impl Agent {
     ) -> Self {
         let mut agent = Self::new(config, model, yolo_mode, plan_mode);
 
-        // Add bash tool with security
-        let security_manager = agent.bash_security_manager.clone();
-        let yolo_mode = yolo_mode;
+        // Add core tools (bash and file operations) with security
         if !plan_mode {
             let mut tools = agent.tools.write().await;
-            tools.insert(
-                "bash".to_string(),
-                Tool {
-                    name: "bash".to_string(),
-                    description: if yolo_mode {
-                        "Execute shell commands and return the output (YOLO MODE - no security checks)"
-                            .to_string()
-                    } else {
-                        "Execute shell commands and return the output (with security)".to_string()
-                    },
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "Shell command to execute"
-                            }
-                        },
-                        "required": ["command"]
-                    }),
-                    handler: Box::new(move |call: ToolCall| {
-                        let security_manager = security_manager.clone();
-                        let yolo_mode = yolo_mode;
-                        Box::pin(async move {
-                            // Create a wrapper function that handles the mutable reference
-                            async fn bash_wrapper(
-                                call: ToolCall,
-                                security_manager: Arc<RwLock<BashSecurityManager>>,
-                                yolo_mode: bool,
-                            ) -> Result<ToolResult> {
-                                let mut manager = security_manager.write().await;
-                                bash(&call, &mut *manager, yolo_mode).await
-                            }
-
-                            bash_wrapper(call, security_manager, yolo_mode).await
-                        })
-                    }),
-                    metadata: None, // TODO: Add metadata for bash tool
-                },
+            Self::add_core_tools(
+                &mut tools,
+                agent.bash_security_manager.clone(),
+                agent.file_security_manager.clone(),
+                yolo_mode,
+                false, // Don't check existence, replace all
             );
         }
 
@@ -550,6 +514,56 @@ impl Agent {
         &self.active_skills
     }
 
+    /// Helper method to add core tools (bash and file operations) to the tools map
+    ///
+    /// # Arguments
+    /// * `tools` - Mutable reference to the tools HashMap
+    /// * `bash_security_manager` - The bash security manager
+    /// * `file_security_manager` - The file security manager
+    /// * `yolo_mode` - Whether yolo mode is enabled
+    /// * `check_exists` - If true, only add tools if they don't already exist
+    fn add_core_tools(
+        tools: &mut HashMap<String, crate::tools::Tool>,
+        bash_security_manager: Arc<RwLock<BashSecurityManager>>,
+        file_security_manager: Arc<RwLock<FileSecurityManager>>,
+        yolo_mode: bool,
+        check_exists: bool,
+    ) {
+        use crate::tools::{
+            create_bash_tool, create_create_directory_tool, create_delete_file_tool,
+            create_edit_file_tool, create_write_file_tool,
+        };
+
+        // Add bash tool
+        if !check_exists || !tools.contains_key("bash") {
+            let bash_tool = create_bash_tool(bash_security_manager, yolo_mode);
+            tools.insert("bash".to_string(), bash_tool);
+        }
+
+        // Add file operation tools
+        if !check_exists || !tools.contains_key("write_file") {
+            let write_file_tool = create_write_file_tool(file_security_manager.clone(), yolo_mode);
+            tools.insert("write_file".to_string(), write_file_tool);
+        }
+
+        if !check_exists || !tools.contains_key("edit_file") {
+            let edit_file_tool = create_edit_file_tool(file_security_manager.clone(), yolo_mode);
+            tools.insert("edit_file".to_string(), edit_file_tool);
+        }
+
+        if !check_exists || !tools.contains_key("delete_file") {
+            let delete_file_tool =
+                create_delete_file_tool(file_security_manager.clone(), yolo_mode);
+            tools.insert("delete_file".to_string(), delete_file_tool);
+        }
+
+        if !check_exists || !tools.contains_key("create_directory") {
+            let create_directory_tool =
+                create_create_directory_tool(file_security_manager.clone(), yolo_mode);
+            tools.insert("create_directory".to_string(), create_directory_tool);
+        }
+    }
+
     /// Refresh MCP tools from connected servers (only if they have changed)
     pub async fn refresh_mcp_tools(&mut self) -> Result<()> {
         if self.plan_mode {
@@ -575,27 +589,14 @@ impl Agent {
             let mut tools = self.tools.write().await;
             tools.retain(|name, _| !name.starts_with("mcp_"));
 
-            // Add bash tool with security using centralized function
-            let bash_tool = create_bash_tool(self.bash_security_manager.clone(), self.yolo_mode);
-            tools.insert("bash".to_string(), bash_tool);
-
-            // Add file operation tools with security
-            let file_security_manager = self.file_security_manager.clone();
-            let yolo_mode = self.yolo_mode;
-
-            let write_file_tool = create_write_file_tool(file_security_manager.clone(), yolo_mode);
-            tools.insert("write_file".to_string(), write_file_tool);
-
-            let edit_file_tool = create_edit_file_tool(file_security_manager.clone(), yolo_mode);
-            tools.insert("edit_file".to_string(), edit_file_tool);
-
-            let delete_file_tool =
-                create_delete_file_tool(file_security_manager.clone(), yolo_mode);
-            tools.insert("delete_file".to_string(), delete_file_tool);
-
-            let create_directory_tool =
-                create_create_directory_tool(file_security_manager.clone(), yolo_mode);
-            tools.insert("create_directory".to_string(), create_directory_tool);
+            // Add core tools (bash and file operations) with security
+            Self::add_core_tools(
+                &mut tools,
+                self.bash_security_manager.clone(),
+                self.file_security_manager.clone(),
+                self.yolo_mode,
+                false, // Don't check existence, replace all
+            );
 
             // Get all MCP tools
             match mcp_manager.get_all_tools().await {
@@ -639,39 +640,13 @@ impl Agent {
         } else {
             // Even without MCP manager, ensure bash and file tools are available
             let mut tools = self.tools.write().await;
-            if !tools.contains_key("bash") {
-                let bash_tool =
-                    create_bash_tool(self.bash_security_manager.clone(), self.yolo_mode);
-                tools.insert("bash".to_string(), bash_tool);
-            }
-
-            // Ensure file operation tools are available
-            let file_security_manager = self.file_security_manager.clone();
-            let yolo_mode = self.yolo_mode;
-
-            if !tools.contains_key("write_file") {
-                let write_file_tool =
-                    create_write_file_tool(file_security_manager.clone(), yolo_mode);
-                tools.insert("write_file".to_string(), write_file_tool);
-            }
-
-            if !tools.contains_key("edit_file") {
-                let edit_file_tool =
-                    create_edit_file_tool(file_security_manager.clone(), yolo_mode);
-                tools.insert("edit_file".to_string(), edit_file_tool);
-            }
-
-            if !tools.contains_key("delete_file") {
-                let delete_file_tool =
-                    create_delete_file_tool(file_security_manager.clone(), yolo_mode);
-                tools.insert("delete_file".to_string(), delete_file_tool);
-            }
-
-            if !tools.contains_key("create_directory") {
-                let create_directory_tool =
-                    create_create_directory_tool(file_security_manager.clone(), yolo_mode);
-                tools.insert("create_directory".to_string(), create_directory_tool);
-            }
+            Self::add_core_tools(
+                &mut tools,
+                self.bash_security_manager.clone(),
+                self.file_security_manager.clone(),
+                self.yolo_mode,
+                true, // Check existence before adding
+            );
             Ok(())
         }
     }
@@ -720,34 +695,13 @@ impl Agent {
                 tools.retain(|name, _| registry.is_readonly(name));
             } else {
                 // Rebuild essential tools when exiting plan mode
-                if !tools.contains_key("bash") {
-                    let bash_tool =
-                        create_bash_tool(self.bash_security_manager.clone(), self.yolo_mode);
-                    tools.insert("bash".to_string(), bash_tool);
-                }
-                let file_security_manager = self.file_security_manager.clone();
-                let yolo_mode = self.yolo_mode;
-
-                if !tools.contains_key("write_file") {
-                    let write_file_tool =
-                        create_write_file_tool(file_security_manager.clone(), yolo_mode);
-                    tools.insert("write_file".to_string(), write_file_tool);
-                }
-                if !tools.contains_key("edit_file") {
-                    let edit_file_tool =
-                        create_edit_file_tool(file_security_manager.clone(), yolo_mode);
-                    tools.insert("edit_file".to_string(), edit_file_tool);
-                }
-                if !tools.contains_key("delete_file") {
-                    let delete_file_tool =
-                        create_delete_file_tool(file_security_manager.clone(), yolo_mode);
-                    tools.insert("delete_file".to_string(), delete_file_tool);
-                }
-                if !tools.contains_key("create_directory") {
-                    let create_directory_tool =
-                        create_create_directory_tool(file_security_manager.clone(), yolo_mode);
-                    tools.insert("create_directory".to_string(), create_directory_tool);
-                }
+                Self::add_core_tools(
+                    &mut tools,
+                    self.bash_security_manager.clone(),
+                    self.file_security_manager.clone(),
+                    self.yolo_mode,
+                    true, // Check existence before adding
+                );
             }
         }
 
