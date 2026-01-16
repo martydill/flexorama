@@ -76,4 +76,60 @@ test.describe('Plans', () => {
     // Verify PUT request happened (implicitly by test passing if we asserted on it, but here we mock the response)
     // To strictly verify, we could track requests
   });
+
+  test('should show edit plan button in chat and navigate to plan', async ({ page }) => {
+    const planId = 'test-plan-123';
+    const mockPlan = { 
+      id: planId, 
+      title: 'Generated Plan', 
+      user_request: 'Make a plan', 
+      plan_markdown: '# The Plan', 
+      created_at: new Date().toISOString() 
+    };
+
+    // Mock plans
+    await page.route('/api/plans', async route => {
+      await route.fulfill({ json: [mockPlan] });
+    });
+
+    // Mock conversation with plan message
+    await page.route('/api/conversations/123', async route => {
+      await route.fulfill({ json: {
+        conversation: { id: '123', updated_at: new Date().toISOString() },
+        messages: [
+          { role: 'user', content: 'Create a plan', blocks: [] },
+          { role: 'assistant', content: `_Plan saved with ID: \`${planId}\`._`, blocks: [] }
+        ],
+        context_files: []
+      }});
+    });
+
+    // Mock conversation list
+    await page.route('/api/conversations', async route => {
+      await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
+    });
+    
+    // Mock pending permissions
+    await page.route('/api/permissions/pending?conversation_id=123', async route => {
+      await route.fulfill({ json: [] });
+    });
+
+    await page.goto('/?tab=chats');
+    await page.click('#conversation-list .list-item'); // Select the conversation
+
+    // Check for button
+    const editBtn = page.getByRole('button', { name: 'Edit Plan' });
+    await expect(editBtn).toBeVisible();
+
+    // Click button
+    await editBtn.click();
+
+    // Verify tab switch
+    await expect(page.locator('.top-tab[data-tab="plans"]')).toHaveClass(/active/);
+    await expect(page.locator('#tab-plans')).toHaveClass(/active/);
+
+    // Verify plan loaded
+    await expect(page.locator('#plan-title')).toHaveValue('Generated Plan');
+    await expect(page.locator('#plan-markdown')).toHaveValue('# The Plan');
+  });
 });
