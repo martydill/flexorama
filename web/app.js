@@ -102,8 +102,15 @@ const state = {
   statsStartDate: null,
   statsEndDate: null,
   todosCollapsed: localStorage.getItem("flexorama-todos-collapsed") === "true",
+  conversationSearch: "",
+  conversationSearchResults: null,
+  conversationSearchLoading: false,
+  conversationSearchLastSent: "",
   csrfToken: null,
 };
+
+let conversationSearchTimer = null;
+let conversationSearchController = null;
 
 function setPlanForm(plan) {
   state.activePlanId = plan.id;
@@ -137,6 +144,12 @@ function applyTheme(theme) {
 
 function setStatus(text) {
   document.getElementById("conversation-meta").textContent = text;
+}
+
+function setConversationSearchLoading(isLoading) {
+  state.conversationSearchLoading = isLoading;
+  const spinner = document.getElementById("conversation-search-spinner");
+  if (spinner) spinner.classList.toggle("visible", isLoading);
 }
 
 function isTodoTool(name) {
@@ -238,10 +251,32 @@ function renderTodoPane() {
   }
 }
 
+function getConversationSearchTerm() {
+  return (state.conversationSearch || "").trim().toLowerCase();
+}
+
 function renderConversationList() {
   const list = document.getElementById("conversation-list");
   list.innerHTML = "";
-  state.conversations.forEach((conv) => {
+  const query = getConversationSearchTerm();
+  if (query && state.conversationSearchLoading && !state.conversationSearchResults) {
+    const item = document.createElement("div");
+    item.className = "list-item empty";
+    item.textContent = "Searching...";
+    list.appendChild(item);
+    return;
+  }
+  const filtered = query ? state.conversationSearchResults || [] : state.conversations;
+
+  if (filtered.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "list-item empty";
+    empty.textContent = query ? "No conversations match your search." : "No conversations yet.";
+    list.appendChild(empty);
+    return;
+  }
+
+  filtered.forEach((conv) => {
     const item = document.createElement("div");
     const isActive = String(conv.id) === String(state.activeConversationId);
     item.className = "list-item" + (isActive ? " active" : "");
@@ -252,6 +287,50 @@ function renderConversationList() {
     item.addEventListener("click", () => selectConversation(conv.id));
     list.appendChild(item);
   });
+}
+
+async function performConversationSearch(query) {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    state.conversationSearchResults = null;
+    state.conversationSearchLastSent = "";
+    setConversationSearchLoading(false);
+    renderConversationList();
+    return;
+  }
+  if (trimmed === state.conversationSearchLastSent) {
+    setConversationSearchLoading(false);
+    return;
+  }
+
+  if (conversationSearchController) {
+    conversationSearchController.abort();
+  }
+  conversationSearchController = new AbortController();
+  setConversationSearchLoading(true);
+  state.conversationSearchResults = null;
+  renderConversationList();
+
+  try {
+    const results = await api(
+      `/api/conversations/search?query=${encodeURIComponent(trimmed)}`,
+      { signal: conversationSearchController.signal },
+    );
+    if (state.conversationSearch.trim() === trimmed) {
+      state.conversationSearchResults = Array.isArray(results) ? results : [];
+      state.conversationSearchLastSent = trimmed;
+    }
+  } catch (err) {
+    if (err?.name !== "AbortError") {
+      console.error("Conversation search failed:", err);
+      state.conversationSearchResults = [];
+    }
+  } finally {
+    if (state.conversationSearch.trim() === trimmed) {
+      setConversationSearchLoading(false);
+      renderConversationList();
+    }
+  }
 }
 
 function formatJson(value) {
@@ -817,7 +896,11 @@ function highlightCodes(scope) {
 async function loadConversations() {
   const data = await api("/api/conversations");
   mergeConversations(data);
-  renderConversationList();
+  if (getConversationSearchTerm()) {
+    await performConversationSearch(state.conversationSearch);
+  } else {
+    renderConversationList();
+  }
   const hasActiveConv = state.activeConversationId &&
     data.some(c => String(c.id) === String(state.activeConversationId));
   if (!hasActiveConv && data.length > 0) {
@@ -2017,6 +2100,54 @@ function bindEvents() {
       hideAutocomplete();
     }
   });
+  const conversationSearch = document.getElementById("conversation-search");
+  if (conversationSearch) {
+    conversationSearch.addEventListener("input", (e) => {
+      state.conversationSearch = e.target.value;
+      if (conversationSearchTimer) clearTimeout(conversationSearchTimer);
+      const term = state.conversationSearch;
+      if (!term.trim()) {
+        if (conversationSearchController) conversationSearchController.abort();
+        state.conversationSearchResults = null;
+        state.conversationSearchLastSent = "";
+        setConversationSearchLoading(false);
+        renderConversationList();
+        return;
+      }
+      setConversationSearchLoading(true);
+      state.conversationSearchResults = null;
+      renderConversationList();
+      conversationSearchTimer = setTimeout(() => {
+        performConversationSearch(term);
+      }, 350);
+    });
+    conversationSearch.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        conversationSearch.value = "";
+        state.conversationSearch = "";
+        if (conversationSearchTimer) clearTimeout(conversationSearchTimer);
+        if (conversationSearchController) conversationSearchController.abort();
+        state.conversationSearchResults = null;
+        state.conversationSearchLastSent = "";
+        setConversationSearchLoading(false);
+        renderConversationList();
+      }
+    });
+    const searchClear = document.getElementById("conversation-search-clear");
+    if (searchClear) {
+      searchClear.addEventListener("click", () => {
+        conversationSearch.value = "";
+        state.conversationSearch = "";
+        if (conversationSearchTimer) clearTimeout(conversationSearchTimer);
+        if (conversationSearchController) conversationSearchController.abort();
+        state.conversationSearchResults = null;
+        state.conversationSearchLastSent = "";
+        setConversationSearchLoading(false);
+        renderConversationList();
+        conversationSearch.focus();
+      });
+    }
+  }
   document.getElementById("new-conversation").addEventListener("click", createConversation);
   const todoToggle = document.getElementById("todo-toggle");
   if (todoToggle) {

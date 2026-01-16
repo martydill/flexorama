@@ -690,6 +690,7 @@ pub async fn launch_web_ui(state: WebState, port: u16) -> Result<()> {
         .route("/app.js", get(serve_app_js))
         .route("/api/health", get(health))
         .route("/api/conversations", get(list_conversations))
+        .route("/api/conversations/search", get(search_conversations))
         .route("/api/conversations/:id", get(get_conversation))
         .route("/api/models", get(get_models))
         .route("/api/plans", get(list_plans))
@@ -756,33 +757,7 @@ async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse 
     match result {
         Ok(conversations) => {
             eprintln!("DEBUG: list_conversations found {} conversations", conversations.len());
-            let mut items = Vec::new();
-            for conversation in conversations {
-                eprintln!("DEBUG: Processing conversation {}", conversation.id);
-                let messages = db
-                    .get_conversation_messages(&conversation.id)
-                    .await
-                    .unwrap_or_default();
-                eprintln!("DEBUG: Conversation {} has {} messages", conversation.id, messages.len());
-                let first_user = messages
-                    .iter()
-                    .find(|m| m.role == "user")
-                    .map(|m| m.content.clone());
-                let last_message =
-                    first_user.or_else(|| messages.last().map(|m| m.content.clone()));
-                let item = ConversationListItem {
-                    id: conversation.id.clone(),
-                    created_at: conversation.created_at.to_rfc3339(),
-                    updated_at: conversation.updated_at.to_rfc3339(),
-                    model: conversation.model.clone(),
-                    subagent: conversation.subagent.clone(),
-                    total_tokens: conversation.total_tokens,
-                    request_count: conversation.request_count,
-                    last_message,
-                    message_count: messages.len(),
-                };
-                items.push(item);
-            }
+            let items = build_conversation_list_items(db.as_ref(), conversations).await;
             eprintln!("DEBUG: Returning {} conversation items", items.len());
             Json(items).into_response()
         }
@@ -792,6 +767,74 @@ async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse 
         )
             .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct ConversationSearchQuery {
+    query: Option<String>,
+}
+
+async fn search_conversations(
+    State(state): State<WebState>,
+    Query(query): Query<ConversationSearchQuery>,
+) -> impl IntoResponse {
+    let search_term = query.query.unwrap_or_default();
+    let trimmed = search_term.trim();
+    if trimmed.is_empty() {
+        return Json(Vec::<ConversationListItem>::new()).into_response();
+    }
+
+    let db = state.database.clone();
+    let result = db.get_recent_conversations(100, Some(trimmed)).await;
+
+    match result {
+        Ok(conversations) => {
+            eprintln!(
+                "DEBUG: search_conversations found {} conversations",
+                conversations.len()
+            );
+            let items = build_conversation_list_items(db.as_ref(), conversations).await;
+            Json(items).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to search conversations: {}", e),
+        )
+            .into_response(),
+    }
+}
+
+async fn build_conversation_list_items(
+    db: &DatabaseManager,
+    conversations: Vec<Conversation>,
+) -> Vec<ConversationListItem> {
+    let mut items = Vec::new();
+    for conversation in conversations {
+        eprintln!("DEBUG: Processing conversation {}", conversation.id);
+        let messages = db
+            .get_conversation_messages(&conversation.id)
+            .await
+            .unwrap_or_default();
+        eprintln!("DEBUG: Conversation {} has {} messages", conversation.id, messages.len());
+        let first_user = messages
+            .iter()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone());
+        let last_message = first_user.or_else(|| messages.last().map(|m| m.content.clone()));
+        let item = ConversationListItem {
+            id: conversation.id.clone(),
+            created_at: conversation.created_at.to_rfc3339(),
+            updated_at: conversation.updated_at.to_rfc3339(),
+            model: conversation.model.clone(),
+            subagent: conversation.subagent.clone(),
+            total_tokens: conversation.total_tokens,
+            request_count: conversation.request_count,
+            last_message,
+            message_count: messages.len(),
+        };
+        items.push(item);
+    }
+    items
 }
 
 fn conversation_to_meta(conversation: &Conversation) -> ConversationMeta {
@@ -2782,6 +2825,7 @@ mod tests {
             .route("/api/models", get(get_models).post(set_model))
             .route("/api/plan-mode", get(get_plan_mode).post(set_plan_mode))
             .route("/api/conversations", get(list_conversations))
+            .route("/api/conversations/search", get(search_conversations))
             .route("/api/conversations/:id", get(get_conversation))
             .route("/api/plans", get(list_plans).post(create_plan))
             .route("/api/permissions/pending", get(list_pending_permissions))
@@ -3119,6 +3163,44 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["message_count"], 1);
         assert_eq!(items[0]["last_message"], "Hello");
+    }
+
+    #[tokio::test]
+    async fn test_search_conversations_endpoint() {
+        let state = build_test_state().await;
+        let matching_id = state
+            .database
+            .create_conversation(None, "test-model", None)
+            .await
+            .expect("create conversation");
+        state
+            .database
+            .add_message(&matching_id, "user", "Hello alpha", "test-model", 1)
+            .await
+            .expect("add message");
+
+        let other_id = state
+            .database
+            .create_conversation(None, "test-model", None)
+            .await
+            .expect("create conversation");
+        state
+            .database
+            .add_message(&other_id, "user", "Beta message", "test-model", 1)
+            .await
+            .expect("add message");
+
+        let router = build_test_router(state);
+        let request = axum::http::Request::builder()
+            .uri("/api/conversations/search?query=alpha")
+            .method("GET")
+            .body(Body::empty())
+            .expect("build request");
+        let (status, body) = json_response(&router, request).await;
+        assert_eq!(status, StatusCode::OK);
+        let items = body.as_array().expect("expected list");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["last_message"], "Hello alpha");
     }
 
     #[tokio::test]

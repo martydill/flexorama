@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💰 Expense Tracker</h1>
+            <p class="subtitle">Track your spending, take control of your finances</p>
+        </header>
+
+        <!-- Summary Cards -->
+        <section class="summary-section">
+            <div class="summary-card total">
+                <h3>Total Expenses</h3>
+                <p class="amount" id="totalAmount">$0.00</p>
+            </div>
+            <div class="summary-card transactions">
+                <h3>Total Transactions</h3>
+                <p class="count" id="totalTransactions">0</p>
+            </div>
+        </section>
+
+        <!-- Add Expense Form -->
+        <section class="form-section">
+            <h2>Add New Expense</h2>
+            <form id="expenseForm">
+                <div class="form-group">
+                    <label for="amount">Amount *</label>
+                    <input type="number" id="amount" step="0.01" min="0" required placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                    <label for="category">Category *</label>
+                    <select id="category" required>
+                        <option value="">Select category</option>
+                        <option value="Food & Dining">🍔 Food & Dining</option>
+                        <option value="Transportation">🚗 Transportation</option>
+                        <option value="Shopping">🛍️ Shopping</option>
+                        <option value="Entertainment">🎬 Entertainment</option>
+                        <option value="Bills & Utilities">💡 Bills & Utilities</option>
+                        <option value="Healthcare">🏥 Healthcare</option>
+                        <option value="Education">📚 Education</option>
+                        <option value="Other">📦 Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <input type="text" id="description" placeholder="What was this expense for?">
+                </div>
+
+                <div class="form-group">
+                    <label for="date">Date *</label>
+                    <input type="date" id="date" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Add Expense</button>
+            </form>
+        </section>
+
+        <!-- Category Breakdown -->
+        <section class="categories-section">
+            <h2>Spending by Category</h2>
+            <div id="categoryBreakdown" class="category-list">
+                <p class="empty-state">No expenses yet. Add your first expense above!</p>
+            </div>
+        </section>
+
+        <!-- Expenses List -->
+        <section class="expenses-section">
+            <h2>Recent Expenses</h2>
+            <div id="expensesList" class="expenses-list">
+                <p class="empty-state">No expenses recorded yet.</p>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
