@@ -88,59 +88,6 @@ impl PrettyDisplay {
             Some(parts.join(" "))
         }
     }
-
-    /// Format the result content with appropriate truncation
-    fn format_result_content(&self, content: &str, is_error: bool) -> Vec<String> {
-        let mut lines = Vec::new();
-        let content_lines: Vec<&str> = content.lines().collect();
-        let total_lines = content_lines.len();
-        let max_display_lines = 3;
-
-        if total_lines == 0 {
-            if is_error {
-                lines.push(format!("│",).dimmed().to_string());
-                lines.push(format!(
-                    "{}   {}",
-                    "|".dimmed(),
-                    "[No error details]".dimmed()
-                ));
-            } else {
-                lines.push(format!("│",).dimmed().to_string());
-                lines.push(format!("{}   {}", "|".dimmed(), "[No output]".dimmed()));
-            }
-        } else {
-            // Display limited lines
-            let display_lines = if total_lines <= max_display_lines {
-                total_lines
-            } else {
-                max_display_lines
-            };
-
-            if is_error {
-                lines.push(format!("{} {}", "|".dimmed(), "Error:".red().bold()));
-                for line in content_lines.iter().take(display_lines) {
-                    lines.push(format!("{}   {}", "|".dimmed(), line.red()));
-                }
-            } else {
-                lines.push(format!("{} {}", "|".dimmed(), "Output:".green().bold()));
-                for line in content_lines.iter().take(display_lines) {
-                    lines.push(format!("{}   {}", "|".dimmed(), line));
-                }
-            }
-
-            // Show truncation indicator if content was limited
-            if total_lines > max_display_lines {
-                let remaining = total_lines - max_display_lines;
-                lines.push(format!(
-                    "{}   {}",
-                    "|".dimmed(),
-                    format!("[... {} more lines omitted]", remaining).dimmed()
-                ));
-            }
-        }
-
-        lines
-    }
 }
 
 impl super::ToolDisplay for PrettyDisplay {
