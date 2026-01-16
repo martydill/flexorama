@@ -9,6 +9,49 @@ use serde_json::Value;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+/// Macro to dispatch method calls to the appropriate provider client
+macro_rules! dispatch_to_provider {
+    ($self:expr, $method:ident, $($arg:expr),*) => {
+        match $self.provider {
+            Provider::Anthropic => {
+                $self.anthropic
+                    .as_ref()
+                    .expect("Anthropic client should be initialized")
+                    .$method($($arg),*)
+                    .await
+            }
+            Provider::Gemini => {
+                $self.gemini
+                    .as_ref()
+                    .expect("Gemini client should be initialized")
+                    .$method($($arg),*)
+                    .await
+            }
+            Provider::OpenAI => {
+                $self.openai
+                    .as_ref()
+                    .expect("OpenAI client should be initialized")
+                    .$method($($arg),*)
+                    .await
+            }
+            Provider::Zai => {
+                $self.anthropic
+                    .as_ref()
+                    .expect("Z.ai client should be initialized")
+                    .$method($($arg),*)
+                    .await
+            }
+            Provider::Ollama => {
+                $self.ollama
+                    .as_ref()
+                    .expect("Ollama client should be initialized")
+                    .$method($($arg),*)
+                    .await
+            }
+        }
+    };
+}
+
 pub type LlmResponse = AnthropicResponse;
 
 pub struct LlmClient {
@@ -90,83 +133,17 @@ impl LlmClient {
         system_prompt: Option<&String>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<LlmResponse> {
-        match self.provider {
-            Provider::Anthropic => {
-                self.anthropic
-                    .as_ref()
-                    .expect("Anthropic client should be initialized")
-                    .create_message(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::Gemini => {
-                self.gemini
-                    .as_ref()
-                    .expect("Gemini client should be initialized")
-                    .create_message(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::OpenAI => {
-                self.openai
-                    .as_ref()
-                    .expect("OpenAI client should be initialized")
-                    .create_message(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::Zai => {
-                self.anthropic
-                    .as_ref()
-                    .expect("Z.ai client should be initialized")
-                    .create_message(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::Ollama => {
-                self.ollama
-                    .as_ref()
-                    .expect("Ollama client should be initialized")
-                    .create_message(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-        }
+        dispatch_to_provider!(
+            self,
+            create_message,
+            model,
+            messages,
+            tools,
+            max_tokens,
+            temperature,
+            system_prompt,
+            cancellation_flag
+        )
     }
 
     pub async fn create_message_stream(
@@ -180,88 +157,18 @@ impl LlmClient {
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<LlmResponse> {
-        match self.provider {
-            Provider::Anthropic => {
-                self.anthropic
-                    .as_ref()
-                    .expect("Anthropic client should be initialized")
-                    .create_message_stream(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        on_content,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::Gemini => {
-                self.gemini
-                    .as_ref()
-                    .expect("Gemini client should be initialized")
-                    .create_message_stream(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        on_content,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::OpenAI => {
-                self.openai
-                    .as_ref()
-                    .expect("OpenAI client should be initialized")
-                    .create_message_stream(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        on_content,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::Zai => {
-                self.anthropic
-                    .as_ref()
-                    .expect("Z.ai client should be initialized")
-                    .create_message_stream(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        on_content,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-            Provider::Ollama => {
-                self.ollama
-                    .as_ref()
-                    .expect("Ollama client should be initialized")
-                    .create_message_stream(
-                        model,
-                        messages,
-                        tools,
-                        max_tokens,
-                        temperature,
-                        system_prompt,
-                        on_content,
-                        cancellation_flag,
-                    )
-                    .await
-            }
-        }
+        dispatch_to_provider!(
+            self,
+            create_message_stream,
+            model,
+            messages,
+            tools,
+            max_tokens,
+            temperature,
+            system_prompt,
+            on_content,
+            cancellation_flag
+        )
     }
 
     pub fn convert_tool_calls(&self, content_blocks: &[ContentBlock]) -> Vec<ToolCall> {

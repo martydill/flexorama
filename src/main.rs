@@ -362,14 +362,14 @@ async fn run_web_mode(
     Ok(())
 }
 
-/// Run single message mode
-async fn run_single_message_mode(
-    message: String,
+/// Helper function to process and format a message with optional streaming
+async fn run_message_with_formatting(
+    message: &str,
     agent: &mut Agent,
     formatter: &formatter::CodeFormatter,
     stream: bool,
 ) -> Result<()> {
-    let highlighted_message = formatter.format_input_with_file_highlighting(&message);
+    let highlighted_message = formatter.format_input_with_file_highlighting(message);
     app_println!("> {}", highlighted_message);
 
     let cancellation_flag = Arc::new(AtomicBool::new(false));
@@ -378,7 +378,7 @@ async fn run_single_message_mode(
         let (streaming_state, stream_callback) = create_streaming_renderer(formatter);
         let response = agent
             .process_message_with_stream(
-                &message,
+                message,
                 Some(Arc::clone(&stream_callback)),
                 None,
                 cancellation_flag,
@@ -392,13 +392,23 @@ async fn run_single_message_mode(
         response?;
     } else {
         let spinner = create_spinner();
-        let response = agent.process_message(&message, cancellation_flag).await?;
+        let response = agent.process_message(message, cancellation_flag).await?;
         spinner.finish_and_clear();
         formatter.print_formatted(&response)?;
     }
 
     print_usage_stats(agent);
     Ok(())
+}
+
+/// Run single message mode
+async fn run_single_message_mode(
+    message: String,
+    agent: &mut Agent,
+    formatter: &formatter::CodeFormatter,
+    stream: bool,
+) -> Result<()> {
+    run_message_with_formatting(&message, agent, formatter, stream).await
 }
 
 /// Run non-interactive mode (read from stdin)
@@ -411,38 +421,7 @@ async fn run_non_interactive_mode(
     io::stdin().read_to_string(&mut input)?;
     let trimmed_input = input.trim();
 
-    let highlighted_input = formatter.format_input_with_file_highlighting(trimmed_input);
-    app_println!("> {}", highlighted_input);
-
-    let cancellation_flag = Arc::new(AtomicBool::new(false));
-
-    if stream {
-        let (streaming_state, stream_callback) = create_streaming_renderer(formatter);
-        let response = agent
-            .process_message_with_stream(
-                trimmed_input,
-                Some(Arc::clone(&stream_callback)),
-                None,
-                cancellation_flag,
-            )
-            .await;
-        if let Ok(mut renderer) = streaming_state.lock() {
-            if let Err(e) = renderer.finish() {
-                app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);
-            }
-        }
-        response?;
-    } else {
-        let spinner = create_spinner();
-        let response = agent
-            .process_message(trimmed_input, cancellation_flag)
-            .await?;
-        spinner.finish_and_clear();
-        formatter.print_formatted(&response)?;
-    }
-
-    print_usage_stats(agent);
-    Ok(())
+    run_message_with_formatting(trimmed_input, agent, formatter, stream).await
 }
 
 /// Run interactive mode
