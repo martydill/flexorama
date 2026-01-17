@@ -1061,9 +1061,15 @@ async function sendMessageOnce(text) {
       body: { message: text },
     });
     appendMessage("assistant", result.response || "(empty response)");
-    setStatus("Ready");
-    await loadTodos();
-    await loadConversations();
+    
+    try {
+      setStatus("Ready");
+      await loadTodos();
+      await loadConversations();
+    } catch (refreshErr) {
+      console.error("Failed to refresh chat:", refreshErr);
+      setStatus("Error refreshing chat");
+    }
   } catch (err) {
     appendMessage("assistant", `Error: ${err.message}`);
     setStatus("Error");
@@ -1170,12 +1176,21 @@ async function sendMessageStreaming(text) {
 
     // Refresh conversation from backend to ensure UI matches persisted state
     // This is necessary so messages persist when switching between conversations
-    setStatus("Refreshing chat...");
-    await selectConversation(state.activeConversationId);
-    await loadConversations();
-    setStatus("Ready");
+    try {
+      setStatus("Refreshing chat...");
+      await selectConversation(state.activeConversationId);
+      await loadConversations();
+      setStatus("Ready");
+    } catch (refreshErr) {
+      console.error("Failed to refresh chat:", refreshErr);
+      setStatus("Error refreshing chat");
+    }
   } catch (err) {
-    updateBubbleContent(bubble, `Error: ${err.message}`);
+    if (currentText) {
+      updateBubbleContent(bubble, currentText + `\n\n**Error:** ${err.message}`);
+    } else {
+      updateBubbleContent(bubble, `Error: ${err.message}`);
+    }
     setStatus("Error");
   } finally {
     if (poller) poller.stopped = true;
