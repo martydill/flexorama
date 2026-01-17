@@ -752,6 +752,17 @@ impl DatabaseManager {
         limit: i64,
         search_filter: Option<&str>,
     ) -> Result<Vec<Conversation>> {
+        self.get_recent_conversations_with_offset(limit, 0, search_filter)
+            .await
+    }
+
+    /// Get recent conversations with pagination support
+    pub async fn get_recent_conversations_with_offset(
+        &self,
+        limit: i64,
+        offset: i64,
+        search_filter: Option<&str>,
+    ) -> Result<Vec<Conversation>> {
         // Base query is shared with /resume; optional filter narrows by message content
         let mut query = String::from(
             r#"
@@ -770,7 +781,7 @@ impl DatabaseManager {
             r#"
             )
             ORDER BY updated_at DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             "#,
         );
 
@@ -782,6 +793,7 @@ impl DatabaseManager {
         }
 
         sql = sql.bind(limit);
+        sql = sql.bind(offset);
 
         let rows = sql.fetch_all(&self.pool).await?;
 
@@ -1126,6 +1138,14 @@ pub fn get_database_path() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    async fn create_test_db() -> Result<(DatabaseManager, TempDir)> {
+        let temp_dir = TempDir::new()?;
+        let db_path = temp_dir.path().join("test.db");
+        let db = DatabaseManager::new(db_path).await?;
+        Ok((db, temp_dir))
+    }
 
     #[test]
     fn test_create_slug_from_path() {
@@ -1157,5 +1177,165 @@ mod tests {
         let long_path = "/".to_string() + &"a".repeat(200);
         let slug = create_slug_from_path(&long_path);
         assert!(slug.len() <= 100);
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_conversations_with_pagination() {
+        // Create test database
+        let (db, _temp_dir) = create_test_db().await.unwrap();
+
+        // Create multiple conversations with messages
+        for i in 0..25 {
+            let conv_id = db
+                .create_conversation(
+                    Some(format!("System prompt {}", i)),
+                    "gpt-4",
+                    None,
+                )
+                .await
+                .unwrap();
+
+            // Add a message to each conversation so they appear in recent conversations
+            db.add_message(&conv_id, "user", &format!("Test message {}", i), "gpt-4", 10)
+                .await
+                .unwrap();
+
+            // Sleep for a millisecond to ensure different updated_at times
+            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        }
+
+        // Test first page (limit 10, offset 0)
+        let page1 = db
+            .get_recent_conversations_with_offset(10, 0, None)
+            .await
+            .unwrap();
+        assert_eq!(page1.len(), 10, "First page should have 10 conversations");
+
+        // Test second page (limit 10, offset 10)
+        let page2 = db
+            .get_recent_conversations_with_offset(10, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(page2.len(), 10, "Second page should have 10 conversations");
+
+        // Test third page (limit 10, offset 20) - only 5 left
+        let page3 = db
+            .get_recent_conversations_with_offset(10, 20, None)
+            .await
+            .unwrap();
+        assert_eq!(page3.len(), 5, "Third page should have 5 conversations");
+
+        // Verify conversations are different across pages
+        let page1_ids: Vec<String> = page1.iter().map(|c| c.id.clone()).collect();
+        let page2_ids: Vec<String> = page2.iter().map(|c| c.id.clone()).collect();
+
+        // Ensure no overlap between pages
+        for id in &page1_ids {
+            assert!(
+                !page2_ids.contains(id),
+                "Page 1 and Page 2 should not have overlapping conversations"
+            );
+        }
+
+        // Test that offset beyond available data returns empty
+        let page4 = db
+            .get_recent_conversations_with_offset(10, 30, None)
+            .await
+            .unwrap();
+        assert_eq!(page4.len(), 0, "Page beyond available data should be empty");
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_conversations_backwards_compatibility() {
+        // Create test database
+        let (db, _temp_dir) = create_test_db().await.unwrap();
+
+        // Create 15 conversations with messages
+        for i in 0..15 {
+            let conv_id = db
+                .create_conversation(Some(format!("System prompt {}", i)), "gpt-4", None)
+                .await
+                .unwrap();
+
+            db.add_message(&conv_id, "user", &format!("Test message {}", i), "gpt-4", 10)
+                .await
+                .unwrap();
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        }
+
+        // Test that the old method still works (should call new method with offset 0)
+        let conversations = db
+            .get_recent_conversations(10, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            conversations.len(),
+            10,
+            "Old method should return 10 conversations (first page)"
+        );
+
+        // Verify it returns the same as calling with offset 0
+        let conversations_with_offset = db
+            .get_recent_conversations_with_offset(10, 0, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            conversations.len(),
+            conversations_with_offset.len(),
+            "Old method should behave the same as new method with offset 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pagination_with_search_filter() {
+        // Create test database
+        let (db, _temp_dir) = create_test_db().await.unwrap();
+
+        // Create conversations with different messages
+        for i in 0..20 {
+            let conv_id = db
+                .create_conversation(Some(format!("System prompt {}", i)), "gpt-4", None)
+                .await
+                .unwrap();
+
+            let message = if i % 2 == 0 {
+                format!("Special message {}", i)
+            } else {
+                format!("Regular message {}", i)
+            };
+
+            db.add_message(&conv_id, "user", &message, "gpt-4", 10)
+                .await
+                .unwrap();
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        }
+
+        // Test pagination with search filter
+        let page1 = db
+            .get_recent_conversations_with_offset(5, 0, Some("Special"))
+            .await
+            .unwrap();
+
+        // Should find 10 conversations with "Special" in messages, but only return 5
+        assert_eq!(page1.len(), 5, "First page with filter should have 5 conversations");
+
+        let page2 = db
+            .get_recent_conversations_with_offset(5, 5, Some("Special"))
+            .await
+            .unwrap();
+
+        assert_eq!(page2.len(), 5, "Second page with filter should have 5 conversations");
+
+        // Third page should be empty (only 10 "Special" messages total)
+        let page3 = db
+            .get_recent_conversations_with_offset(5, 10, Some("Special"))
+            .await
+            .unwrap();
+
+        assert_eq!(page3.len(), 0, "Third page with filter should be empty");
     }
 }
