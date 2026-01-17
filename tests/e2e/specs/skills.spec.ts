@@ -9,7 +9,13 @@ test.describe('Skills', () => {
         await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
-        await route.fulfill({ json: [] });
+        const url = new URL(route.request().url());
+        // Only handle list requests with query params
+        if (url.search) {
+            await route.fulfill({ json: [] });
+        } else {
+            await route.continue();
+        }
     });
      await page.route('/api/skills/active', async route => {
         await route.fulfill({ json: [] });

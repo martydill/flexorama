@@ -10,7 +10,13 @@ test.describe('Plans', () => {
       await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
-      await route.fulfill({ json: [] });
+      const url = new URL(route.request().url());
+      // Only handle list requests with query params
+      if (url.search) {
+        await route.fulfill({ json: [] });
+      } else {
+        await route.continue();
+      }
     });
   });
 
@@ -106,7 +112,13 @@ test.describe('Plans', () => {
 
     // Mock conversation list
     await page.route('/api/conversations', async route => {
-      await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
+      const url = new URL(route.request().url());
+      // Only handle list requests with query params
+      if (url.search) {
+        await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
+      } else {
+        await route.continue();
+      }
     });
     
     // Mock pending permissions
