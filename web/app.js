@@ -106,6 +106,12 @@ const state = {
   conversationSearchResults: null,
   conversationSearchLoading: false,
   conversationSearchLastSent: "",
+  conversationPagination: {
+    offset: 0,
+    limit: 10,
+    hasMore: true,
+    isLoadingMore: false,
+  },
   csrfToken: null,
 };
 
@@ -268,7 +274,7 @@ function renderConversationList() {
   }
   const filtered = query ? state.conversationSearchResults || [] : state.conversations;
 
-  if (filtered.length === 0) {
+  if (filtered.length === 0 && !state.conversationPagination.isLoadingMore) {
     const empty = document.createElement("div");
     empty.className = "list-item empty";
     empty.textContent = query ? "No conversations match your search." : "No conversations yet.";
@@ -287,6 +293,20 @@ function renderConversationList() {
     item.addEventListener("click", () => selectConversation(conv.id));
     list.appendChild(item);
   });
+
+  // Add loading spinner at the bottom if loading more or if there are more to load
+  if (!query && (state.conversationPagination.isLoadingMore || state.conversationPagination.hasMore)) {
+    const spinner = document.createElement("div");
+    spinner.className = "list-item empty";
+    spinner.id = "conversation-load-more-spinner";
+    if (state.conversationPagination.isLoadingMore) {
+      spinner.innerHTML = `<div class="loading-spinner"></div>`;
+    } else {
+      spinner.textContent = "Scroll to load more...";
+      spinner.style.opacity = "0.6";
+    }
+    list.appendChild(spinner);
+  }
 }
 
 async function performConversationSearch(query) {
@@ -926,8 +946,22 @@ function highlightCodes(scope) {
 }
 
 async function loadConversations() {
-  const data = await api("/api/conversations");
+  // Reset pagination state when loading conversations
+  state.conversationPagination = {
+    offset: 0,
+    limit: 10,
+    hasMore: true,
+    isLoadingMore: false,
+  };
+  state.conversations = [];
+
+  const data = await api(`/api/conversations?limit=${state.conversationPagination.limit}&offset=0`);
   mergeConversations(data);
+
+  // Update pagination state
+  state.conversationPagination.offset = data.length;
+  state.conversationPagination.hasMore = data.length === state.conversationPagination.limit;
+
   if (getConversationSearchTerm()) {
     await performConversationSearch(state.conversationSearch);
   } else {
@@ -937,6 +971,31 @@ async function loadConversations() {
     data.some(c => String(c.id) === String(state.activeConversationId));
   if (!hasActiveConv && data.length > 0) {
     await selectConversation(data[0].id);
+  }
+}
+
+async function loadMoreConversations() {
+  if (!state.conversationPagination.hasMore || state.conversationPagination.isLoadingMore) {
+    return;
+  }
+
+  state.conversationPagination.isLoadingMore = true;
+  renderConversationList();
+
+  try {
+    const data = await api(
+      `/api/conversations?limit=${state.conversationPagination.limit}&offset=${state.conversationPagination.offset}`
+    );
+    mergeConversations(data);
+
+    // Update pagination state
+    state.conversationPagination.offset += data.length;
+    state.conversationPagination.hasMore = data.length === state.conversationPagination.limit;
+  } catch (err) {
+    console.error("Failed to load more conversations:", err);
+  } finally {
+    state.conversationPagination.isLoadingMore = false;
+    renderConversationList();
   }
 }
 
@@ -2181,6 +2240,23 @@ function bindEvents() {
     }
   }
   document.getElementById("new-conversation").addEventListener("click", createConversation);
+
+  // Add scroll detection for lazy loading conversations
+  const conversationList = document.getElementById("conversation-list");
+  if (conversationList) {
+    conversationList.addEventListener("scroll", () => {
+      // Check if user has scrolled near the bottom
+      const scrollHeight = conversationList.scrollHeight;
+      const scrollTop = conversationList.scrollTop;
+      const clientHeight = conversationList.clientHeight;
+      const scrolledToBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+      if (scrolledToBottom && !getConversationSearchTerm()) {
+        loadMoreConversations();
+      }
+    });
+  }
+
   const todoToggle = document.getElementById("todo-toggle");
   if (todoToggle) {
     todoToggle.addEventListener("click", () => {

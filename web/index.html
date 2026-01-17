@@ -376,6 +376,19 @@
       from { transform: translateY(-50%) rotate(0deg); }
       to { transform: translateY(-50%) rotate(360deg); }
     }
+    @keyframes spin-center {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .loading-spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin-center 0.8s linear infinite;
+    }
     .list-item {
       padding: 9px 10px;
       border: none;

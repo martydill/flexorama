@@ -148,4 +148,154 @@ test.describe('Conversations', () => {
     // Check if assistant message appears (streamed)
     await expect(page.locator('.bubble.assistant')).toContainText('Hello World');
   });
+
+  test('should lazy load conversations with pagination', async ({ page }) => {
+    // Create 25 mock conversations to test pagination (default limit is 10)
+    const mockConvsPage1 = Array.from({ length: 10 }, (_, i) => ({
+      id: `${i + 1}`,
+      updated_at: new Date(Date.now() - i * 1000).toISOString(),
+      model: 'gpt-4',
+      request_count: 1,
+      total_tokens: 50,
+      last_message: `Message ${i + 1}`
+    }));
+
+    const mockConvsPage2 = Array.from({ length: 10 }, (_, i) => ({
+      id: `${i + 11}`,
+      updated_at: new Date(Date.now() - (i + 10) * 1000).toISOString(),
+      model: 'gpt-4',
+      request_count: 1,
+      total_tokens: 50,
+      last_message: `Message ${i + 11}`
+    }));
+
+    const mockConvsPage3 = Array.from({ length: 5 }, (_, i) => ({
+      id: `${i + 21}`,
+      updated_at: new Date(Date.now() - (i + 20) * 1000).toISOString(),
+      model: 'gpt-4',
+      request_count: 1,
+      total_tokens: 50,
+      last_message: `Message ${i + 21}`
+    }));
+
+    await page.route('/api/conversations*', async route => {
+      const url = new URL(route.request().url());
+      const offset = parseInt(url.searchParams.get('offset') || '0');
+      const limit = parseInt(url.searchParams.get('limit') || '10');
+
+      if (offset === 0 && limit === 10) {
+        await route.fulfill({ json: mockConvsPage1 });
+      } else if (offset === 10 && limit === 10) {
+        await route.fulfill({ json: mockConvsPage2 });
+      } else if (offset === 20 && limit === 10) {
+        await route.fulfill({ json: mockConvsPage3 });
+      } else {
+        await route.fulfill({ json: [] });
+      }
+    });
+
+    // Mock specific conversation load for the first conversation
+    await page.route('/api/conversations/1', async route => {
+      await route.fulfill({ json: {
+        conversation: mockConvsPage1[0],
+        messages: [{ role: 'user', content: 'Message 1', blocks: [], created_at: new Date().toISOString() }],
+        context_files: []
+      }});
+    });
+
+    await page.goto('/');
+
+    // Should load first 10 conversations
+    await expect(page.locator('#conversation-list .list-item').filter({ hasNotText: 'Scroll to load more' })).toHaveCount(10);
+    await expect(page.locator('#conversation-list .list-item').first()).toContainText('Message 1');
+
+    // Should show "Scroll to load more" indicator
+    await expect(page.locator('#conversation-list #conversation-load-more-spinner')).toContainText('Scroll to load more');
+
+    // Scroll to bottom to trigger loading more
+    await page.evaluate(() => {
+      const list = document.getElementById('conversation-list');
+      if (list) list.scrollTop = list.scrollHeight;
+    });
+
+    // Wait for second page to load
+    await page.waitForTimeout(500);
+
+    // Should now have 20 conversations
+    await expect(page.locator('#conversation-list .list-item').filter({ hasNotText: 'Scroll to load more' })).toHaveCount(20);
+
+    // Scroll again to load the third page
+    await page.evaluate(() => {
+      const list = document.getElementById('conversation-list');
+      if (list) list.scrollTop = list.scrollHeight;
+    });
+
+    // Wait for third page to load
+    await page.waitForTimeout(500);
+
+    // Should now have 25 conversations (all loaded)
+    await expect(page.locator('#conversation-list .list-item').filter({ hasNotText: 'Scroll to load more' })).toHaveCount(25);
+
+    // Should not show "Scroll to load more" when all loaded (hasMore = false)
+    await expect(page.locator('#conversation-list #conversation-load-more-spinner')).not.toBeVisible();
+  });
+
+  test('should show loading spinner while loading more conversations', async ({ page }) => {
+    const mockConvsPage1 = Array.from({ length: 10 }, (_, i) => ({
+      id: `${i + 1}`,
+      updated_at: new Date(Date.now() - i * 1000).toISOString(),
+      model: 'gpt-4',
+      request_count: 1,
+      total_tokens: 50,
+      last_message: `Message ${i + 1}`
+    }));
+
+    let page2Requested = false;
+
+    await page.route('/api/conversations*', async route => {
+      const url = new URL(route.request().url());
+      const offset = parseInt(url.searchParams.get('offset') || '0');
+
+      if (offset === 0) {
+        await route.fulfill({ json: mockConvsPage1 });
+      } else if (offset === 10) {
+        page2Requested = true;
+        // Delay the response to check spinner visibility
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await route.fulfill({ json: [] });
+      }
+    });
+
+    // Mock first conversation
+    await page.route('/api/conversations/1', async route => {
+      await route.fulfill({ json: {
+        conversation: mockConvsPage1[0],
+        messages: [{ role: 'user', content: 'Message 1', blocks: [], created_at: new Date().toISOString() }],
+        context_files: []
+      }});
+    });
+
+    await page.goto('/');
+
+    // Wait for initial load
+    await expect(page.locator('#conversation-list .list-item').filter({ hasNotText: 'Scroll to load more' })).toHaveCount(10);
+
+    // Scroll to bottom to trigger loading more
+    await page.evaluate(() => {
+      const list = document.getElementById('conversation-list');
+      if (list) list.scrollTop = list.scrollHeight;
+    });
+
+    // Wait a bit for the request to be initiated
+    await page.waitForTimeout(100);
+
+    // Should show loading spinner
+    await expect(page.locator('#conversation-load-more-spinner .loading-spinner')).toBeVisible();
+
+    // Wait for loading to complete
+    await page.waitForTimeout(1100);
+
+    // Spinner should be gone
+    await expect(page.locator('#conversation-load-more-spinner')).not.toBeVisible();
+  });
 });

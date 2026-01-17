@@ -750,13 +750,25 @@ async fn health() -> impl IntoResponse {
     Json(HashMap::from([("status", "ok")]))
 }
 
-async fn list_conversations(State(state): State<WebState>) -> impl IntoResponse {
+#[derive(Deserialize)]
+struct ConversationListQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+async fn list_conversations(
+    State(state): State<WebState>,
+    Query(query): Query<ConversationListQuery>,
+) -> impl IntoResponse {
     let db = state.database.clone();
-    let result = db.get_recent_conversations(100, None).await;
+    let limit = query.limit.unwrap_or(10);
+    let offset = query.offset.unwrap_or(0);
+
+    let result = db.get_recent_conversations_with_offset(limit, offset, None).await;
 
     match result {
         Ok(conversations) => {
-            eprintln!("DEBUG: list_conversations found {} conversations", conversations.len());
+            eprintln!("DEBUG: list_conversations found {} conversations (limit={}, offset={})", conversations.len(), limit, offset);
             let items = build_conversation_list_items(db.as_ref(), conversations).await;
             eprintln!("DEBUG: Returning {} conversation items", items.len());
             Json(items).into_response()
