@@ -118,6 +118,10 @@ const state = {
 let conversationSearchTimer = null;
 let conversationSearchController = null;
 
+// Per-conversation streaming state
+// Map of conversationId -> { abortController, reader, messages: [], isStreaming: boolean }
+const conversationStreams = new Map();
+
 function setPlanForm(plan) {
   state.activePlanId = plan.id;
   localStorage.setItem("flexorama-active-plan", String(plan.id));
@@ -285,9 +289,11 @@ function renderConversationList() {
   filtered.forEach((conv) => {
     const item = document.createElement("div");
     const isActive = String(conv.id) === String(state.activeConversationId);
+    const isStreaming = conversationStreams.has(String(conv.id)) && conversationStreams.get(String(conv.id)).isStreaming;
     item.className = "list-item" + (isActive ? " active" : "");
+    const streamingIndicator = isStreaming ? '<span style="color: var(--accent-neon); margin-left: 6px;" title="Streaming">●</span>' : '';
     item.innerHTML = `
-      <div style="font-weight:600;">${conv.last_message ? conv.last_message.slice(0, 50) : "new chat"}</div>
+      <div style="font-weight:600;">${conv.last_message ? conv.last_message.slice(0, 50) : "new chat"}${streamingIndicator}</div>
       <small>${new Date(conv.updated_at).toLocaleString()} • ${conv.model}</small>
     `;
     item.addEventListener("click", () => selectConversation(conv.id));
@@ -1004,6 +1010,43 @@ async function selectConversation(id) {
   localStorage.setItem("flexorama-active-conversation", String(id));
   state.pendingPermissions.clear();
   renderConversationList();
+
+  // Check if this conversation has active streaming
+  const streamState = conversationStreams.get(String(id));
+  if (streamState && streamState.isStreaming) {
+    // Conversation is actively streaming - use cached messages (no API call needed)
+    setStatus("Streaming response...");
+
+    // Restore the cached messages HTML
+    const messagesContainer = document.getElementById("messages");
+    if (messagesContainer && streamState.cachedMessagesHtml !== undefined) {
+      messagesContainer.innerHTML = streamState.cachedMessagesHtml;
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      highlightCodes(messagesContainer);
+    }
+
+    // Create a new bubble for the streaming content and populate with current text
+    const bubble = createEmptyBubble("assistant");
+    if (streamState.currentText) {
+      updateBubbleContent(bubble, streamState.currentText);
+    } else {
+      showTypingIndicator(bubble);
+    }
+
+    // Store the new bubble reference so the streaming loop can update it
+    streamState.activeBubble = bubble;
+
+    const select = document.getElementById("agent-selector");
+    if (select) {
+      select.value = streamState.subagent || "";
+    }
+
+    await loadModels();
+    await loadPendingPermissions();
+    await loadTodos();
+    return;
+  }
+
   setStatus("Loading conversation...");
   const detail = await api(`/api/conversations/${id}`);
   const meta = detail.conversation;
@@ -1079,12 +1122,54 @@ async function sendMessageOnce(text) {
 }
 
 async function sendMessageStreaming(text) {
-  setStatus("Streaming response...");
-  const bubble = createEmptyBubble("assistant");
-  showTypingIndicator(bubble);
+  // Capture the conversation ID at the start - use this throughout the function
+  const conversationId = state.activeConversationId;
+  const convIdStr = String(conversationId);
+
+  // Helper to check if this conversation is currently being viewed
+  const isActiveConversation = () => String(state.activeConversationId) === convIdStr;
+
+  // Capture the current messages HTML before we add the streaming bubble
+  // This allows us to restore the conversation state when switching back without an API call
+  const messagesContainer = document.getElementById("messages");
+  const cachedMessagesHtml = messagesContainer ? messagesContainer.innerHTML : "";
+
+  // Initialize per-conversation streaming state
+  const streamState = {
+    abortController: new AbortController(),
+    reader: null,
+    cachedMessagesHtml, // HTML snapshot of messages before streaming response
+    isStreaming: true,
+    currentText: "",
+    subagent: document.getElementById("agent-selector")?.value || "",
+  };
+
+  conversationStreams.set(convIdStr, streamState);
+
+  // Update conversation list to show streaming indicator
+  renderConversationList();
+
+  if (isActiveConversation()) {
+    setStatus("Streaming response...");
+  }
+
+  // Create initial bubble if this conversation is active
+  if (isActiveConversation()) {
+    const bubble = createEmptyBubble("assistant");
+    showTypingIndicator(bubble);
+    streamState.activeBubble = bubble;
+  }
+
+  // Helper to get the current bubble for this conversation (may change if user switches away and back)
+  const getActiveBubble = () => {
+    if (isActiveConversation() && streamState.activeBubble && document.body.contains(streamState.activeBubble)) {
+      return streamState.activeBubble;
+    }
+    return null;
+  };
+
   let toolBubble = null;
   let buffer = "";
-  let currentText = "";
   const poller = startPermissionPolling();
 
   try {
@@ -1095,10 +1180,11 @@ async function sendMessageStreaming(text) {
       headers["X-CSRF-Token"] = state.csrfToken;
     }
 
-    const res = await fetch(`/api/conversations/${state.activeConversationId}/message/stream`, {
+    const res = await fetch(`/api/conversations/${conversationId}/message/stream`, {
       method: "POST",
       headers: headers,
       body: JSON.stringify({ message: text }),
+      signal: streamState.abortController.signal,
     });
 
     if (!res.ok) {
@@ -1110,7 +1196,9 @@ async function sendMessageStreaming(text) {
     }
 
     const reader = res.body.getReader();
+    streamState.reader = reader;
     const decoder = new TextDecoder();
+
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -1130,70 +1218,107 @@ async function sendMessageStreaming(text) {
         }
 
         if (evt.type === "text" && typeof evt.delta === "string") {
-          currentText += evt.delta;
-          updateBubbleContent(bubble, currentText);
+          streamState.currentText += evt.delta;
+          // Only update UI if this conversation is active
+          const bubble = getActiveBubble();
+          if (bubble) {
+            updateBubbleContent(bubble, streamState.currentText);
+          }
         } else if (evt.type === "final" && typeof evt.content === "string") {
-          currentText = evt.content;
-          updateBubbleContent(bubble, currentText);
+          streamState.currentText = evt.content;
+          const bubble = getActiveBubble();
+          if (bubble) {
+            updateBubbleContent(bubble, streamState.currentText);
+          }
         } else if (evt.type === "tool_call") {
           if (isTodoTool(evt.name)) {
-            await loadTodos();
+            if (isActiveConversation()) {
+              await loadTodos();
+            }
             continue;
           }
-          if (!toolBubble || !document.body.contains(toolBubble)) {
-            toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
-            toolBubble.dataset.toolStream = "true";
+          if (isActiveConversation()) {
+            if (!toolBubble || !document.body.contains(toolBubble)) {
+              toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
+              toolBubble.dataset.toolStream = "true";
+            }
+            updateToolStreamBubble(toolBubble, {
+              type: "tool_use",
+              name: evt.name,
+              id: evt.tool_use_id,
+              input: evt.input,
+            });
           }
-          updateToolStreamBubble(toolBubble, {
-            type: "tool_use",
-            name: evt.name,
-            id: evt.tool_use_id,
-            input: evt.input,
-          });
         } else if (evt.type === "tool_result") {
           if (isTodoTool(evt.name)) {
-            await loadTodos();
+            if (isActiveConversation()) {
+              await loadTodos();
+            }
             continue;
           }
-          if (!toolBubble || !document.body.contains(toolBubble)) {
-            toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
-            toolBubble.dataset.toolStream = "true";
+          if (isActiveConversation()) {
+            if (!toolBubble || !document.body.contains(toolBubble)) {
+              toolBubble = getActiveToolStreamBubble() || createEmptyBubble("assistant");
+              toolBubble.dataset.toolStream = "true";
+            }
+            updateToolStreamBubble(toolBubble, {
+              type: "tool_result",
+              tool_use_id: evt.tool_use_id,
+              content: evt.content,
+              is_error: !!evt.is_error,
+            });
           }
-          updateToolStreamBubble(toolBubble, {
-            type: "tool_result",
-            tool_use_id: evt.tool_use_id,
-            content: evt.content,
-            is_error: !!evt.is_error,
-          });
         } else if (evt.type === "permission_request") {
-          renderPermissionRequest(evt);
+          if (isActiveConversation()) {
+            renderPermissionRequest(evt);
+          }
         } else if (evt.type === "error") {
-          updateBubbleContent(bubble, `Error: ${evt.error || "stream error"}`);
-          setStatus("Error");
+          const bubble = getActiveBubble();
+          if (bubble) {
+            updateBubbleContent(bubble, `Error: ${evt.error || "stream error"}`);
+            setStatus("Error");
+          }
         }
       }
     }
 
-    // Refresh conversation from backend to ensure UI matches persisted state
-    // This is necessary so messages persist when switching between conversations
+    // Streaming complete - refresh conversation
+    streamState.isStreaming = false;
+
     try {
-      setStatus("Refreshing chat...");
-      await selectConversation(state.activeConversationId);
+      if (isActiveConversation()) {
+        setStatus("Refreshing chat...");
+        await selectConversation(conversationId);
+        setStatus("Ready");
+      }
       await loadConversations();
-      setStatus("Ready");
     } catch (refreshErr) {
       console.error("Failed to refresh chat:", refreshErr);
-      setStatus("Error refreshing chat");
+      if (isActiveConversation()) {
+        setStatus("Error refreshing chat");
+      }
     }
   } catch (err) {
-    if (currentText) {
-      updateBubbleContent(bubble, currentText + `\n\n**Error:** ${err.message}`);
-    } else {
-      updateBubbleContent(bubble, `Error: ${err.message}`);
+    streamState.isStreaming = false;
+    if (err.name === "AbortError") {
+      return;
     }
-    setStatus("Error");
+    const bubble = getActiveBubble();
+    if (bubble) {
+      if (streamState.currentText) {
+        updateBubbleContent(bubble, streamState.currentText + `\n\n**Error:** ${err.message}`);
+      } else {
+        updateBubbleContent(bubble, `Error: ${err.message}`);
+      }
+      setStatus("Error");
+    }
   } finally {
     if (poller) poller.stopped = true;
+    // Clean up streaming state for this conversation
+    streamState.isStreaming = false;
+    conversationStreams.delete(convIdStr);
+    // Update conversation list to remove streaming indicator
+    renderConversationList();
   }
 }
 
