@@ -36,9 +36,14 @@ export async function setupAppMock(page: Page) {
   });
 
   // Default API mocks to prevent bootstrap failures
+  // Note: This only matches /api/conversations exactly, not /api/conversations/123
   await page.route('/api/conversations', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: [] });
+    } else {
+      // POST requests should be handled by test-specific mocks
+      await route.fulfill({ status: 404, body: 'Not found' });
+    }
   });
   await page.route('/api/models', async route => {
     await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: ['gpt-4'] } });

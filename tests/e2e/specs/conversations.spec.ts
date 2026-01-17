@@ -44,14 +44,12 @@ test.describe('Conversations', () => {
       }});
     });
 
-    // Mock conversations list with query params
+    // Mock conversations list
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      // Only handle requests with query params (list endpoint)
-      if (url.search && route.request().method() === 'GET') {
+      if (route.request().method() === 'GET') {
         await route.fulfill({ json: mockConvs });
       } else {
-        await route.continue();
+        await route.fulfill({ status: 404, body: 'Not found' });
       }
     });
 
@@ -73,15 +71,14 @@ test.describe('Conversations', () => {
     });
 
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      if (url.search && route.request().method() === 'GET') {
-        // List endpoint with query params
+      if (route.request().method() === 'GET') {
+        // List endpoint
         await route.fulfill({ json: [] });
       } else if (route.request().method() === 'POST') {
         // Create new conversation
         await route.fulfill({ json: { id: 'new-id', model: 'gpt-4' } });
       } else {
-        await route.continue();
+        await route.fulfill({ status: 404, body: 'Not found' });
       }
     });
 
@@ -106,12 +103,10 @@ test.describe('Conversations', () => {
 
      // Mock initial list
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      // Only handle requests with query params (list endpoint)
-      if (url.search && route.request().method() === 'GET') {
+      if (route.request().method() === 'GET') {
         await route.fulfill({ json: [{ id: '1', updated_at: new Date().toISOString(), model: 'gpt-4', request_count: 0, total_tokens: 0, last_message: null }] });
       } else {
-        await route.continue();
+        await route.fulfill({ status: 404, body: 'Not found' });
       }
     });
 
@@ -203,13 +198,12 @@ test.describe('Conversations', () => {
     });
 
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      // Only handle list requests with query params
-      if (!url.search) {
-        await route.continue();
+      if (route.request().method() !== 'GET') {
+        await route.fulfill({ status: 404, body: 'Not found' });
         return;
       }
 
+      const url = new URL(route.request().url());
       const offset = parseInt(url.searchParams.get('offset') || '0');
       const limit = parseInt(url.searchParams.get('limit') || '10');
 
@@ -283,13 +277,12 @@ test.describe('Conversations', () => {
     });
 
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      // Only handle list requests with query params
-      if (!url.search) {
-        await route.continue();
+      if (route.request().method() !== 'GET') {
+        await route.fulfill({ status: 404, body: 'Not found' });
         return;
       }
 
+      const url = new URL(route.request().url());
       const offset = parseInt(url.searchParams.get('offset') || '0');
 
       if (offset === 0) {
@@ -298,6 +291,8 @@ test.describe('Conversations', () => {
         page2Requested = true;
         // Delay the response to check spinner visibility
         await new Promise(resolve => setTimeout(resolve, 1000));
+        await route.fulfill({ json: [] });
+      } else {
         await route.fulfill({ json: [] });
       }
     });

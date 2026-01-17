@@ -10,12 +10,10 @@ test.describe('Plans', () => {
       await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      // Only handle list requests with query params
-      if (url.search) {
+      if (route.request().method() === 'GET') {
         await route.fulfill({ json: [] });
       } else {
-        await route.continue();
+        await route.fulfill({ status: 404, body: 'Not found' });
       }
     });
   });
@@ -112,12 +110,10 @@ test.describe('Plans', () => {
 
     // Mock conversation list
     await page.route('/api/conversations', async route => {
-      const url = new URL(route.request().url());
-      // Only handle list requests with query params
-      if (url.search) {
+      if (route.request().method() === 'GET') {
         await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
       } else {
-        await route.continue();
+        await route.fulfill({ status: 404, body: 'Not found' });
       }
     });
     

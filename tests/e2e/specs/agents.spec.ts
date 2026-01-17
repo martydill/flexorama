@@ -9,12 +9,10 @@ test.describe('Agents', () => {
         await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
-        const url = new URL(route.request().url());
-        // Only handle list requests with query params
-        if (url.search) {
+        if (route.request().method() === 'GET') {
             await route.fulfill({ json: [] });
         } else {
-            await route.continue();
+            await route.fulfill({ status: 404, body: 'Not found' });
         }
     });
      await page.route('/api/agents/active', async route => {
