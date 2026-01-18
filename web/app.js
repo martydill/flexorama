@@ -793,7 +793,7 @@ function summarizeToolInput(name, input) {
 
 function checkAndAppendPlanButton(bubble, text) {
   const match = /_Plan saved with ID: `(.*?)`\._/.exec(text);
-  if (!match || !state.planMode) return;
+  if (!match) return;
   if (bubble.querySelector(".plan-message-actions")) return;
   const planId = match[1];
   const actions = document.createElement("div");
@@ -813,6 +813,13 @@ function checkAndAppendPlanButton(bubble, text) {
     }
   });
 
+  actions.append(editButton);
+
+  if (!state.planMode) {
+    bubble.appendChild(actions);
+    return;
+  }
+
   const executeButton = document.createElement("button");
   executeButton.className = "secondary";
   executeButton.textContent = "Execute Plan";
@@ -827,7 +834,7 @@ function checkAndAppendPlanButton(bubble, text) {
     await executeSavedPlan(planId, { newChat: true });
   });
 
-  actions.append(editButton, executeButton, executeNewChatButton);
+  actions.append(executeButton, executeNewChatButton);
   bubble.appendChild(actions);
 }
 
