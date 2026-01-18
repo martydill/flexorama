@@ -1462,6 +1462,45 @@ async function deletePlan() {
   selectFirstPlan();
 }
 
+async function executePlan() {
+  if (!state.activePlanId) return;
+
+  const planMarkdown = document.getElementById("plan-markdown").value;
+  const planTitle = document.getElementById("plan-title").value || "Untitled plan";
+
+  // Create a new conversation
+  setStatus("Creating conversation for plan execution...");
+  const res = await api("/api/conversations", { method: "POST", body: {} });
+  const newId = res.id;
+
+  const placeholder = {
+    id: newId,
+    last_message: null,
+    updated_at: new Date().toISOString(),
+    model: res.model || state.activeModel || state.conversations[0]?.model || "unknown",
+    created_at: new Date().toISOString(),
+  };
+  state.activeConversationId = newId;
+  localStorage.setItem("flexorama-active-conversation", String(newId));
+  mergeConversations([placeholder]);
+  renderConversationList();
+
+  // Switch to chats tab
+  const tabBtn = document.querySelector('.top-tab[data-tab="chats"]');
+  if (tabBtn) tabBtn.click();
+
+  // Select the new conversation and wait for it to load
+  await selectConversation(newId);
+
+  // Send the plan as the initial message
+  const message = `Execute the following plan (${planTitle}):\n\n${planMarkdown}`;
+  const input = document.getElementById("message-input");
+  if (input) {
+    input.value = message;
+    await sendMessage();
+  }
+}
+
 // MCP
 async function loadMcp() {
   state.mcpServers = await api("/api/mcp/servers");
@@ -2411,6 +2450,7 @@ function bindEvents() {
   if (createPlanBtn) createPlanBtn.addEventListener("click", createPlan);
   document.getElementById("create-plan-sidebar").addEventListener("click", createPlan);
   document.getElementById("delete-plan").addEventListener("click", deletePlan);
+  document.getElementById("execute-plan").addEventListener("click", executePlan);
 
   document.getElementById("new-mcp").addEventListener("click", resetMcpForm);
   document.getElementById("save-mcp-detail").addEventListener("click", saveMcpServer);
