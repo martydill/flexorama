@@ -49,27 +49,42 @@ export async function setupAppMock(page: Page) {
     await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: ['gpt-4'] } });
   });
   await page.route('/api/plans', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: [] });
+    } else {
+      await route.fulfill({ status: 404, body: 'Not found' });
+    }
   });
   await page.route('/api/mcp/servers', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: [] });
+    } else {
+      await route.fulfill({ status: 404, body: 'Not found' });
+    }
   });
   await page.route('/api/agents', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: [] });
+    } else {
+      await route.fulfill({ status: 404, body: 'Not found' });
+    }
   });
   await page.route('/api/agents/active', async route => {
     await route.fulfill({ json: { active: null } });
   });
   await page.route('/api/skills', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: [] });
+    } else {
+      await route.fulfill({ status: 404, body: 'Not found' });
+    }
   });
   await page.route('/api/commands', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: [] });
+    } else {
+      await route.fulfill({ status: 404, body: 'Not found' });
+    }
   });
   await page.route('/api/plan-mode', async route => {
     await route.fulfill({ json: { enabled: false } });
