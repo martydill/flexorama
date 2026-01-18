@@ -4,27 +4,43 @@ import { setupAppMock } from '../lib/mocks';
 test.describe('Conversations', () => {
   test.beforeEach(async ({ page }) => {
     await setupAppMock(page);
-    
+
     // Mock models
     await page.route('/api/models', async route => {
       await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: ['gpt-4', 'claude-3'] } });
+    });
+
+    // Mock conversations
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: [] });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
     });
 
     // Mock agents
     await page.route('/api/agents', async route => {
       await route.fulfill({ json: [] });
     });
-    await page.route('/api/agents/active', async route => {
-      await route.fulfill({ json: { active: null } });
-    });
 
-    // Mock todos
-    await page.route('/api/todos*', async route => {
+    // Mock plans
+    await page.route('/api/plans', async route => {
       await route.fulfill({ json: [] });
     });
-    
-    // Mock permissions
-    await page.route('/api/permissions/pending*', async route => {
+
+    // Mock MCP servers
+    await page.route('/api/mcp/servers', async route => {
+      await route.fulfill({ json: [] });
+    });
+
+    // Mock skills
+    await page.route('/api/skills', async route => {
+      await route.fulfill({ json: [] });
+    });
+
+    // Mock commands
+    await page.route('/api/commands', async route => {
       await route.fulfill({ json: [] });
     });
   });

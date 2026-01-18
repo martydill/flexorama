@@ -16,6 +16,18 @@ test.describe('Plans', () => {
         await route.fulfill({ status: 404, body: 'Not found' });
       }
     });
+    await page.route('/api/mcp/servers', async route => {
+      await route.fulfill({ json: [] });
+    });
+    await page.route('/api/agents', async route => {
+      await route.fulfill({ json: [] });
+    });
+    await page.route('/api/skills', async route => {
+      await route.fulfill({ json: [] });
+    });
+    await page.route('/api/commands', async route => {
+      await route.fulfill({ json: [] });
+    });
   });
 
   test('should list plans', async ({ page }) => {
