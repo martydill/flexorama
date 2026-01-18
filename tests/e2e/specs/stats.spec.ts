@@ -8,7 +8,7 @@ test.describe('Stats', () => {
     await page.route('/api/models', async route => {
         await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
-    await page.route('/api/conversations', async route => {
+    await page.route('/api/conversations*', async route => {
         await route.fulfill({ json: [] });
     });
     
