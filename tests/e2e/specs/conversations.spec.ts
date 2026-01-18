@@ -35,7 +35,7 @@ test.describe('Conversations', () => {
       { id: '2', updated_at: new Date(Date.now()).toISOString(), model: 'gpt-4', request_count: 2, total_tokens: 50, last_message: 'Hi there' }
     ];
 
-    await page.route('/api/conversations', async route => {
+    await page.route('/api/conversations*', async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({ json: mockConvs });
       } else {
@@ -60,7 +60,7 @@ test.describe('Conversations', () => {
   });
 
   test('should create new conversation', async ({ page }) => {
-    await page.route('/api/conversations', async route => {
+    await page.route('/api/conversations*', async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({ json: [] });
       } else if (route.request().method() === 'POST') {
@@ -87,7 +87,7 @@ test.describe('Conversations', () => {
      const conversationMessages: any[] = [];
 
      // Mock initial list
-    await page.route('/api/conversations', async route => {
+    await page.route('/api/conversations*', async route => {
         await route.fulfill({ json: [{ id: '1', updated_at: new Date().toISOString(), model: 'gpt-4', request_count: 0, total_tokens: 0, last_message: null }] });
     });
 
