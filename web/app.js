@@ -793,24 +793,42 @@ function summarizeToolInput(name, input) {
 
 function checkAndAppendPlanButton(bubble, text) {
   const match = /_Plan saved with ID: `(.*?)`\._/.exec(text);
-  if (match) {
-    if (bubble.querySelector("button.secondary")) return;
-    const planId = match[1];
-    const button = document.createElement("button");
-    button.className = "secondary";
-    button.textContent = "Edit Plan";
-    button.style.marginTop = "8px";
-    button.addEventListener("click", async () => {
-      const tabBtn = document.querySelector('.top-tab[data-tab="plans"]');
-      if (tabBtn) tabBtn.click();
-      await loadPlans();
-      const plan = state.plans.find((p) => String(p.id) === String(planId));
-      if (plan) {
-        setPlanForm(plan);
-      }
-    });
-    bubble.appendChild(button);
-  }
+  if (!match || !state.planMode) return;
+  if (bubble.querySelector(".plan-message-actions")) return;
+  const planId = match[1];
+  const actions = document.createElement("div");
+  actions.className = "stack plan-message-actions";
+  actions.style.marginTop = "8px";
+
+  const editButton = document.createElement("button");
+  editButton.className = "secondary";
+  editButton.textContent = "Edit Plan";
+  editButton.addEventListener("click", async () => {
+    const tabBtn = document.querySelector('.top-tab[data-tab="plans"]');
+    if (tabBtn) tabBtn.click();
+    await loadPlans();
+    const plan = state.plans.find((p) => String(p.id) === String(planId));
+    if (plan) {
+      setPlanForm(plan);
+    }
+  });
+
+  const executeButton = document.createElement("button");
+  executeButton.className = "secondary";
+  executeButton.textContent = "Execute Plan";
+  executeButton.addEventListener("click", async () => {
+    await executeSavedPlan(planId, { newChat: false });
+  });
+
+  const executeNewChatButton = document.createElement("button");
+  executeNewChatButton.className = "secondary";
+  executeNewChatButton.textContent = "Execute Plan in New Chat";
+  executeNewChatButton.addEventListener("click", async () => {
+    await executeSavedPlan(planId, { newChat: true });
+  });
+
+  actions.append(editButton, executeButton, executeNewChatButton);
+  bubble.appendChild(actions);
 }
 
 function updateBubbleContent(bubble, text) {
@@ -1462,13 +1480,15 @@ async function deletePlan() {
   selectFirstPlan();
 }
 
-async function executePlan() {
-  if (!state.activePlanId) return;
+async function executePlanMessageInCurrentChat(message) {
+  const input = document.getElementById("message-input");
+  if (input) {
+    input.value = message;
+    await sendMessage();
+  }
+}
 
-  const planMarkdown = document.getElementById("plan-markdown").value;
-  const planTitle = document.getElementById("plan-title").value || "Untitled plan";
-
-  // Create a new conversation
+async function executePlanMessageInNewChat(message) {
   setStatus("Creating conversation for plan execution...");
   const res = await api("/api/conversations", { method: "POST", body: {} });
   const newId = res.id;
@@ -1485,20 +1505,41 @@ async function executePlan() {
   mergeConversations([placeholder]);
   renderConversationList();
 
-  // Switch to chats tab
   const tabBtn = document.querySelector('.top-tab[data-tab="chats"]');
   if (tabBtn) tabBtn.click();
 
-  // Select the new conversation and wait for it to load
   await selectConversation(newId);
+  await executePlanMessageInCurrentChat(message);
+}
 
-  // Send the plan as the initial message
-  const message = `Execute the following plan (${planTitle}):\n\n${planMarkdown}`;
-  const input = document.getElementById("message-input");
-  if (input) {
-    input.value = message;
-    await sendMessage();
+async function executeSavedPlan(planId, { newChat }) {
+  if (!planId) return;
+  setStatus("Loading plan for execution...");
+  const plan = await api(`/api/plans/${planId}`);
+  const planMarkdown = plan.plan_markdown || "";
+  const planTitle = plan.title || "Saved plan";
+  const message = `Execute the following saved plan (id: ${planId} - title: ${planTitle}):\n\n${planMarkdown}`;
+  if (state.planMode) {
+    await setPlanMode(false);
   }
+  if (newChat) {
+    await executePlanMessageInNewChat(message);
+  } else {
+    await executePlanMessageInCurrentChat(message);
+  }
+}
+
+async function executePlan() {
+  if (!state.activePlanId) return;
+
+  const planMarkdown = document.getElementById("plan-markdown").value;
+  const planTitle = document.getElementById("plan-title").value || "Untitled plan";
+
+  const message = `Execute the following plan (${planTitle}):\n\n${planMarkdown}`;
+  if (state.planMode) {
+    await setPlanMode(false);
+  }
+  await executePlanMessageInNewChat(message);
 }
 
 // MCP
@@ -2016,19 +2057,23 @@ async function loadPlanMode() {
   }
 }
 
-async function togglePlanMode() {
+async function setPlanMode(enabled) {
+  if (state.planMode === enabled) return;
   try {
-    const newMode = !state.planMode;
     await api("/api/plan-mode", {
       method: "POST",
-      body: { enabled: newMode },
+      body: { enabled },
     });
-    state.planMode = newMode;
+    state.planMode = enabled;
     renderPlanModeButton();
-    setStatus(newMode ? "Plan mode enabled" : "Plan mode disabled");
+    setStatus(enabled ? "Plan mode enabled" : "Plan mode disabled");
   } catch (err) {
     setStatus(`Failed to toggle plan mode: ${err.message}`);
   }
+}
+
+async function togglePlanMode() {
+  await setPlanMode(!state.planMode);
 }
 
 function renderPlanModeButton() {
@@ -3064,7 +3109,3 @@ async function showContextModal() {
 function closeContextModal() {
   document.getElementById("context-modal").classList.remove("open");
 }
-
-
-
-
