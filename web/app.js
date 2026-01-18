@@ -2108,7 +2108,7 @@ async function restoreSelections() {
 // Tabs
 function initTabs() {
   document.querySelectorAll(".top-tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const target = btn.dataset.tab;
       state.activeTab = target;
       const url = new URL(window.location);
@@ -2121,24 +2121,30 @@ function initTabs() {
 
       switch (target) {
         case "plans":
+          await loadPlans();
           selectFirstPlan();
           break;
         case "mcp":
+          await loadMcp();
           selectFirstMcp();
           break;
         case "agents":
+          await loadAgents();
           selectFirstAgent();
           break;
         case "skills":
+          await loadSkills();
           selectFirstSkill();
           break;
         case "commands":
+          await loadCommands();
           selectFirstCommand();
           break;
         case "stats":
           loadStats();
           break;
         default:
+          await loadConversations();
           selectFirstConversation();
           break;
       }
