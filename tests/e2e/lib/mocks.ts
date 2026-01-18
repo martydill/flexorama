@@ -36,35 +36,10 @@ export async function setupAppMock(page: Page) {
   });
 
   // Default API mocks to prevent bootstrap failures
-  await page.route('/api/conversations', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
-  });
-  await page.route('/api/models', async route => {
-    await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: ['gpt-4'] } });
-  });
-  await page.route('/api/plans', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
-  });
-  await page.route('/api/mcp/servers', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
-  });
-  await page.route('/api/agents', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
-  });
+  // Only register routes that ALL tests need and won't override
+  // Tests should register their own routes for models, conversations, plans, agents, skills, commands, mcp
   await page.route('/api/agents/active', async route => {
     await route.fulfill({ json: { active: null } });
-  });
-  await page.route('/api/skills', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
-  });
-  await page.route('/api/commands', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
   });
   await page.route('/api/plan-mode', async route => {
     await route.fulfill({ json: { enabled: false } });
@@ -75,8 +50,8 @@ export async function setupAppMock(page: Page) {
   await page.route('/api/permissions/pending*', async route => {
     await route.fulfill({ json: [] });
   });
-  
-  // Stats mocks
+
+  // Stats mocks - only register if tests don't override
   await page.route('/api/stats/overview', async route => {
     await route.fulfill({ json: { total_conversations: 0, total_messages: 0, total_tokens: 0, total_requests: 0 } });
   });

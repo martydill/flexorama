@@ -4,14 +4,33 @@ import { setupAppMock } from '../lib/mocks';
 test.describe('Stats', () => {
   test.beforeEach(async ({ page }) => {
     await setupAppMock(page);
-    
+
     await page.route('/api/models', async route => {
         await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
+        if (route.request().method() === 'GET') {
+            await route.fulfill({ json: [] });
+        } else {
+            await route.fulfill({ status: 404, body: 'Not found' });
+        }
+    });
+    await page.route('/api/plans', async route => {
         await route.fulfill({ json: [] });
     });
-    
+    await page.route('/api/mcp/servers', async route => {
+        await route.fulfill({ json: [] });
+    });
+    await page.route('/api/agents', async route => {
+        await route.fulfill({ json: [] });
+    });
+    await page.route('/api/skills', async route => {
+        await route.fulfill({ json: [] });
+    });
+    await page.route('/api/commands', async route => {
+        await route.fulfill({ json: [] });
+    });
+
     // Mock stats APIs
     await page.route('/api/stats/overview', async route => {
         await route.fulfill({ json: { total_conversations: 10, total_messages: 50, total_tokens: 1000, total_requests: 40 } });

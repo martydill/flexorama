@@ -10,6 +10,22 @@ test.describe('Plans', () => {
       await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: [] });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
+    });
+    await page.route('/api/mcp/servers', async route => {
+      await route.fulfill({ json: [] });
+    });
+    await page.route('/api/agents', async route => {
+      await route.fulfill({ json: [] });
+    });
+    await page.route('/api/skills', async route => {
+      await route.fulfill({ json: [] });
+    });
+    await page.route('/api/commands', async route => {
       await route.fulfill({ json: [] });
     });
   });
@@ -106,7 +122,11 @@ test.describe('Plans', () => {
 
     // Mock conversation list
     await page.route('/api/conversations', async route => {
-      await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
     });
     
     // Mock pending permissions

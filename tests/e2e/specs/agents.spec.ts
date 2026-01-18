@@ -9,10 +9,23 @@ test.describe('Agents', () => {
         await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
     await page.route('/api/conversations', async route => {
+        if (route.request().method() === 'GET') {
+            await route.fulfill({ json: [] });
+        } else {
+            await route.fulfill({ status: 404, body: 'Not found' });
+        }
+    });
+    await page.route('/api/plans', async route => {
         await route.fulfill({ json: [] });
     });
-     await page.route('/api/agents/active', async route => {
-        await route.fulfill({ json: { active: null } });
+    await page.route('/api/mcp/servers', async route => {
+        await route.fulfill({ json: [] });
+    });
+    await page.route('/api/skills', async route => {
+        await route.fulfill({ json: [] });
+    });
+    await page.route('/api/commands', async route => {
+        await route.fulfill({ json: [] });
     });
   });
 

@@ -4,27 +4,43 @@ import { setupAppMock } from '../lib/mocks';
 test.describe('Conversations', () => {
   test.beforeEach(async ({ page }) => {
     await setupAppMock(page);
-    
+
     // Mock models
     await page.route('/api/models', async route => {
       await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: ['gpt-4', 'claude-3'] } });
+    });
+
+    // Mock conversations
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: [] });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
     });
 
     // Mock agents
     await page.route('/api/agents', async route => {
       await route.fulfill({ json: [] });
     });
-    await page.route('/api/agents/active', async route => {
-      await route.fulfill({ json: { active: null } });
-    });
 
-    // Mock todos
-    await page.route('/api/todos*', async route => {
+    // Mock plans
+    await page.route('/api/plans', async route => {
       await route.fulfill({ json: [] });
     });
-    
-    // Mock permissions
-    await page.route('/api/permissions/pending*', async route => {
+
+    // Mock MCP servers
+    await page.route('/api/mcp/servers', async route => {
+      await route.fulfill({ json: [] });
+    });
+
+    // Mock skills
+    await page.route('/api/skills', async route => {
+      await route.fulfill({ json: [] });
+    });
+
+    // Mock commands
+    await page.route('/api/commands', async route => {
       await route.fulfill({ json: [] });
     });
   });
@@ -35,21 +51,22 @@ test.describe('Conversations', () => {
       { id: '2', updated_at: new Date(Date.now()).toISOString(), model: 'gpt-4', request_count: 2, total_tokens: 50, last_message: 'Hi there' }
     ];
 
-    await page.route('/api/conversations', async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: mockConvs });
-      } else {
-        await route.continue();
-      }
-    });
-
-    // Mock specific conversation load
+    // Mock specific conversation load first (more specific routes first)
     await page.route('/api/conversations/1', async route => {
       await route.fulfill({ json: {
         conversation: mockConvs[0],
         messages: [{ role: 'user', content: 'Hello', blocks: [], created_at: new Date().toISOString() }],
         context_files: []
       }});
+    });
+
+    // Mock conversations list
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: mockConvs });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
     });
 
     await page.goto('/');
@@ -60,20 +77,25 @@ test.describe('Conversations', () => {
   });
 
   test('should create new conversation', async ({ page }) => {
-    await page.route('/api/conversations', async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({ json: [] });
-      } else if (route.request().method() === 'POST') {
-        await route.fulfill({ json: { id: 'new-id', model: 'gpt-4' } });
-      }
-    });
-
+    // Mock specific conversation load first (more specific routes first)
     await page.route('/api/conversations/new-id', async route => {
       await route.fulfill({ json: {
         conversation: { id: 'new-id', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), model: 'gpt-4', request_count: 0, total_tokens: 0 },
         messages: [],
         context_files: []
       }});
+    });
+
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() === 'GET') {
+        // List endpoint
+        await route.fulfill({ json: [] });
+      } else if (route.request().method() === 'POST') {
+        // Create new conversation
+        await route.fulfill({ json: { id: 'new-id', model: 'gpt-4' } });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
     });
 
     await page.goto('/');
@@ -86,18 +108,22 @@ test.describe('Conversations', () => {
      // State to hold messages during the test interaction
      const conversationMessages: any[] = [];
 
-     // Mock initial list
-    await page.route('/api/conversations', async route => {
-        await route.fulfill({ json: [{ id: '1', updated_at: new Date().toISOString(), model: 'gpt-4', request_count: 0, total_tokens: 0, last_message: null }] });
-    });
-
-    // Mock conversation load (GET) - returns the current state of messages
+    // Mock conversation load (GET) - returns the current state of messages (more specific route first)
     await page.route('/api/conversations/1', async route => {
       await route.fulfill({ json: {
         conversation: { id: '1', updated_at: new Date().toISOString(), model: 'gpt-4', request_count: 0, total_tokens: 0 },
         messages: conversationMessages,
         context_files: []
       }});
+    });
+
+     // Mock initial list
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({ json: [{ id: '1', updated_at: new Date().toISOString(), model: 'gpt-4', request_count: 0, total_tokens: 0, last_message: null }] });
+      } else {
+        await route.fulfill({ status: 404, body: 'Not found' });
+      }
     });
 
     // Mock stream response (POST)
@@ -178,7 +204,21 @@ test.describe('Conversations', () => {
       last_message: `Message ${i + 21}`
     }));
 
-    await page.route('/api/conversations*', async route => {
+    // Mock specific conversation load for the first conversation (more specific route first)
+    await page.route('/api/conversations/1', async route => {
+      await route.fulfill({ json: {
+        conversation: mockConvsPage1[0],
+        messages: [{ role: 'user', content: 'Message 1', blocks: [], created_at: new Date().toISOString() }],
+        context_files: []
+      }});
+    });
+
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fulfill({ status: 404, body: 'Not found' });
+        return;
+      }
+
       const url = new URL(route.request().url());
       const offset = parseInt(url.searchParams.get('offset') || '0');
       const limit = parseInt(url.searchParams.get('limit') || '10');
@@ -192,15 +232,6 @@ test.describe('Conversations', () => {
       } else {
         await route.fulfill({ json: [] });
       }
-    });
-
-    // Mock specific conversation load for the first conversation
-    await page.route('/api/conversations/1', async route => {
-      await route.fulfill({ json: {
-        conversation: mockConvsPage1[0],
-        messages: [{ role: 'user', content: 'Message 1', blocks: [], created_at: new Date().toISOString() }],
-        context_files: []
-      }});
     });
 
     await page.goto('/');
@@ -252,7 +283,21 @@ test.describe('Conversations', () => {
 
     let page2Requested = false;
 
-    await page.route('/api/conversations*', async route => {
+    // Mock first conversation (more specific route first)
+    await page.route('/api/conversations/1', async route => {
+      await route.fulfill({ json: {
+        conversation: mockConvsPage1[0],
+        messages: [{ role: 'user', content: 'Message 1', blocks: [], created_at: new Date().toISOString() }],
+        context_files: []
+      }});
+    });
+
+    await page.route('/api/conversations', async route => {
+      if (route.request().method() !== 'GET') {
+        await route.fulfill({ status: 404, body: 'Not found' });
+        return;
+      }
+
       const url = new URL(route.request().url());
       const offset = parseInt(url.searchParams.get('offset') || '0');
 
@@ -263,16 +308,9 @@ test.describe('Conversations', () => {
         // Delay the response to check spinner visibility
         await new Promise(resolve => setTimeout(resolve, 1000));
         await route.fulfill({ json: [] });
+      } else {
+        await route.fulfill({ json: [] });
       }
-    });
-
-    // Mock first conversation
-    await page.route('/api/conversations/1', async route => {
-      await route.fulfill({ json: {
-        conversation: mockConvsPage1[0],
-        messages: [{ role: 'user', content: 'Message 1', blocks: [], created_at: new Date().toISOString() }],
-        context_files: []
-      }});
     });
 
     await page.goto('/');
