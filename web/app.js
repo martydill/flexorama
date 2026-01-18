@@ -2729,13 +2729,14 @@ function createModelsChart(ctx, data) {
 
 function createProvidersChart(ctx, data) {
   if (!data || data.length === 0) return null;
+  const colors = Object.values(CHART_COLORS);
   return new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: data.map(d => d.provider),
       datasets: [{
         data: data.map(d => d.total_tokens),
-        backgroundColor: [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange],
+        backgroundColor: data.map((_, i) => colors[i % colors.length]),
         borderColor: '#0b101a',
         borderWidth: 2,
       }],
@@ -2760,6 +2761,7 @@ function createConversationsByProviderChart(ctx, data) {
 
   const providers = Array.from(providerMap.keys());
   const counts = Array.from(providerMap.values());
+  const colors = Object.values(CHART_COLORS);
 
   return new Chart(ctx, {
     type: 'bar',
@@ -2768,8 +2770,8 @@ function createConversationsByProviderChart(ctx, data) {
       datasets: [{
         label: 'Conversations',
         data: counts,
-        backgroundColor: [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange],
-        borderColor: [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange],
+        backgroundColor: providers.map((_, i) => colors[i % colors.length]),
+        borderColor: providers.map((_, i) => colors[i % colors.length]),
         borderWidth: 1,
       }],
     },
@@ -2785,7 +2787,7 @@ function createConversationsTimeByProviderChart(ctx, data) {
   const providers = [...new Set(data.map(d => d.provider))];
 
   // Create datasets for each provider
-  const colors = [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange, CHART_COLORS.cyan, CHART_COLORS.purple];
+  const colors = Object.values(CHART_COLORS);
   const datasets = providers.map((provider, idx) => {
     const providerData = dates.map(date => {
       const entry = data.find(d => d.date === date && d.provider === provider);
@@ -2823,7 +2825,7 @@ function createConversationsBySubagentChart(ctx, data) {
 
   const subagents = Array.from(subagentMap.keys());
   const counts = Array.from(subagentMap.values());
-  const colors = [CHART_COLORS.neonGreen, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.orange, CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.yellow];
+  const colors = Object.values(CHART_COLORS);
 
   return new Chart(ctx, {
     type: 'bar',
@@ -2893,6 +2895,7 @@ function extractProvider(model) {
   if (lower.includes('claude')) return 'Anthropic';
   if (lower.includes('gpt')) return 'OpenAI';
   if (lower.includes('gemini')) return 'Gemini';
+  if (lower.includes('mistral')) return 'Mistral';
   if (lower.includes('glm')) return 'Z.AI';
   return 'Other';
 }

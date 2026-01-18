@@ -2229,6 +2229,8 @@ fn extract_provider_from_model(model: &str) -> String {
         "OpenAI".to_string()
     } else if lower.contains("gemini") {
         "Gemini".to_string()
+    } else if lower.contains("mistral") {
+        "Mistral".to_string()
     } else if lower.contains("glm") {
         "Z.AI".to_string()
     } else if lower.contains("llama") || lower.contains("gemma") {
@@ -2657,6 +2659,7 @@ mod tests {
         assert_eq!(extract_provider_from_model("claude-3-opus"), "Anthropic");
         assert_eq!(extract_provider_from_model("gpt-4o"), "OpenAI");
         assert_eq!(extract_provider_from_model("gemini-1.5-pro"), "Gemini");
+        assert_eq!(extract_provider_from_model("mistral-large-latest"), "Mistral");
         assert_eq!(extract_provider_from_model("glm-4.6"), "Z.AI");
         assert_eq!(extract_provider_from_model("local-model"), "Other");
     }

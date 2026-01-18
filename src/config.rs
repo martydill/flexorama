@@ -11,6 +11,7 @@ use tokio::fs;
 pub enum Provider {
     Anthropic,
     Gemini,
+    Mistral,
     OpenAI,
     #[serde(rename = "z.ai")]
     Zai,
@@ -30,6 +31,7 @@ impl std::str::FromStr for Provider {
         match s.to_lowercase().as_str() {
             "anthropic" => Ok(Provider::Anthropic),
             "gemini" => Ok(Provider::Gemini),
+            "mistral" => Ok(Provider::Mistral),
             "openai" => Ok(Provider::OpenAI),
             "z.ai" | "zai" => Ok(Provider::Zai),
             "ollama" => Ok(Provider::Ollama),
@@ -43,6 +45,7 @@ impl std::fmt::Display for Provider {
         match self {
             Provider::Anthropic => write!(f, "anthropic"),
             Provider::Gemini => write!(f, "gemini"),
+            Provider::Mistral => write!(f, "mistral"),
             Provider::OpenAI => write!(f, "openai"),
             Provider::Zai => write!(f, "z.ai"),
             Provider::Ollama => write!(f, "ollama"),
@@ -130,6 +133,7 @@ pub fn provider_default_api_key(provider: Provider) -> String {
         Provider::Gemini => std::env::var("GEMINI_API_KEY")
             .or_else(|_| std::env::var("GOOGLE_API_KEY"))
             .unwrap_or_default(),
+        Provider::Mistral => std::env::var("MISTRAL_API_KEY").unwrap_or_default(),
         Provider::OpenAI => std::env::var("OPENAI_API_KEY").unwrap_or_default(),
         Provider::Zai => std::env::var("ZAI_API_KEY").unwrap_or_default(),
         Provider::Ollama => std::env::var("OLLAMA_API_KEY").unwrap_or_default(),
@@ -142,6 +146,8 @@ pub fn provider_default_base_url(provider: Provider) -> String {
             .unwrap_or_else(|_| "https://api.anthropic.com/v1".to_string()),
         Provider::Gemini => std::env::var("GEMINI_BASE_URL")
             .unwrap_or_else(|_| "https://generativelanguage.googleapis.com/v1beta".to_string()),
+        Provider::Mistral => std::env::var("MISTRAL_BASE_URL")
+            .unwrap_or_else(|_| "https://api.mistral.ai/v1".to_string()),
         Provider::OpenAI => std::env::var("OPENAI_BASE_URL")
             .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
         Provider::Zai => std::env::var("ZAI_BASE_URL")
@@ -155,6 +161,7 @@ pub fn provider_default_model(provider: Provider) -> String {
     match provider {
         Provider::Anthropic => "claude-sonnet-4-5".to_string(),
         Provider::Gemini => "gemini-flash-latest".to_string(),
+        Provider::Mistral => "mistral-large-latest".to_string(),
         Provider::OpenAI => "gpt-5.2".to_string(),
         Provider::Zai => "glm-4.7".to_string(),
         Provider::Ollama => "llama2".to_string(),
@@ -182,6 +189,13 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
             "gemini-3-pro-image-preview",
             "gemini-2.5-flash-lite",
             "gemini-2.5-pro",
+        ],
+        Provider::Mistral => &[
+            "mistral-large-latest",
+            "mistral-medium-latest",
+            "mistral-small-latest",
+            "pixtral-12b-2409",
+            "open-mistral-nemo",
         ],
         Provider::OpenAI => &[
             "gpt-5.2",

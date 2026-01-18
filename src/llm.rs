@@ -1,6 +1,7 @@
 use crate::anthropic::{AnthropicClient, AnthropicResponse, ContentBlock, Message};
 use crate::config::Provider;
 use crate::gemini::GeminiClient;
+use crate::mistral::MistralClient;
 use crate::ollama::OllamaClient;
 use crate::openai::OpenAIClient;
 use crate::tools::{Tool, ToolCall};
@@ -24,6 +25,13 @@ macro_rules! dispatch_to_provider {
                 $self.gemini
                     .as_ref()
                     .expect("Gemini client should be initialized")
+                    .$method($($arg),*)
+                    .await
+            }
+            Provider::Mistral => {
+                $self.mistral
+                    .as_ref()
+                    .expect("Mistral client should be initialized")
                     .$method($($arg),*)
                     .await
             }
@@ -58,6 +66,7 @@ pub struct LlmClient {
     provider: Provider,
     anthropic: Option<AnthropicClient>,
     gemini: Option<GeminiClient>,
+    mistral: Option<MistralClient>,
     openai: Option<OpenAIClient>,
     ollama: Option<OllamaClient>,
 }
@@ -69,6 +78,7 @@ impl LlmClient {
                 provider,
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
                 gemini: None,
+                mistral: None,
                 openai: None,
                 ollama: None,
             },
@@ -76,6 +86,15 @@ impl LlmClient {
                 provider,
                 anthropic: None,
                 gemini: Some(GeminiClient::new(api_key, base_url)),
+                mistral: None,
+                openai: None,
+                ollama: None,
+            },
+            Provider::Mistral => Self {
+                provider,
+                anthropic: None,
+                gemini: None,
+                mistral: Some(MistralClient::new(api_key, base_url)),
                 openai: None,
                 ollama: None,
             },
@@ -83,6 +102,7 @@ impl LlmClient {
                 provider,
                 anthropic: None,
                 gemini: None,
+                mistral: None,
                 openai: Some(OpenAIClient::new(api_key, base_url)),
                 ollama: None,
             },
@@ -90,6 +110,7 @@ impl LlmClient {
                 provider,
                 anthropic: Some(AnthropicClient::new(api_key, base_url)),
                 gemini: None,
+                mistral: None,
                 openai: None,
                 ollama: None,
             },
@@ -97,6 +118,7 @@ impl LlmClient {
                 provider,
                 anthropic: None,
                 gemini: None,
+                mistral: None,
                 openai: None,
                 ollama: Some(OllamaClient::new(api_key, base_url)),
             },
@@ -116,6 +138,11 @@ impl LlmClient {
     #[cfg(test)]
     pub(crate) fn has_gemini_client(&self) -> bool {
         self.gemini.is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_mistral_client(&self) -> bool {
+        self.mistral.is_some()
     }
 
     #[cfg(test)]
@@ -346,6 +373,18 @@ mod tests {
         assert!(client.has_gemini_client());
         assert!(!client.has_openai_client());
 
+        // Test Mistral provider
+        let client = LlmClient::new(
+            Provider::Mistral,
+            "test-key".to_string(),
+            "http://localhost".to_string(),
+        );
+        assert_eq!(client.provider(), Provider::Mistral);
+        assert!(!client.has_anthropic_client());
+        assert!(!client.has_gemini_client());
+        assert!(client.has_mistral_client());
+        assert!(!client.has_openai_client());
+
         // Test OpenAI provider
         let client = LlmClient::new(
             Provider::OpenAI,
@@ -355,6 +394,7 @@ mod tests {
         assert_eq!(client.provider(), Provider::OpenAI);
         assert!(!client.has_anthropic_client());
         assert!(!client.has_gemini_client());
+        assert!(!client.has_mistral_client());
         assert!(client.has_openai_client());
 
         // Test Zai provider (uses Anthropic client)
@@ -366,6 +406,7 @@ mod tests {
         assert_eq!(client.provider(), Provider::Zai);
         assert!(client.has_anthropic_client());
         assert!(!client.has_gemini_client());
+        assert!(!client.has_mistral_client());
         assert!(!client.has_openai_client());
     }
 
@@ -418,6 +459,56 @@ mod tests {
         assert_eq!(log.hit_count(), 4);
         for path in log.recorded_paths() {
             assert_eq!(path, "/v1/messages");
+        }
+    }
+
+    #[tokio::test]
+    async fn routes_mistral_provider() {
+        let log = RequestLog::default();
+        // reuse openai handler as mistral is compatible
+        let app = Router::new()
+            .route("/*path", post(openai_handler))
+            .with_state(log.clone());
+        configure_no_proxy();
+        let base_url = spawn_server(app).await;
+
+        let client = LlmClient::new(Provider::Mistral, "test-key".to_string(), base_url);
+        let messages = vec![Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text("ping".to_string())],
+        }];
+        let cancellation_flag = Arc::new(AtomicBool::new(false));
+
+        client
+            .create_message(
+                "test-model",
+                messages.clone(),
+                &[],
+                16,
+                0.0,
+                None,
+                cancellation_flag.clone(),
+            )
+            .await
+            .expect("create_message");
+
+        client
+            .create_message_stream(
+                "test-model",
+                messages,
+                &[],
+                16,
+                0.0,
+                None,
+                Arc::new(|_chunk| {}),
+                cancellation_flag,
+            )
+            .await
+            .expect("create_message_stream");
+
+        assert_eq!(log.hit_count(), 2);
+        for path in log.recorded_paths() {
+            assert_eq!(path, "/chat/completions");
         }
     }
 

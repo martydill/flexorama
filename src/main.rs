@@ -96,6 +96,7 @@ async fn main() -> Result<()> {
         let env_hint = match config.provider {
             Provider::Anthropic => "ANTHROPIC_AUTH_TOKEN",
             Provider::Gemini => "GEMINI_API_KEY or GOOGLE_API_KEY",
+            Provider::Mistral => "MISTRAL_API_KEY",
             Provider::OpenAI => "OPENAI_API_KEY",
             Provider::Zai => "ZAI_API_KEY",
             Provider::Ollama => "OLLAMA_API_KEY (optional for local instances)",

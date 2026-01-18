@@ -20,6 +20,7 @@ pub mod interactive;
 pub mod llm;
 pub mod logo;
 pub mod mcp;
+pub mod mistral;
 pub mod ollama;
 pub mod openai;
 pub mod processing;

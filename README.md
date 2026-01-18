@@ -24,7 +24,7 @@ The hybrid cli/web coding agent that works your way.
  - Plan mode and /plan command support for managing plans and toggling plan mode
  - Subagent support via /agent
  - Command line history navigation with up and down arrow keys and Ctrl-R search
- - Support for different LLM APIs (Anthropic, Gemini, OpenAI, Z.AI) with the --provider arg
+ - Support for different LLM APIs (Anthropic, Gemini, Mistral, OpenAI, Z.AI) with the --provider arg
  - Support for different models for each provider with /model
  - Local model support using the ollama provider with Ollama
  - Todo checklists 
@@ -53,6 +53,7 @@ Specify a provider on the command line with --provider.
 Supported providers: 
  - openapi
  - gemini
+ - mistral
  - z.ai
  - anthropic
  - ollama
@@ -64,6 +65,7 @@ Supported env vars:
 - OPENAI_API_KEY
 - ZAI_API_KEY
 - GEMINI_API_KEY
+- MISTRAL_API_KEY
 - ANTHROPIC_AUTH_TOKEN
 
 ### CLI version
