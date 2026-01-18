@@ -36,7 +36,7 @@ export async function setupAppMock(page: Page) {
   });
 
   // Default API mocks to prevent bootstrap failures
-  await page.route('/api/conversations', async route => {
+  await page.route('/api/conversations*', async route => {
     if (route.request().method() === 'GET') await route.fulfill({ json: [] });
     else await route.continue();
   });
