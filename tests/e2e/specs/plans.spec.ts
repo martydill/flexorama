@@ -9,7 +9,7 @@ test.describe('Plans', () => {
     await page.route('/api/models', async route => {
       await route.fulfill({ json: { provider: 'test', active_model: 'gpt-4', models: [] } });
     });
-    await page.route('/api/conversations', async route => {
+    await page.route('/api/conversations*', async route => {
       await route.fulfill({ json: [] });
     });
   });
@@ -105,7 +105,7 @@ test.describe('Plans', () => {
     });
 
     // Mock conversation list
-    await page.route('/api/conversations', async route => {
+    await page.route('/api/conversations*', async route => {
       await route.fulfill({ json: [{ id: '123', last_message: 'Plan saved', updated_at: new Date().toISOString() }] });
     });
     
