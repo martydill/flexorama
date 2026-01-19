@@ -1,10 +1,9 @@
-use crate::tools::path::expand_and_absolutize;
+use crate::tools::path::resolve_project_path;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use glob::glob;
 use log::debug;
 use serde_json::json;
-use shellexpand;
 
 pub async fn glob_files(call: &ToolCall) -> Result<ToolResult> {
     let pattern = call
@@ -27,19 +26,23 @@ pub async fn glob_files(call: &ToolCall) -> Result<ToolResult> {
     let tool_use_id = call.id.clone();
 
     // Expand and resolve base path
-    let absolute_base_path = expand_and_absolutize(base_path)?;
+    let absolute_base_path = match resolve_project_path(base_path) {
+        Ok(path) => path,
+        Err(e) => {
+            return Ok(ToolResult {
+                tool_use_id,
+                content: format!("Invalid base_path for glob: {}", e),
+                is_error: true,
+            });
+        }
+    };
 
     // Combine base path with pattern
-    let full_pattern = if pattern.contains('/') {
-        // If pattern already contains path components, use it as-is
-        shellexpand::tilde(pattern).to_string()
-    } else {
-        // Otherwise, join with base path
-        absolute_base_path
-            .join(pattern)
-            .to_string_lossy()
-            .to_string()
-    };
+    // Always use the validated base path to prevent path traversal
+    let full_pattern = absolute_base_path
+        .join(pattern)
+        .to_string_lossy()
+        .to_string();
 
     debug!("Using glob pattern: {}", full_pattern);
 

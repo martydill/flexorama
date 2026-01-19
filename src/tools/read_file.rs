@@ -1,4 +1,4 @@
-use crate::tools::path::expand_and_absolutize;
+use crate::tools::path::resolve_project_path;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::debug;
@@ -13,7 +13,16 @@ pub async fn read_file(call: &ToolCall) -> Result<ToolResult> {
 
     let tool_use_id = call.id.clone();
 
-    let absolute_path = expand_and_absolutize(path)?;
+    let absolute_path = match resolve_project_path(path) {
+        Ok(path) => path,
+        Err(e) => {
+            return Ok(ToolResult {
+                tool_use_id,
+                content: format!("Invalid path '{}': {}", path, e),
+                is_error: true,
+            });
+        }
+    };
 
     match fs::File::open(&absolute_path).await {
         Ok(mut file) => {
