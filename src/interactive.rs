@@ -119,12 +119,15 @@ pub async fn run_tui_interactive(
                 let _ = input_tx.send(InputEvent::Cancelled);
             }
             Ok(tui::InputResult::Exit) => {
-                exit_for_input.store(true, Ordering::SeqCst);
                 let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
                 if let Some(flag) = cancel {
                     flag.store(true, Ordering::SeqCst);
-                    app_println!("\n{} Cancelling and exiting...", "🛑".yellow());
+                    app_println!("\n{} Cancelling AI conversation...", "🛑".yellow());
+                    let _ = input_tx.send(InputEvent::Cancelled);
+                    continue;
                 }
+                exit_for_input.store(true, Ordering::SeqCst);
+                app_println!("\n{} Exiting...", "🛑".yellow());
                 let _ = input_tx.send(InputEvent::Exit);
                 break;
             }
