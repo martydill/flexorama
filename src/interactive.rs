@@ -231,39 +231,49 @@ pub async fn run_tui_interactive(
             let mut guard = current_cancel_flag.lock().expect("cancel lock");
             *guard = Some(cancellation_flag_for_processing.clone());
         }
-        let processing_fut = process_input(
-            &input,
-            agent,
-            formatter,
-            stream,
-            cancellation_flag_for_processing.clone(),
-            Some(Arc::clone(&on_tool_event)),
-        );
-        tokio::pin!(processing_fut);
-        let mut processing_done = false;
-        while !processing_done {
-            tokio::select! {
-                _ = &mut processing_fut => {
-                    processing_done = true;
-                }
-                event = input_rx.recv() => {
-                    match event {
-                        Some(InputEvent::Queued) => continue,
-                        Some(InputEvent::Cancelled) => {
-                            cancellation_flag_for_processing.store(true, Ordering::SeqCst);
-                            processing_done = true;
-                        }
-                        Some(InputEvent::Exit) => {
-                            exit_requested.store(true, Ordering::SeqCst);
-                            cancellation_flag_for_processing.store(true, Ordering::SeqCst);
-                            processing_done = true;
-                        }
-                        None => {
-                            processing_done = true;
+        let clear_todos = {
+            let processing_fut = process_input(
+                &input,
+                agent,
+                formatter,
+                stream,
+                cancellation_flag_for_processing.clone(),
+                Some(Arc::clone(&on_tool_event)),
+            );
+            tokio::pin!(processing_fut);
+            let mut clear_todos = false;
+            let mut processing_done = false;
+            while !processing_done {
+                tokio::select! {
+                    _ = &mut processing_fut => {
+                        processing_done = true;
+                    }
+                    event = input_rx.recv() => {
+                        match event {
+                            Some(InputEvent::Queued) => continue,
+                            Some(InputEvent::Cancelled) => {
+                                cancellation_flag_for_processing.store(true, Ordering::SeqCst);
+                                clear_todos = true;
+                                processing_done = true;
+                            }
+                            Some(InputEvent::Exit) => {
+                                exit_requested.store(true, Ordering::SeqCst);
+                                cancellation_flag_for_processing.store(true, Ordering::SeqCst);
+                                clear_todos = true;
+                                processing_done = true;
+                            }
+                            None => {
+                                processing_done = true;
+                            }
                         }
                     }
                 }
             }
+            clear_todos
+        };
+        if clear_todos {
+            agent.clear_todos_for_current_conversation().await;
+            let _ = tui.set_todos(&[]);
         }
         {
             let mut guard = current_cancel_flag.lock().expect("cancel lock");

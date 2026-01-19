@@ -51,8 +51,8 @@ use crate::database::{Conversation as StoredConversation, DatabaseManager};
 use crate::llm::LlmClient;
 use crate::subagent;
 use crate::tools::{
-    bash, create_directory, delete_file, edit_file, get_builtin_tools, write_file, Tool,
-    ToolCall, ToolRegistry, ToolResult,
+    bash, create_directory, delete_file, edit_file, get_builtin_tools, write_file, Tool, ToolCall,
+    ToolRegistry, ToolResult,
 };
 
 #[derive(Debug, Clone)]
@@ -1120,6 +1120,14 @@ impl Agent {
 
     pub fn todos_handle(&self) -> Arc<AsyncMutex<Vec<crate::tools::create_todo::TodoItem>>> {
         Arc::clone(&self.todos)
+    }
+
+    pub async fn clear_todos_for_current_conversation(&self) {
+        {
+            let mut todos = self.todos.lock().await;
+            todos.clear();
+        }
+        self.store_todos_for_current_conversation(Vec::new()).await;
     }
 
     /// Get the bash security manager
