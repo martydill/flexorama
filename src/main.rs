@@ -450,3 +450,218 @@ async fn run_interactive_mode(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_parsing_basic() {
+        // Test that CLI can be parsed
+        let args = vec!["flexorama"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.message.is_none());
+        assert!(!cli.non_interactive);
+        assert!(!cli.web);
+        assert!(!cli.yolo);
+        assert!(!cli.plan_mode);
+    }
+
+    #[test]
+    fn test_cli_parsing_with_message() {
+        let args = vec!["flexorama", "-m", "Hello world"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.message, Some("Hello world".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_with_model() {
+        let args = vec!["flexorama", "--model", "gpt-4"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.model, Some("gpt-4".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_web_mode() {
+        let args = vec!["flexorama", "--web"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.web);
+    }
+
+    #[test]
+    fn test_cli_parsing_web_port() {
+        let args = vec!["flexorama", "--web", "--web-port", "8080"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.web);
+        assert_eq!(cli.web_port, 8080);
+    }
+
+    #[test]
+    fn test_cli_parsing_yolo_mode() {
+        let args = vec!["flexorama", "--yolo"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.yolo);
+    }
+
+    #[test]
+    fn test_cli_parsing_plan_mode() {
+        let args = vec!["flexorama", "--plan-mode"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.plan_mode);
+    }
+
+    #[test]
+    fn test_cli_parsing_non_interactive() {
+        let args = vec!["flexorama", "--non-interactive"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.non_interactive);
+    }
+
+    #[test]
+    fn test_cli_parsing_no_stream() {
+        let args = vec!["flexorama", "--no-stream"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert!(cli.no_stream);
+    }
+
+    #[test]
+    fn test_cli_parsing_system_prompt() {
+        let args = vec!["flexorama", "-s", "You are helpful"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.system_prompt, Some("You are helpful".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_context_files() {
+        let args = vec!["flexorama", "-f", "file1.txt", "-f", "file2.txt"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.context_files.len(), 2);
+        assert_eq!(cli.context_files[0], "file1.txt");
+        assert_eq!(cli.context_files[1], "file2.txt");
+    }
+
+    #[test]
+    fn test_cli_parsing_config_file() {
+        let args = vec!["flexorama", "--config", "custom_config.toml"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.config, Some("custom_config.toml".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_provider() {
+        let args = vec!["flexorama", "--provider", "anthropic"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.provider, Some(Provider::Anthropic));
+    }
+
+    #[test]
+    fn test_cli_parsing_api_key() {
+        let args = vec!["flexorama", "-k", "test-api-key"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.api_key, Some("test-api-key".to_string()));
+    }
+
+    #[test]
+    fn test_cli_parsing_multiple_flags() {
+        let args = vec![
+            "flexorama",
+            "-m", "Hello",
+            "--model", "gpt-4",
+            "--yolo",
+            "-f", "test.txt"
+        ];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.message, Some("Hello".to_string()));
+        assert_eq!(cli.model, Some("gpt-4".to_string()));
+        assert!(cli.yolo);
+        assert_eq!(cli.context_files.len(), 1);
+    }
+
+    #[test]
+    fn test_default_web_port() {
+        let args = vec!["flexorama"];
+        let result = Cli::try_parse_from(args);
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+        assert_eq!(cli.web_port, 3000);
+    }
+
+    #[test]
+    fn test_interactive_mode_detection() {
+        let args = vec!["flexorama"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web;
+        assert!(is_interactive);
+    }
+
+    #[test]
+    fn test_non_interactive_mode_detection_with_message() {
+        let args = vec!["flexorama", "-m", "test"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web;
+        assert!(!is_interactive);
+    }
+
+    #[test]
+    fn test_non_interactive_mode_detection_with_flag() {
+        let args = vec!["flexorama", "--non-interactive"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web;
+        assert!(!is_interactive);
+    }
+
+    #[test]
+    fn test_stream_default() {
+        let args = vec!["flexorama"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        let stream = !cli.no_stream;
+        assert!(stream);
+    }
+
+    #[test]
+    fn test_stream_disabled() {
+        let args = vec!["flexorama", "--no-stream"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        let stream = !cli.no_stream;
+        assert!(!stream);
+    }
+
+    // Test that modules are accessible
+    #[test]
+    fn test_modules_accessible() {
+        // Just verify we can reference the modules
+        let _agent_module = std::any::type_name::<Agent>();
+        let _config_module = std::any::type_name::<Config>();
+        let _provider_module = std::any::type_name::<Provider>();
+    }
+}
