@@ -296,6 +296,7 @@ async fn main() -> Result<()> {
         run_web_mode(
             cli,
             agent,
+            config,
             database_manager.clone(),
             mcp_manager.clone(),
             skill_manager.clone(),
@@ -330,6 +331,7 @@ async fn main() -> Result<()> {
 async fn run_web_mode(
     cli: Cli,
     agent: Agent,
+    config: Config,
     database_manager: Arc<DatabaseManager>,
     mcp_manager: Arc<McpManager>,
     skill_manager: Arc<AsyncMutex<skill::SkillManager>>,
@@ -357,6 +359,7 @@ async fn run_web_mode(
         skill_manager,
         conversation_agents: Arc::new(AsyncMutex::new(HashMap::new())),
         csrf_manager: Arc::new(CsrfManager::new()),
+        config: Arc::new(config),
     };
 
     web::launch_web_ui(state, cli.web_port).await?;
