@@ -27,6 +27,7 @@ pub async fn run_tui_interactive(
 ) -> Result<()> {
     enum InputEvent {
         Queued,
+        Cancelled,
         Exit,
     }
 
@@ -115,6 +116,7 @@ pub async fn run_tui_interactive(
                     flag.store(true, Ordering::SeqCst);
                     app_println!("\n{} Cancelling AI conversation...", "🛑".yellow());
                 }
+                let _ = input_tx.send(InputEvent::Cancelled);
             }
             Ok(tui::InputResult::Exit) => {
                 exit_for_input.store(true, Ordering::SeqCst);
@@ -169,6 +171,7 @@ pub async fn run_tui_interactive(
         } else {
             match input_rx.recv().await {
                 Some(InputEvent::Queued) => continue,
+                Some(InputEvent::Cancelled) => continue,
                 Some(InputEvent::Exit) => continue,
                 None => break,
             }
@@ -225,15 +228,40 @@ pub async fn run_tui_interactive(
             let mut guard = current_cancel_flag.lock().expect("cancel lock");
             *guard = Some(cancellation_flag_for_processing.clone());
         }
-        process_input(
+        let processing_fut = process_input(
             &input,
             agent,
             formatter,
             stream,
             cancellation_flag_for_processing.clone(),
             Some(Arc::clone(&on_tool_event)),
-        )
-        .await;
+        );
+        tokio::pin!(processing_fut);
+        let mut processing_done = false;
+        while !processing_done {
+            tokio::select! {
+                _ = &mut processing_fut => {
+                    processing_done = true;
+                }
+                event = input_rx.recv() => {
+                    match event {
+                        Some(InputEvent::Queued) => continue,
+                        Some(InputEvent::Cancelled) => {
+                            cancellation_flag_for_processing.store(true, Ordering::SeqCst);
+                            processing_done = true;
+                        }
+                        Some(InputEvent::Exit) => {
+                            exit_requested.store(true, Ordering::SeqCst);
+                            cancellation_flag_for_processing.store(true, Ordering::SeqCst);
+                            processing_done = true;
+                        }
+                        None => {
+                            processing_done = true;
+                        }
+                    }
+                }
+            }
+        }
         {
             let mut guard = current_cancel_flag.lock().expect("cancel lock");
             *guard = None;
@@ -514,7 +542,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("content.txt");
         let mut file = fs::File::create(&file_path).unwrap();
-        writeln!(file, "This is test content\nWith multiple lines\nAnd more text").unwrap();
+        writeln!(
+            file,
+            "This is test content\nWith multiple lines\nAnd more text"
+        )
+        .unwrap();
 
         let context_files = vec![file_path.to_str().unwrap().to_string()];
 
