@@ -2832,6 +2832,7 @@ mod tests {
             skill_manager,
             conversation_agents: Arc::new(Mutex::new(HashMap::new())),
             csrf_manager: Arc::new(CsrfManager::new()),
+            config: Arc::new(config),
         }
     }
 
@@ -4242,5 +4243,101 @@ mod tests {
 
         // Should be limited to 50 results
         assert_eq!(files.len(), 50);
+    }
+
+    #[tokio::test]
+    async fn test_webstate_config_is_passed_to_conversation_agents() {
+        // Create a test state with a custom config
+        let temp_dir = tempdir().expect("create tempdir");
+        let root = temp_dir.path().to_path_buf();
+        let db_path = root.join("test.sqlite");
+        let agents_dir = root.join("agents");
+        let config_path = root.join("config.toml");
+        let database = Arc::new(
+            DatabaseManager::new(db_path)
+                .await
+                .expect("create database"),
+        );
+        std::mem::forget(temp_dir);
+        let test_home = init_test_home();
+        std::env::set_var("USERPROFILE", &test_home);
+        std::env::set_var("HOME", &test_home);
+
+        // Create a config with Mistral provider and custom API key
+        let mut config = config::Config::default();
+        config.provider = config::Provider::Mistral;
+        config.api_key = "test-mistral-api-key-12345".to_string();
+        config.default_model = "mistral-large-latest".to_string();
+
+        let config_arc = Arc::new(tokio::sync::RwLock::new(config.clone()));
+        let skill_manager = Arc::new(Mutex::new(
+            SkillManager::new(config_arc).expect("create skill manager"),
+        ));
+        {
+            let mut manager = skill_manager.lock().await;
+            manager.set_test_paths(root.join("skills"), config_path.clone());
+        }
+        let agent =
+            Agent::new_with_plan_mode(config.clone(), config.default_model.clone(), false, false)
+                .await
+                .with_database_manager(database.clone())
+                .with_skill_manager(skill_manager.clone());
+
+        let subagent_manager = Arc::new(Mutex::new(
+            SubagentManager::new_with_dir(agents_dir).expect("create subagent manager"),
+        ));
+
+        let state = WebState {
+            agent: Arc::new(Mutex::new(agent)),
+            database: database.clone(),
+            mcp_manager: Arc::new(McpManager::new_with_config_path(config_path)),
+            subagent_manager,
+            permission_hub: Arc::new(PermissionHub::new()),
+            skill_manager,
+            conversation_agents: Arc::new(Mutex::new(HashMap::new())),
+            csrf_manager: Arc::new(CsrfManager::new()),
+            config: Arc::new(config.clone()),
+        };
+
+        // Create a conversation
+        let conversation_id = database
+            .create_conversation(None, &config.default_model, None)
+            .await
+            .expect("create conversation");
+
+        // Get or create conversation agent
+        let agent_arc = get_or_create_conversation_agent(&state, &conversation_id)
+            .await
+            .expect("get or create conversation agent");
+
+        // Verify the agent has the correct provider (which indicates it got the right config)
+        let agent = agent_arc.lock().await;
+        assert_eq!(agent.provider(), config::Provider::Mistral);
+        assert_eq!(agent.model(), "mistral-large-latest");
+    }
+
+    #[tokio::test]
+    async fn test_conversation_agents_are_cached() {
+        let state = build_test_state().await;
+
+        // Create a conversation
+        let conversation_id = state
+            .database
+            .create_conversation(None, "claude-sonnet-4-5", None)
+            .await
+            .expect("create conversation");
+
+        // Get agent for first time
+        let agent1 = get_or_create_conversation_agent(&state, &conversation_id)
+            .await
+            .expect("get agent first time");
+
+        // Get agent for second time
+        let agent2 = get_or_create_conversation_agent(&state, &conversation_id)
+            .await
+            .expect("get agent second time");
+
+        // Verify they are the same Arc (same memory address)
+        assert!(Arc::ptr_eq(&agent1, &agent2));
     }
 }
