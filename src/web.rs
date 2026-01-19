@@ -41,6 +41,7 @@ pub struct WebState {
     pub skill_manager: Arc<Mutex<SkillManager>>,
     pub conversation_agents: Arc<Mutex<HashMap<String, Arc<Mutex<Agent>>>>>,
     pub csrf_manager: Arc<CsrfManager>,
+    pub config: Arc<config::Config>,
 }
 
 #[derive(Serialize)]
@@ -470,8 +471,8 @@ async fn get_or_create_conversation_agent(
     }
 
     // Create a new agent for this conversation
-    // Load config and get settings from template agent
-    let config = config::Config::load(None).await?;
+    // Use the config from WebState (which includes CLI-provided API key)
+    let config = (*state.config).clone();
     let (model, plan_mode) = {
         let template_agent = state.agent.lock().await;
         (
