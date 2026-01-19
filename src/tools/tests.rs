@@ -386,6 +386,27 @@ async fn read_file_handles_unicode_content() {
     assert!(result.content.contains(unicode_content));
 }
 
+#[tokio::test]
+async fn read_file_rejects_parent_traversal() {
+    let call = make_call("read_file", json!({ "path": "../outside.txt" }));
+    let result = read_file(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path"));
+    assert!(result.content.contains("Path traversal"));
+}
+
+#[tokio::test]
+async fn read_file_rejects_absolute_outside_project() {
+    let outside_path = std::env::temp_dir().join("flexorama-outside.txt");
+    let call = make_call(
+        "read_file",
+        json!({ "path": outside_path.to_string_lossy() }),
+    );
+    let result = read_file(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path"));
+}
+
 // ==================== Additional write_file tests ====================
 
 #[tokio::test]
