@@ -302,6 +302,9 @@ impl Tui {
                 }
                 match key_event.code {
                     KeyCode::Esc => return None,
+                    KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                        return None
+                    }
                     KeyCode::Enter => {
                         if buffer.is_empty() {
                             return Some(selected);
