@@ -1,12 +1,11 @@
 use crate::acp::capabilities::{ClientCapabilities, ServerCapabilities};
 use crate::acp::errors::{AcpError, AcpResult};
 use crate::acp::filesystem::FileSystemHandler;
-use crate::acp::types::{error_codes, JsonRpcError, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse};
+use crate::acp::types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use crate::agent::Agent;
 use crate::config::Config;
 use log::{debug, error, info, warn};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -101,6 +100,9 @@ impl FlexoramaAcpHandler {
             "fs/glob" => self.handle_glob(request.params).await,
             "fs/delete" => self.handle_delete(request.params).await,
             "fs/createDirectory" => self.handle_create_directory(request.params).await,
+            "context/addFile" => self.handle_add_context_file(request.params).await,
+            "context/clear" => self.handle_clear_context(request.params).await,
+            "edit/applyEdit" => self.handle_apply_edit(request.params).await,
             method => {
                 warn!("Unknown method: {}", method);
                 Err(AcpError::InvalidRequest(format!("Unknown method: {}", method)))
@@ -344,6 +346,81 @@ impl FlexoramaAcpHandler {
 
         self.filesystem.create_directory(path).await?;
         Ok(json!({"success": true}))
+    }
+
+    /// Handle add context file request
+    async fn handle_add_context_file(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+
+        // Resolve path relative to workspace
+        let resolved_path = self.filesystem.resolve_path(path)?;
+        let path_str = resolved_path
+            .to_str()
+            .ok_or_else(|| AcpError::InvalidPath(resolved_path.display().to_string()))?;
+
+        // Add to agent context
+        let mut agent = self.agent.lock().await;
+        agent.add_context_file(path_str).await
+            .map_err(|e| AcpError::Agent(e))?;
+
+        Ok(json!({"success": true, "path": path_str}))
+    }
+
+    /// Handle clear context request
+    async fn handle_clear_context(&self, _params: Option<Value>) -> AcpResult<Value> {
+        let mut agent = self.agent.lock().await;
+        agent.clear_conversation_keep_agents_md().await
+            .map_err(|e| AcpError::Agent(e))?;
+
+        Ok(json!({"success": true}))
+    }
+
+    /// Handle apply edit request
+    async fn handle_apply_edit(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+        let old_string = params
+            .get("oldString")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing oldString parameter".to_string()))?;
+        let new_string = params
+            .get("newString")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing newString parameter".to_string()))?;
+
+        // Resolve path
+        let resolved_path = self.filesystem.resolve_path(path)?;
+        let path_str = resolved_path
+            .to_str()
+            .ok_or_else(|| AcpError::InvalidPath(resolved_path.display().to_string()))?;
+
+        // Use edit_file tool
+        let call = crate::tools::ToolCall {
+            id: "acp-edit".to_string(),
+            name: "edit_file".to_string(),
+            arguments: json!({
+                "file_path": path_str,
+                "old_string": old_string,
+                "new_string": new_string
+            }),
+        };
+
+        let mut security_manager = self.agent.lock().await.get_file_security_manager();
+        let mut manager = security_manager.write().await;
+        let result = crate::tools::edit_file::edit_file(&call, &mut *manager, self.yolo_mode).await?;
+
+        if result.is_error {
+            Err(AcpError::Agent(anyhow::anyhow!(result.content)))
+        } else {
+            Ok(json!({"success": true, "message": result.content}))
+        }
     }
 
     /// Get workspace root

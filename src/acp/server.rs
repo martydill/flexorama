@@ -1,7 +1,7 @@
 use crate::acp::errors::AcpResult;
 use crate::acp::handler::FlexoramaAcpHandler;
 use crate::acp::transport::StdioTransport;
-use crate::acp::types::{JsonRpcMessage, JsonRpcNotification, JsonRpcRequest};
+use crate::acp::types::{JsonRpcMessage, JsonRpcRequest};
 use crate::agent::Agent;
 use crate::config::Config;
 use log::{debug, error, info, warn};

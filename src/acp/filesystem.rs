@@ -1,8 +1,8 @@
 use crate::acp::errors::{AcpError, AcpResult};
-use crate::security::{BashSecurityManager, FileSecurityManager};
-use crate::tools::{ToolCall, ToolResult};
-use log::{debug, error};
-use serde_json::{json, Value};
+use crate::security::FileSecurityManager;
+use crate::tools::ToolCall;
+use log::debug;
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;

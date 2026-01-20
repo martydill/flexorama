@@ -9,13 +9,14 @@ The Flexorama supports the following features:
 1. **Interactive Mode**: Chat with the AI in a terminal interface
 2. **Single Message Mode**: Send a single message and get a response
 3. **Non-interactive Mode**: Read from stdin for scripting
-4. **Tool Support**: Execute various tools for file operations, code analysis, bash commands, etc.
-5. **Context Management**: Maintains conversation history
-6. **@file Syntax**: Auto-include files using @path-to-file syntax
-7. **Progress Spinner**: Visual feedback while waiting for LLM responses
-8. **System Prompts**: Set custom system prompts to control AI behavior and personality
-9. **Streaming Support**: Real-time response streaming for immediate feedback
-10. **Conversation Cancellation**: Press ESC to cancel ongoing AI conversations
+4. **ACP Mode**: Agent Client Protocol server for editor integration (NEW!)
+5. **Tool Support**: Execute various tools for file operations, code analysis, bash commands, etc.
+6. **Context Management**: Maintains conversation history
+7. **@file Syntax**: Auto-include files using @path-to-file syntax
+8. **Progress Spinner**: Visual feedback while waiting for LLM responses
+9. **System Prompts**: Set custom system prompts to control AI behavior and personality
+10. **Streaming Support**: Real-time response streaming for immediate feedback
+11. **Conversation Cancellation**: Press ESC to cancel ongoing AI conversations
 
 ### Available Tools
 
@@ -86,6 +87,51 @@ flexorama
 - MCP Servers tab manages command- or WebSocket-based servers with args, env pairs, enabled flag, and connect/disconnect actions, and shows status per server.
 - Agents tab creates/updates/deletes agents (system prompt, model, temperature, max tokens, allow/deny lists). New agents default to read-only tools (`search_in_files`, `glob`); activate via the header dropdown to switch subagents and conversations.
 - UI controls include a light/dark toggle, stream toggle, and tab persistence via localStorage; the web app reads/writes the same SQLite data the CLI uses.
+
+### ACP Mode (Agent Client Protocol)
+
+Flexorama now supports the Agent Client Protocol (ACP), enabling integration with code editors like Zed, Neovim, and others. ACP uses JSON-RPC 2.0 over stdio for communication.
+
+#### Starting ACP Server
+
+```bash
+# Start in ACP mode
+flexorama --acp
+
+# With debug logging
+flexorama --acp --acp-debug
+
+# With specific model
+flexorama --acp --model claude-opus-4
+
+# With yolo mode (no permissions)
+flexorama --acp --yolo
+
+# With plan mode (read-only)
+flexorama --acp --plan-mode
+```
+
+#### ACP Capabilities
+
+- **File System Operations**: Read, write, list, search, delete files and directories
+- **Agent Prompts**: Send prompts and receive AI-generated responses
+- **Context Management**: Add files to conversation context
+- **Code Editing**: Apply string replacement edits
+- **Tool Execution**: All Flexorama tools available via ACP
+- **Workspace Management**: Path resolution relative to workspace root
+- **Permission System**: File and bash operations respect security settings
+
+#### ACP Methods
+
+- `initialize` - Initialize server and negotiate capabilities
+- `shutdown` / `exit` - Graceful server shutdown
+- `agent/prompt` - Send prompts to AI
+- `agent/cancel` - Cancel ongoing operations
+- `fs/readFile`, `fs/writeFile`, `fs/listDirectory`, `fs/glob`, `fs/delete`, `fs/createDirectory` - File operations
+- `context/addFile`, `context/clear` - Context management
+- `edit/applyEdit` - Apply code edits
+
+For detailed ACP documentation, see [docs/ACP_USAGE.md](docs/ACP_USAGE.md).
 
 ### System Prompts
 
