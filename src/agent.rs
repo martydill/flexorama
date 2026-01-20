@@ -116,6 +116,8 @@ pub struct Agent {
         Arc<AsyncMutex<HashMap<String, Vec<crate::tools::create_todo::TodoItem>>>>,
     // Available models for the current provider
     available_models: Arc<RwLock<Vec<String>>>,
+    // Suppress output (for ACP mode where stdout must be clean)
+    suppress_output: bool,
 }
 
 impl Agent {
@@ -195,6 +197,7 @@ impl Agent {
             todos,
             todos_by_conversation,
             available_models,
+            suppress_output: false,
         }
     }
 
@@ -468,7 +471,7 @@ impl Agent {
                 tools.retain(|name, _| skill.allowed_tools.contains(name));
             }
 
-            app_println!("✅ Activated skill: {}", skill.name);
+            info!("✅ Activated skill: {}", skill.name);
             Ok(())
         } else {
             Err(anyhow!("Skill manager not initialized"))
@@ -502,7 +505,7 @@ impl Agent {
             // Refresh MCP tools
             self.force_refresh_mcp_tools().await?;
 
-            app_println!("❌ Deactivated skill: {}", name);
+            info!("❌ Deactivated skill: {}", name);
             Ok(())
         } else {
             Err(anyhow!("Skill manager not initialized"))
@@ -656,6 +659,11 @@ impl Agent {
         self.conversation_manager.system_prompt = Some(system_prompt);
     }
 
+    /// Set whether to suppress informational output (for ACP mode)
+    pub fn set_suppress_output(&mut self, suppress: bool) {
+        self.suppress_output = suppress;
+    }
+
     /// Apply the plan-mode system prompt while preserving any existing prompt context
     pub fn apply_plan_mode_prompt(&mut self) {
         let existing_prompt = self.conversation_manager.system_prompt.clone();
@@ -762,7 +770,7 @@ impl Agent {
         for file_path in &context_files {
             debug!("Auto-adding context file from @ syntax: {}", file_path);
             match self.add_context_file(file_path).await {
-                Ok(_) => app_println!("{} Added context file: {}", "✓".green(), file_path),
+                Ok(_) => info!("✓ Added context file: {}", file_path),
                 Err(e) => app_eprintln!(
                     "{} Failed to add context file '{}': {}",
                     "✗".red(),
@@ -903,8 +911,8 @@ impl Agent {
             // Extract and output the text response from this API call
             let response_content = self.client.create_response_content(&response.content);
             if !response_content.is_empty() {
-                if on_stream_content.is_none() {
-                    // Only print if not streaming (streaming handles its own output)
+                if on_stream_content.is_none() && !self.suppress_output {
+                    // Only print if not streaming and output not suppressed (ACP mode)
                     app_println!("{}", response_content);
                 }
                 // Always accumulate response content, even in streaming mode
@@ -1144,10 +1152,12 @@ impl Agent {
 
     /// Display the active LLM provider info
     pub fn display_provider(&self) {
-        app_println!("{}", "LLM Provider".cyan().bold());
-        app_println!("  Provider: {}", self.provider);
-        app_println!("  Model: {}", self.model);
-        app_println!("  Base URL: {}", self.base_url);
+        if !self.suppress_output {
+            app_println!("{}", "LLM Provider".cyan().bold());
+            app_println!("  Provider: {}", self.provider);
+            app_println!("  Model: {}", self.model);
+            app_println!("  Base URL: {}", self.base_url);
+        }
     }
 
     /// Get the active LLM provider

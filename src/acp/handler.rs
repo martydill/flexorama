@@ -49,7 +49,10 @@ pub struct FlexoramaAcpHandler {
 }
 
 impl FlexoramaAcpHandler {
-    pub fn new(agent: Agent, config: Config, model: String, debug: bool) -> Self {
+    pub fn new(mut agent: Agent, config: Config, model: String, debug: bool) -> Self {
+        // Suppress output in ACP mode - stdout must only contain JSON-RPC messages
+        agent.set_suppress_output(true);
+
         let capabilities = if agent.plan_mode() {
             ServerCapabilities::with_plan_mode()
         } else {
