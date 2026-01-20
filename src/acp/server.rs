@@ -1,6 +1,5 @@
-use crate::acp::errors::{AcpError, AcpResult};
+use crate::acp::errors::AcpResult;
 use crate::acp::handler::FlexoramaAcpHandler;
-use crate::acp::handshake::{AcpHandshakeRequest, AcpHandshakeResponse};
 use crate::acp::transport::StdioTransport;
 use crate::acp::types::{JsonRpcMessage, JsonRpcRequest};
 use crate::agent::Agent;
@@ -17,42 +16,10 @@ pub async fn run_acp_server(
     info!("Starting ACP server (debug: {})", debug);
     info!("Model: {}", model);
 
-    let plan_mode = agent.plan_mode();
     let mut transport = StdioTransport::new(debug);
     let mut handler = FlexoramaAcpHandler::new(agent, config, model, debug);
 
-    // First, handle the ACP handshake
-    info!("Waiting for ACP handshake...");
-    let handshake_line = transport.read_raw_line().await?;
-
-    if debug {
-        eprintln!("[ACP HANDSHAKE RX] {}", handshake_line);
-    }
-
-    match serde_json::from_str::<AcpHandshakeRequest>(&handshake_line) {
-        Ok(handshake_req) => {
-            info!("Received handshake from {} v{}",
-                handshake_req.client_info.name,
-                handshake_req.client_info.version);
-
-            let handshake_resp = AcpHandshakeResponse::new(&handshake_req, plan_mode);
-            let handshake_json = serde_json::to_string(&handshake_resp)?;
-
-            if debug {
-                eprintln!("[ACP HANDSHAKE TX] {}", handshake_json);
-            }
-
-            transport.write_raw_line(&handshake_json).await?;
-            info!("Handshake complete, switching to JSON-RPC mode");
-        }
-        Err(e) => {
-            error!("Failed to parse handshake: {}", e);
-            // Try to parse as JSON-RPC and continue anyway
-            warn!("Attempting to continue without handshake (may be using JSON-RPC only mode)");
-        }
-    }
-
-    info!("ACP server ready, waiting for JSON-RPC messages...");
+    info!("ACP server ready, waiting for messages...");
 
     loop {
         // Read message from stdin
