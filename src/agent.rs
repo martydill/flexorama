@@ -1165,6 +1165,11 @@ impl Agent {
         self.plan_mode
     }
 
+    /// Get the current yolo mode state
+    pub fn yolo_mode(&self) -> bool {
+        self.yolo_mode
+    }
+
     /// Update the active model for this session
     pub async fn set_model(&mut self, model: String) -> Result<()> {
         self.model = model.clone();

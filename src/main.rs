@@ -28,7 +28,7 @@ use utils::{create_spinner, print_usage_stats};
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web;
+    let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web && !cli.acp;
     let stream = !cli.no_stream;
 
     // Create code formatter early so TUI can render input/output immediately
@@ -292,7 +292,9 @@ async fn main() -> Result<()> {
     }
 
     // Run the appropriate mode
-    if cli.web {
+    if cli.acp {
+        run_acp_mode(agent, config, model, cli.acp_debug).await?;
+    } else if cli.web {
         run_web_mode(
             cli,
             agent,
@@ -363,6 +365,28 @@ async fn run_web_mode(
     };
 
     web::launch_web_ui(state, cli.web_port).await?;
+    Ok(())
+}
+
+/// Run ACP (Agent Client Protocol) mode
+async fn run_acp_mode(
+    agent: Agent,
+    config: Config,
+    model: String,
+    debug: bool,
+) -> Result<()> {
+    use acp::run_acp_server;
+
+    info!("Starting ACP server mode");
+
+    if debug {
+        eprintln!("[ACP] Debug mode enabled");
+        eprintln!("[ACP] Model: {}", model);
+        eprintln!("[ACP] Ready for JSON-RPC messages on stdin/stdout");
+    }
+
+    run_acp_server(agent, config, model, debug).await?;
+
     Ok(())
 }
 

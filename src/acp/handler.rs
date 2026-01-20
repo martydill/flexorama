@@ -1,0 +1,412 @@
+use crate::acp::capabilities::{ClientCapabilities, ServerCapabilities};
+use crate::acp::errors::{AcpError, AcpResult};
+use crate::acp::filesystem::FileSystemHandler;
+use crate::acp::types::{error_codes, JsonRpcError, JsonRpcMessage, JsonRpcRequest, JsonRpcResponse};
+use crate::agent::Agent;
+use crate::config::Config;
+use log::{debug, error, info, warn};
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+/// Flexorama ACP Handler
+/// Implements the Agent Client Protocol server-side logic
+pub struct FlexoramaAcpHandler {
+    /// The underlying Flexorama agent
+    agent: Arc<Mutex<Agent>>,
+
+    /// Server capabilities
+    capabilities: ServerCapabilities,
+
+    /// Workspace root path
+    workspace_root: Option<PathBuf>,
+
+    /// Client capabilities
+    client_capabilities: Option<ClientCapabilities>,
+
+    /// Whether the server is initialized
+    initialized: bool,
+
+    /// Cancellation flag for operations
+    cancellation_flag: Arc<AtomicBool>,
+
+    /// Config for creating new agents if needed
+    config: Config,
+
+    /// Model name
+    model: String,
+
+    /// Debug mode
+    debug: bool,
+
+    /// File system handler
+    filesystem: FileSystemHandler,
+
+    /// Yolo mode flag
+    yolo_mode: bool,
+}
+
+impl FlexoramaAcpHandler {
+    pub fn new(agent: Agent, config: Config, model: String, debug: bool) -> Self {
+        let capabilities = if agent.plan_mode() {
+            ServerCapabilities::with_plan_mode()
+        } else {
+            ServerCapabilities::default()
+        };
+
+        let file_security = agent.get_file_security_manager();
+        let yolo_mode = agent.yolo_mode();
+
+        let filesystem = FileSystemHandler::new(
+            file_security,
+            None,  // workspace_root will be set during initialization
+            yolo_mode,
+        );
+
+        Self {
+            agent: Arc::new(Mutex::new(agent)),
+            capabilities,
+            workspace_root: None,
+            client_capabilities: None,
+            initialized: false,
+            cancellation_flag: Arc::new(AtomicBool::new(false)),
+            config,
+            model,
+            debug,
+            filesystem,
+            yolo_mode,
+        }
+    }
+
+    /// Handle a JSON-RPC request
+    pub async fn handle_request(&mut self, request: JsonRpcRequest) -> JsonRpcResponse {
+        debug!("Handling method: {}", request.method);
+
+        let result = match request.method.as_str() {
+            "initialize" => self.handle_initialize(request.params).await,
+            "initialized" => self.handle_initialized().await,
+            "shutdown" => self.handle_shutdown().await,
+            "workspace/didChangeConfiguration" => self.handle_configuration_change(request.params).await,
+            "textDocument/didOpen" => self.handle_text_document_opened(request.params).await,
+            "textDocument/didChange" => self.handle_text_document_changed(request.params).await,
+            "textDocument/didClose" => self.handle_text_document_closed(request.params).await,
+            "agent/prompt" => self.handle_prompt(request.params).await,
+            "agent/cancel" => self.handle_cancel(request.params).await,
+            "fs/readFile" => self.handle_read_file(request.params).await,
+            "fs/writeFile" => self.handle_write_file(request.params).await,
+            "fs/listDirectory" => self.handle_list_directory(request.params).await,
+            "fs/glob" => self.handle_glob(request.params).await,
+            "fs/delete" => self.handle_delete(request.params).await,
+            "fs/createDirectory" => self.handle_create_directory(request.params).await,
+            method => {
+                warn!("Unknown method: {}", method);
+                Err(AcpError::InvalidRequest(format!("Unknown method: {}", method)))
+            }
+        };
+
+        match result {
+            Ok(value) => JsonRpcResponse::success(request.id, value),
+            Err(err) => {
+                error!("Error handling {}: {}", request.method, err);
+                let rpc_error: JsonRpcError = err.into();
+                JsonRpcResponse::error(request.id, rpc_error.code, rpc_error.message, rpc_error.data)
+            }
+        }
+    }
+
+    /// Handle initialize request
+    async fn handle_initialize(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        info!("Handling initialize request");
+
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+
+        // Parse workspace root
+        if let Some(workspace_root) = params.get("workspaceRoot").and_then(|v| v.as_str()) {
+            let root_path = PathBuf::from(workspace_root);
+            self.workspace_root = Some(root_path.clone());
+            self.filesystem.set_workspace_root(root_path);
+            info!("Workspace root: {}", workspace_root);
+        } else if let Some(root_uri) = params.get("rootUri").and_then(|v| v.as_str()) {
+            // Handle file:// URIs
+            if let Some(path) = root_uri.strip_prefix("file://") {
+                let root_path = PathBuf::from(path);
+                self.workspace_root = Some(root_path.clone());
+                self.filesystem.set_workspace_root(root_path);
+                info!("Workspace root from URI: {}", path);
+            }
+        }
+
+        // Parse client capabilities
+        if let Some(caps) = params.get("capabilities") {
+            match serde_json::from_value(caps.clone()) {
+                Ok(client_caps) => {
+                    self.client_capabilities = Some(client_caps);
+                    debug!("Client capabilities parsed");
+                }
+                Err(e) => {
+                    warn!("Failed to parse client capabilities: {}", e);
+                }
+            }
+        }
+
+        // Negotiate capabilities
+        if let Some(ref client_caps) = self.client_capabilities {
+            self.capabilities.negotiate(client_caps);
+        }
+
+        self.initialized = true;
+
+        Ok(json!({
+            "capabilities": self.capabilities,
+            "serverInfo": {
+                "name": "Flexorama",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        }))
+    }
+
+    /// Handle initialized notification
+    async fn handle_initialized(&mut self) -> AcpResult<Value> {
+        debug!("Client confirmed initialization");
+        Ok(json!(null))
+    }
+
+    /// Handle shutdown request
+    async fn handle_shutdown(&mut self) -> AcpResult<Value> {
+        info!("Shutting down ACP server");
+        self.initialized = false;
+        Ok(json!(null))
+    }
+
+    /// Handle configuration change
+    async fn handle_configuration_change(&mut self, _params: Option<Value>) -> AcpResult<Value> {
+        debug!("Configuration changed");
+        Ok(json!(null))
+    }
+
+    /// Handle text document opened
+    async fn handle_text_document_opened(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        debug!("Text document opened: {:?}", params);
+        // Could add to context automatically
+        Ok(json!(null))
+    }
+
+    /// Handle text document changed
+    async fn handle_text_document_changed(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        debug!("Text document changed: {:?}", params);
+        Ok(json!(null))
+    }
+
+    /// Handle text document closed
+    async fn handle_text_document_closed(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        debug!("Text document closed: {:?}", params);
+        Ok(json!(null))
+    }
+
+    /// Handle prompt request (main interaction)
+    async fn handle_prompt(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        if !self.initialized {
+            return Err(AcpError::InvalidRequest(
+                "Server not initialized".to_string(),
+            ));
+        }
+
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+
+        let prompt = params
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing prompt".to_string()))?;
+
+        info!("Processing prompt: {}", &prompt[..prompt.len().min(50)]);
+
+        // Reset cancellation flag
+        self.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+
+        // Process with Flexorama agent
+        let mut agent = self.agent.lock().await;
+        let response = agent
+            .process_message(prompt, self.cancellation_flag.clone())
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("CANCELLED") {
+                    AcpError::Cancelled
+                } else {
+                    AcpError::Agent(e)
+                }
+            })?;
+
+        // Get token usage
+        let usage = agent.get_token_usage();
+
+        Ok(json!({
+            "response": response,
+            "usage": {
+                "inputTokens": usage.total_input_tokens,
+                "outputTokens": usage.total_output_tokens,
+                "totalTokens": usage.total_tokens()
+            }
+        }))
+    }
+
+    /// Handle cancel request
+    async fn handle_cancel(&mut self, _params: Option<Value>) -> AcpResult<Value> {
+        info!("Cancelling current operation");
+        self.cancellation_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(json!({"cancelled": true}))
+    }
+
+    /// Handle read file request
+    async fn handle_read_file(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+
+        let content = self.filesystem.read_file(path).await?;
+        Ok(json!({"content": content}))
+    }
+
+    /// Handle write file request
+    async fn handle_write_file(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+        let content = params
+            .get("content")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing content parameter".to_string()))?;
+
+        self.filesystem.write_file(path, content).await?;
+        Ok(json!({"success": true}))
+    }
+
+    /// Handle list directory request
+    async fn handle_list_directory(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+
+        let entries = self.filesystem.list_directory(path).await?;
+        let entries_json: Vec<Value> = entries
+            .iter()
+            .map(|e| {
+                json!({
+                    "name": e.name,
+                    "isDirectory": e.is_directory,
+                    "path": e.path
+                })
+            })
+            .collect();
+
+        Ok(json!({"entries": entries_json}))
+    }
+
+    /// Handle glob request
+    async fn handle_glob(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let pattern = params
+            .get("pattern")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing pattern parameter".to_string()))?;
+
+        let files = self.filesystem.glob(pattern).await?;
+        Ok(json!({"files": files}))
+    }
+
+    /// Handle delete request
+    async fn handle_delete(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+
+        self.filesystem.delete(path).await?;
+        Ok(json!({"success": true}))
+    }
+
+    /// Handle create directory request
+    async fn handle_create_directory(&self, params: Option<Value>) -> AcpResult<Value> {
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let path = params
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing path parameter".to_string()))?;
+
+        self.filesystem.create_directory(path).await?;
+        Ok(json!({"success": true}))
+    }
+
+    /// Get workspace root
+    pub fn workspace_root(&self) -> Option<&PathBuf> {
+        self.workspace_root.as_ref()
+    }
+
+    /// Check if initialized
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Provider;
+
+    fn create_test_handler() -> FlexoramaAcpHandler {
+        let config = Config {
+            api_key: "test-key".to_string(),
+            provider: Provider::Anthropic,
+            base_url: "https://api.anthropic.com/v1".to_string(),
+            default_model: "test-model".to_string(),
+            max_tokens: 4096,
+            temperature: 0.7,
+            default_system_prompt: None,
+            bash_security: Default::default(),
+            file_security: Default::default(),
+            mcp: Default::default(),
+            skills: Default::default(),
+        };
+
+        let agent = Agent::new(config.clone(), "test-model".to_string(), false, false);
+
+        FlexoramaAcpHandler::new(agent, config, "test-model".to_string(), false)
+    }
+
+    #[tokio::test]
+    async fn test_initialize() {
+        let mut handler = create_test_handler();
+
+        let params = json!({
+            "workspaceRoot": "/test/workspace",
+            "capabilities": {}
+        });
+
+        let result = handler.handle_initialize(Some(params)).await;
+        assert!(result.is_ok());
+        assert!(handler.is_initialized());
+        assert_eq!(
+            handler.workspace_root(),
+            Some(&PathBuf::from("/test/workspace"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_shutdown() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        let result = handler.handle_shutdown().await;
+        assert!(result.is_ok());
+        assert!(!handler.is_initialized());
+    }
+}
