@@ -486,4 +486,110 @@ mod tests {
         assert!(result.is_ok());
         assert!(!handler.is_initialized());
     }
+
+    #[tokio::test]
+    async fn test_handle_request_unknown_method() {
+        let mut handler = create_test_handler();
+
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "unknown/method".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(request).await;
+
+        assert!(response.error.is_some());
+        assert!(response.result.is_none());
+        let error = response.error.unwrap();
+        assert!(error.message.contains("Unknown method"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_initialized() {
+        let mut handler = create_test_handler();
+
+        let result = handler.handle_initialized().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_cancel() {
+        let mut handler = create_test_handler();
+
+        let result = handler.handle_cancel(None).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), json!({"cancelled": true}));
+    }
+
+    #[tokio::test]
+    async fn test_handle_clear_context() {
+        let mut handler = create_test_handler();
+
+        let result = handler.handle_clear_context(None).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), json!({"success": true}));
+    }
+
+    #[tokio::test]
+    async fn test_handle_configuration_change() {
+        let mut handler = create_test_handler();
+
+        let result = handler.handle_configuration_change(None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_missing_params() {
+        let mut handler = create_test_handler();
+
+        // Test fs/readFile without params
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "fs/readFile".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(request).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert!(error.message.contains("Missing params"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_read_file_missing_path_param() {
+        let handler = create_test_handler();
+
+        let result = handler.handle_read_file(Some(json!({}))).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(AcpError::InvalidRequest(msg)) => {
+                assert!(msg.contains("Missing path parameter"));
+            }
+            _ => panic!("Expected InvalidRequest error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_workspace_root_getter() {
+        let mut handler = create_test_handler();
+
+        assert!(handler.workspace_root().is_none());
+
+        handler.workspace_root = Some(PathBuf::from("/test"));
+        assert_eq!(handler.workspace_root(), Some(&PathBuf::from("/test")));
+    }
+
+    #[tokio::test]
+    async fn test_is_initialized_getter() {
+        let mut handler = create_test_handler();
+
+        assert!(!handler.is_initialized());
+
+        handler.initialized = true;
+        assert!(handler.is_initialized());
+    }
 }
