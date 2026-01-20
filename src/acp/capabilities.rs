@@ -137,3 +137,178 @@ impl ServerCapabilities {
         // In the future, we can restrict based on client caps
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_server_capabilities_default() {
+        let caps = ServerCapabilities::default();
+
+        assert!(caps.file_system.is_some());
+        let fs = caps.file_system.unwrap();
+        assert!(fs.read);
+        assert!(fs.write);
+        assert!(fs.list);
+        assert!(fs.search);
+        assert!(fs.delete);
+        assert!(fs.create_directory);
+
+        assert!(caps.tools.is_some());
+        let tools = caps.tools.unwrap();
+        assert!(tools.dynamic);
+
+        assert_eq!(caps.streaming, Some(true));
+        assert_eq!(caps.multi_turn, Some(true));
+        assert_eq!(caps.code_editing, Some(true));
+        assert_eq!(caps.shell_execution, Some(true));
+        assert_eq!(caps.progress, Some(true));
+    }
+
+    #[test]
+    fn test_server_capabilities_yolo_mode() {
+        let caps = ServerCapabilities::with_yolo_mode();
+        let default_caps = ServerCapabilities::default();
+
+        // Yolo mode should be same as default (all permissions)
+        assert_eq!(
+            serde_json::to_string(&caps).unwrap(),
+            serde_json::to_string(&default_caps).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_server_capabilities_plan_mode() {
+        let caps = ServerCapabilities::with_plan_mode();
+
+        assert!(caps.file_system.is_some());
+        let fs = caps.file_system.unwrap();
+        assert!(fs.read); // Can read
+        assert!(!fs.write); // Cannot write
+        assert!(fs.list); // Can list
+        assert!(fs.search); // Can search
+        assert!(!fs.delete); // Cannot delete
+        assert!(!fs.create_directory); // Cannot create
+
+        assert!(caps.tools.is_some());
+        let tools = caps.tools.unwrap();
+        assert!(!tools.dynamic); // No dynamic tools in plan mode
+
+        assert_eq!(caps.streaming, Some(true));
+        assert_eq!(caps.multi_turn, Some(true));
+        assert_eq!(caps.code_editing, Some(false)); // No editing in plan mode
+        assert_eq!(caps.shell_execution, Some(false)); // No shell in plan mode
+        assert_eq!(caps.progress, Some(true));
+    }
+
+    #[test]
+    fn test_file_system_capabilities_serialization() {
+        let fs_caps = FileSystemCapabilities {
+            read: true,
+            write: false,
+            list: true,
+            search: false,
+            delete: false,
+            create_directory: true,
+        };
+
+        let serialized = serde_json::to_string(&fs_caps).unwrap();
+        let deserialized: FileSystemCapabilities = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.read, fs_caps.read);
+        assert_eq!(deserialized.write, fs_caps.write);
+        assert_eq!(deserialized.list, fs_caps.list);
+        assert_eq!(deserialized.search, fs_caps.search);
+        assert_eq!(deserialized.delete, fs_caps.delete);
+        assert_eq!(deserialized.create_directory, fs_caps.create_directory);
+    }
+
+    #[test]
+    fn test_tool_capabilities_serialization() {
+        let tool_caps = ToolCapabilities {
+            available: vec!["tool1".to_string(), "tool2".to_string()],
+            dynamic: true,
+        };
+
+        let serialized = serde_json::to_string(&tool_caps).unwrap();
+        let deserialized: ToolCapabilities = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.available, tool_caps.available);
+        assert_eq!(deserialized.dynamic, tool_caps.dynamic);
+    }
+
+    #[test]
+    fn test_client_capabilities_serialization() {
+        let client_caps = ClientCapabilities {
+            workspace: Some(WorkspaceCapabilities {
+                workspace_folders: true,
+            }),
+            permissions: Some(true),
+            progress: Some(true),
+        };
+
+        let serialized = serde_json::to_string(&client_caps).unwrap();
+        let deserialized: ClientCapabilities = serde_json::from_str(&serialized).unwrap();
+
+        assert!(deserialized.workspace.is_some());
+        assert_eq!(deserialized.permissions, Some(true));
+        assert_eq!(deserialized.progress, Some(true));
+    }
+
+    #[test]
+    fn test_server_capabilities_negotiate() {
+        let mut caps = ServerCapabilities::default();
+        let client_caps = ClientCapabilities {
+            workspace: Some(WorkspaceCapabilities {
+                workspace_folders: true,
+            }),
+            permissions: Some(true),
+            progress: Some(false),
+        };
+
+        caps.negotiate(&client_caps);
+
+        // For now, negotiate doesn't change anything
+        // This test ensures it doesn't panic
+        assert!(caps.file_system.is_some());
+    }
+
+    #[test]
+    fn test_workspace_capabilities() {
+        let workspace_caps = WorkspaceCapabilities {
+            workspace_folders: true,
+        };
+
+        assert!(workspace_caps.workspace_folders);
+    }
+
+    #[test]
+    fn test_server_capabilities_optional_fields() {
+        let caps = ServerCapabilities {
+            file_system: None,
+            tools: None,
+            streaming: None,
+            multi_turn: None,
+            code_editing: None,
+            shell_execution: None,
+            progress: None,
+        };
+
+        let serialized = serde_json::to_string(&caps).unwrap();
+        // All fields should be omitted when None
+        assert_eq!(serialized, "{}");
+    }
+
+    #[test]
+    fn test_client_capabilities_optional_fields() {
+        let caps = ClientCapabilities {
+            workspace: None,
+            permissions: None,
+            progress: None,
+        };
+
+        let serialized = serde_json::to_string(&caps).unwrap();
+        assert_eq!(serialized, "{}");
+    }
+}
