@@ -125,6 +125,26 @@ impl FlexoramaAcpHandler {
 
         let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
 
+        // Log the received params for debugging
+        if self.debug {
+            debug!("Initialize params: {}", serde_json::to_string_pretty(&params).unwrap_or_default());
+        }
+
+        // Parse protocol version if present (ACP handshake style)
+        if let Some(protocol_version) = params.get("protocolVersion").and_then(|v| v.as_u64()) {
+            info!("ACP Protocol Version: {}", protocol_version);
+        }
+
+        // Parse client info if present (ACP handshake style)
+        if let Some(client_info) = params.get("clientInfo") {
+            if let Some(name) = client_info.get("name").and_then(|v| v.as_str()) {
+                info!("Client: {}", name);
+            }
+            if let Some(version) = client_info.get("version").and_then(|v| v.as_str()) {
+                info!("Client version: {}", version);
+            }
+        }
+
         // Parse workspace root
         if let Some(workspace_root) = params.get("workspaceRoot").and_then(|v| v.as_str()) {
             let root_path = PathBuf::from(workspace_root);
@@ -141,8 +161,9 @@ impl FlexoramaAcpHandler {
             }
         }
 
-        // Parse client capabilities
-        if let Some(caps) = params.get("capabilities") {
+        // Parse client capabilities - support both "capabilities" and "clientCapabilities"
+        let caps_field = params.get("clientCapabilities").or_else(|| params.get("capabilities"));
+        if let Some(caps) = caps_field {
             match serde_json::from_value(caps.clone()) {
                 Ok(client_caps) => {
                     self.client_capabilities = Some(client_caps);
