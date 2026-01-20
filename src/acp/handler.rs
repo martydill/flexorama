@@ -1,9 +1,13 @@
-use crate::acp::capabilities::{ClientCapabilities, ServerCapabilities};
+use crate::acp::capabilities::{ClientCapabilities};
 use crate::acp::errors::{AcpError, AcpResult};
 use crate::acp::filesystem::FileSystemHandler;
 use crate::acp::types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use crate::agent::Agent;
 use crate::config::Config;
+use agent_client_protocol_schema::{
+    AgentCapabilities, Implementation, InitializeResponse, PromptCapabilities,
+    McpCapabilities, V1 as PROTOCOL_V1,
+};
 use log::{debug, error, info, warn};
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -16,9 +20,6 @@ use tokio::sync::Mutex;
 pub struct FlexoramaAcpHandler {
     /// The underlying Flexorama agent
     agent: Arc<Mutex<Agent>>,
-
-    /// Server capabilities
-    capabilities: ServerCapabilities,
 
     /// Workspace root path
     workspace_root: Option<PathBuf>,
@@ -46,6 +47,9 @@ pub struct FlexoramaAcpHandler {
 
     /// Yolo mode flag
     yolo_mode: bool,
+
+    /// Plan mode flag
+    plan_mode: bool,
 }
 
 impl FlexoramaAcpHandler {
@@ -53,14 +57,9 @@ impl FlexoramaAcpHandler {
         // Suppress output in ACP mode - stdout must only contain JSON-RPC messages
         agent.set_suppress_output(true);
 
-        let capabilities = if agent.plan_mode() {
-            ServerCapabilities::with_plan_mode()
-        } else {
-            ServerCapabilities::default()
-        };
-
         let file_security = agent.get_file_security_manager();
         let yolo_mode = agent.yolo_mode();
+        let plan_mode = agent.plan_mode();
 
         let filesystem = FileSystemHandler::new(
             file_security,
@@ -70,7 +69,6 @@ impl FlexoramaAcpHandler {
 
         Self {
             agent: Arc::new(Mutex::new(agent)),
-            capabilities,
             workspace_root: None,
             client_capabilities: None,
             initialized: false,
@@ -80,6 +78,7 @@ impl FlexoramaAcpHandler {
             debug,
             filesystem,
             yolo_mode,
+            plan_mode,
         }
     }
 
@@ -178,20 +177,34 @@ impl FlexoramaAcpHandler {
             }
         }
 
-        // Negotiate capabilities
-        if let Some(ref client_caps) = self.client_capabilities {
-            self.capabilities.negotiate(client_caps);
-        }
-
         self.initialized = true;
 
-        Ok(json!({
-            "capabilities": self.capabilities,
-            "serverInfo": {
-                "name": "Flexorama",
-                "version": env!("CARGO_PKG_VERSION")
-            }
-        }))
+        // Build official ACP InitializeResponse
+        let agent_capabilities = AgentCapabilities {
+            load_session: false,  // We don't support session loading yet
+            prompt_capabilities: PromptCapabilities {
+                image: false,  // We support text prompts
+                audio: false,
+                embedded_context: true,  // We support embedded context (file contents, etc.)
+                meta: None,
+            },
+            mcp_capabilities: McpCapabilities::default(),  // Default MCP support
+            meta: None,
+        };
+
+        let response = InitializeResponse {
+            protocol_version: PROTOCOL_V1,  // ACP v1
+            agent_capabilities,
+            auth_methods: vec![],  // No authentication required
+            agent_info: Some(Implementation {
+                name: "flexorama".to_string(),
+                title: Some("Flexorama".to_string()),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            }),
+            meta: None,
+        };
+
+        Ok(serde_json::to_value(response).unwrap())
     }
 
     /// Handle initialized notification
