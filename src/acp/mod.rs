@@ -23,6 +23,7 @@ pub mod capabilities;
 pub mod errors;
 pub mod filesystem;
 pub mod handler;
+pub mod handshake;
 pub mod server;
 pub mod transport;
 pub mod types;

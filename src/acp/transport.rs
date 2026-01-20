@@ -19,6 +19,55 @@ impl StdioTransport {
         }
     }
 
+    /// Read a raw line from stdin (for handshake)
+    pub async fn read_raw_line(&mut self) -> AcpResult<String> {
+        let mut line = String::new();
+
+        match self.stdin.read_line(&mut line).await {
+            Ok(0) => {
+                debug!("EOF on stdin, client disconnected");
+                return Err(AcpError::Io(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Client disconnected",
+                )));
+            }
+            Ok(n) => {
+                trace!("Read {} bytes from stdin", n);
+            }
+            Err(e) => {
+                error!("Failed to read from stdin: {}", e);
+                return Err(AcpError::Io(e));
+            }
+        }
+
+        let line = line.trim().to_string();
+        if line.is_empty() {
+            return Err(AcpError::InvalidMessage("Empty message".to_string()));
+        }
+
+        Ok(line)
+    }
+
+    /// Write a raw line to stdout (for handshake)
+    pub async fn write_raw_line(&mut self, line: &str) -> AcpResult<()> {
+        self.stdout
+            .write_all(line.as_bytes())
+            .await
+            .map_err(|e| AcpError::Io(e))?;
+
+        self.stdout
+            .write_all(b"\n")
+            .await
+            .map_err(|e| AcpError::Io(e))?;
+
+        self.stdout
+            .flush()
+            .await
+            .map_err(|e| AcpError::Io(e))?;
+
+        Ok(())
+    }
+
     /// Read a single JSON-RPC message from stdin
     /// Messages are newline-delimited JSON
     pub async fn read_message(&mut self) -> AcpResult<JsonRpcMessage> {
