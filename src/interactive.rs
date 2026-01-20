@@ -245,7 +245,7 @@ pub async fn run_tui_interactive(
 }
 
 /// Check for and add context files
-pub async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> Result<()> {
+pub async fn add_context_files(agent: &mut Agent, context_files: &[String], silent: bool) -> Result<()> {
     // Always add AGENTS.md from ~/.flexorama/ if it exists (priority)
     let home_agents_md = get_home_agents_md_path();
     if home_agents_md.exists() {
@@ -254,11 +254,15 @@ pub async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> R
             .add_context_file(home_agents_md.to_str().unwrap())
             .await
         {
-            Ok(_) => app_println!(
-                "{} Added context file: {}",
-                "✓".green(),
-                home_agents_md.display()
-            ),
+            Ok(_) => {
+                if !silent {
+                    app_println!(
+                        "{} Added context file: {}",
+                        "✓".green(),
+                        home_agents_md.display()
+                    );
+                }
+            }
             Err(e) => app_eprintln!(
                 "{} Failed to add context file '{}': {}",
                 "✗".red(),
@@ -272,7 +276,11 @@ pub async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> R
     if Path::new("AGENTS.md").exists() {
         debug!("Auto-adding AGENTS.md from current directory as context");
         match agent.add_context_file("AGENTS.md").await {
-            Ok(_) => app_println!("{} Added context file: {}", "✓".green(), "AGENTS.md"),
+            Ok(_) => {
+                if !silent {
+                    app_println!("{} Added context file: {}", "✓".green(), "AGENTS.md");
+                }
+            }
             Err(e) => app_eprintln!(
                 "{} Failed to add context file 'AGENTS.md': {}",
                 "✗".red(),
@@ -285,7 +293,11 @@ pub async fn add_context_files(agent: &mut Agent, context_files: &[String]) -> R
     for file_path in context_files {
         debug!("Adding context file: {}", file_path);
         match agent.add_context_file(file_path).await {
-            Ok(_) => app_println!("{} Added context file: {}", "✓".green(), file_path),
+            Ok(_) => {
+                if !silent {
+                    app_println!("{} Added context file: {}", "✓".green(), file_path);
+                }
+            }
             Err(e) => app_eprintln!(
                 "{} Failed to add context file '{}': {}",
                 "✗".red(),
@@ -318,7 +330,7 @@ mod tests {
         .await;
         let context_files: Vec<String> = vec![];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -335,7 +347,7 @@ mod tests {
         let context_files = vec!["nonexistent_file.txt".to_string()];
 
         // Should not panic even if file doesn't exist
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -358,7 +370,7 @@ mod tests {
 
         let context_files = vec![file_path.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -386,7 +398,7 @@ mod tests {
             file2.to_str().unwrap().to_string(),
         ];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -424,7 +436,7 @@ mod tests {
             file3.to_str().unwrap().to_string(),
         ];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -450,7 +462,7 @@ mod tests {
         ];
 
         // Should handle both existing and non-existing files gracefully
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -471,7 +483,7 @@ mod tests {
 
         let context_files = vec![file_with_spaces.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -496,7 +508,7 @@ mod tests {
             context_files.push(file.to_str().unwrap().to_string());
         }
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -518,7 +530,7 @@ mod tests {
 
         let context_files = vec![file_path.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -539,7 +551,7 @@ mod tests {
 
         let context_files = vec![empty_file.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -560,7 +572,7 @@ mod tests {
         ];
 
         // Should handle gracefully even if paths don't exist
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -581,7 +593,7 @@ mod tests {
 
         let context_files = vec![file.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -604,7 +616,7 @@ mod tests {
         let context_files = vec![file_str.clone(), file_str.clone(), file_str];
 
         // Should handle duplicate paths gracefully
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -627,7 +639,7 @@ mod tests {
 
         let context_files = vec![file.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -651,7 +663,7 @@ mod tests {
         let context_files = vec![binary_file.to_str().unwrap().to_string()];
 
         // Should handle binary files gracefully
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -686,7 +698,7 @@ mod tests {
 
         let context_files = vec![unicode_file.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 
@@ -713,7 +725,7 @@ mod tests {
 
         let context_files = vec![file.to_str().unwrap().to_string()];
 
-        let result = add_context_files(&mut agent, &context_files).await;
+        let result = add_context_files(&mut agent, &context_files, false).await;
         assert!(result.is_ok());
     }
 }

@@ -63,11 +63,13 @@ pub fn flush() {
 
 pub struct OutputLogger {
     level: LevelFilter,
+    /// If true, all logs go to stderr (for ACP mode where stdout is for JSON-RPC only)
+    stderr_only: bool,
 }
 
 impl OutputLogger {
-    pub fn new(level: LevelFilter) -> Self {
-        Self { level }
+    pub fn new(level: LevelFilter, stderr_only: bool) -> Self {
+        Self { level, stderr_only }
     }
 }
 
@@ -80,7 +82,9 @@ impl log::Log for OutputLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let is_err = matches!(record.level(), Level::Error | Level::Warn);
+        // In stderr_only mode (ACP), send ALL logs to stderr
+        // Otherwise, only send ERROR/WARN to stderr
+        let is_err = self.stderr_only || matches!(record.level(), Level::Error | Level::Warn);
         write_line(&format!("[{}] {}", record.level(), record.args()), is_err);
     }
 
@@ -89,7 +93,7 @@ impl log::Log for OutputLogger {
     }
 }
 
-pub fn init_logger(default_level: LevelFilter) {
+pub fn init_logger(default_level: LevelFilter, stderr_only: bool) {
     let level = std::env::var("RUST_LOG")
         .ok()
         .and_then(|value| {
@@ -109,7 +113,7 @@ pub fn init_logger(default_level: LevelFilter) {
         })
         .unwrap_or(default_level);
 
-    let logger = OutputLogger::new(level);
+    let logger = OutputLogger::new(level, stderr_only);
     let _ = log::set_boxed_logger(Box::new(logger));
     log::set_max_level(level);
 }
