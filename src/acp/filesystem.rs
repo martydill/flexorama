@@ -288,8 +288,17 @@ mod tests {
         let security = Arc::new(RwLock::new(FileSecurityManager::new(FileSecurity::default())));
         let handler = FileSystemHandler::new(security, None, false);
 
-        let result = handler.resolve_path("/absolute/path").unwrap();
-        assert_eq!(result, PathBuf::from("/absolute/path"));
+        #[cfg(windows)]
+        {
+            let result = handler.resolve_path("C:\\absolute\\path").unwrap();
+            assert_eq!(result, PathBuf::from("C:\\absolute\\path"));
+        }
+
+        #[cfg(not(windows))]
+        {
+            let result = handler.resolve_path("/absolute/path").unwrap();
+            assert_eq!(result, PathBuf::from("/absolute/path"));
+        }
     }
 
     #[test]

@@ -39,12 +39,6 @@ pub struct FlexoramaAcpHandler {
     /// Cancellation flag for operations (for legacy agent/* methods)
     cancellation_flag: Arc<AtomicBool>,
 
-    /// Config for creating new agents if needed
-    config: Config,
-
-    /// Model name
-    model: String,
-
     /// Debug mode
     debug: bool,
 
@@ -53,9 +47,6 @@ pub struct FlexoramaAcpHandler {
 
     /// Yolo mode flag
     yolo_mode: bool,
-
-    /// Plan mode flag
-    plan_mode: bool,
 
     /// Notification sender for sending session/update notifications
     notification_sender: Option<NotificationSender>,
@@ -91,12 +82,9 @@ impl FlexoramaAcpHandler {
             client_capabilities: None,
             initialized: false,
             cancellation_flag: Arc::new(AtomicBool::new(false)),
-            config,
-            model,
             debug,
             filesystem,
             yolo_mode,
-            plan_mode,
             notification_sender: None,
         }
     }
