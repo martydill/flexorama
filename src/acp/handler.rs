@@ -6,8 +6,9 @@ use crate::agent::Agent;
 use crate::config::Config;
 use agent_client_protocol_schema::{
     AgentCapabilities, Implementation, InitializeResponse, PromptCapabilities,
-    McpCapabilities, V1 as PROTOCOL_V1,
+    McpCapabilities, V1 as PROTOCOL_V1, NewSessionResponse, SessionId,
 };
+use uuid::Uuid;
 use log::{debug, error, info, warn};
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -90,21 +91,37 @@ impl FlexoramaAcpHandler {
             "initialize" => self.handle_initialize(request.params).await,
             "initialized" => self.handle_initialized().await,
             "shutdown" => self.handle_shutdown().await,
+
+            // ACP session methods (official protocol)
+            "session/new" => self.handle_session_new(request.params).await,
+            "session/prompt" => self.handle_session_prompt(request.params).await,
+            "session/cancel" => self.handle_session_cancel(request.params).await,
+
+            // Legacy methods for backward compatibility
+            "agent/prompt" => self.handle_prompt(request.params).await,
+            "agent/cancel" => self.handle_cancel(request.params).await,
+
+            // LSP-style methods (for compatibility)
             "workspace/didChangeConfiguration" => self.handle_configuration_change(request.params).await,
             "textDocument/didOpen" => self.handle_text_document_opened(request.params).await,
             "textDocument/didChange" => self.handle_text_document_changed(request.params).await,
             "textDocument/didClose" => self.handle_text_document_closed(request.params).await,
-            "agent/prompt" => self.handle_prompt(request.params).await,
-            "agent/cancel" => self.handle_cancel(request.params).await,
+
+            // File system operations (custom)
             "fs/readFile" => self.handle_read_file(request.params).await,
             "fs/writeFile" => self.handle_write_file(request.params).await,
             "fs/listDirectory" => self.handle_list_directory(request.params).await,
             "fs/glob" => self.handle_glob(request.params).await,
             "fs/delete" => self.handle_delete(request.params).await,
             "fs/createDirectory" => self.handle_create_directory(request.params).await,
+
+            // Context management (custom)
             "context/addFile" => self.handle_add_context_file(request.params).await,
             "context/clear" => self.handle_clear_context(request.params).await,
+
+            // Editing (custom)
             "edit/applyEdit" => self.handle_apply_edit(request.params).await,
+
             method => {
                 warn!("Unknown method: {}", method);
                 Err(AcpError::InvalidRequest(format!("Unknown method: {}", method)))
@@ -218,6 +235,126 @@ impl FlexoramaAcpHandler {
         info!("Shutting down ACP server");
         self.initialized = false;
         Ok(json!(null))
+    }
+
+    /// Handle session/new request (ACP official protocol)
+    async fn handle_session_new(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        if !self.initialized {
+            return Err(AcpError::InvalidRequest(
+                "Server not initialized. Call initialize first.".to_string(),
+            ));
+        }
+
+        info!("Creating new session");
+
+        // Parse params if provided (cwd, mcpServers, etc.)
+        if let Some(params) = params {
+            // Extract working directory if provided
+            if let Some(cwd) = params.get("cwd").and_then(|v| v.as_str()) {
+                let cwd_path = PathBuf::from(cwd);
+                self.workspace_root = Some(cwd_path.clone());
+                self.filesystem.set_workspace_root(cwd_path);
+                info!("Session working directory: {}", cwd);
+            }
+        }
+
+        // Generate a session ID (using UUID v4)
+        let session_id = SessionId::from(Uuid::new_v4().to_string());
+
+        info!("Created session: {}", session_id);
+
+        // Build response using official ACP type
+        let response = NewSessionResponse {
+            session_id,
+            modes: None,  // We don't support modes yet
+            meta: None,
+        };
+
+        Ok(serde_json::to_value(response).unwrap())
+    }
+
+    /// Handle session/prompt request (ACP official protocol)
+    async fn handle_session_prompt(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        if !self.initialized {
+            return Err(AcpError::InvalidRequest(
+                "Server not initialized".to_string(),
+            ));
+        }
+
+        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+
+        // Extract session_id (required)
+        let _session_id = params
+            .get("sessionId")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AcpError::InvalidRequest("Missing sessionId".to_string()))?;
+
+        // Extract prompt content blocks
+        let prompt_blocks = params
+            .get("prompt")
+            .ok_or_else(|| AcpError::InvalidRequest("Missing prompt".to_string()))?;
+
+        // Convert ContentBlocks to a simple text prompt for now
+        // TODO: Handle images, resources, etc.
+        let prompt_text = if let Some(blocks) = prompt_blocks.as_array() {
+            blocks
+                .iter()
+                .filter_map(|block| {
+                    if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
+                        Some(text.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            prompt_blocks.to_string()
+        };
+
+        info!("Processing session prompt: {}", &prompt_text[..prompt_text.len().min(50)]);
+
+        // Reset cancellation flag
+        self.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+
+        // Process with Flexorama agent
+        let mut agent = self.agent.lock().await;
+        let response = agent
+            .process_message(&prompt_text, self.cancellation_flag.clone())
+            .await
+            .map_err(|e| {
+                if e.to_string().contains("CANCELLED") {
+                    AcpError::Cancelled
+                } else {
+                    AcpError::Agent(e)
+                }
+            })?;
+
+        // Build ACP PromptResponse
+        let acp_response = json!({
+            "stopReason": "endTurn",  // We completed successfully
+            "meta": {
+                "response": response
+            }
+        });
+
+        Ok(acp_response)
+    }
+
+    /// Handle session/cancel request (ACP official protocol)
+    async fn handle_session_cancel(&mut self, params: Option<Value>) -> AcpResult<Value> {
+        // Extract session_id if provided
+        if let Some(params) = params {
+            if let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) {
+                info!("Cancelling session: {}", session_id);
+            }
+        }
+
+        // Set cancellation flag
+        self.cancellation_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        info!("Session cancellation requested");
+        Ok(json!({"cancelled": true}))
     }
 
     /// Handle configuration change
