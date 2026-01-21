@@ -24,6 +24,7 @@ pub mod errors;
 pub mod filesystem;
 pub mod handler;
 pub mod server;
+pub mod session;
 pub mod transport;
 pub mod types;
 

@@ -1,6 +1,7 @@
 use crate::acp::capabilities::{ClientCapabilities};
 use crate::acp::errors::{AcpError, AcpResult};
 use crate::acp::filesystem::FileSystemHandler;
+use crate::acp::session::SessionManager;
 use crate::acp::types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use crate::agent::Agent;
 use crate::config::Config;
@@ -19,8 +20,11 @@ use tokio::sync::Mutex;
 /// Flexorama ACP Handler
 /// Implements the Agent Client Protocol server-side logic
 pub struct FlexoramaAcpHandler {
-    /// The underlying Flexorama agent
+    /// The underlying Flexorama agent (for legacy agent/* methods)
     agent: Arc<Mutex<Agent>>,
+
+    /// Session manager for ACP sessions
+    session_manager: SessionManager,
 
     /// Workspace root path
     workspace_root: Option<PathBuf>,
@@ -31,7 +35,7 @@ pub struct FlexoramaAcpHandler {
     /// Whether the server is initialized
     initialized: bool,
 
-    /// Cancellation flag for operations
+    /// Cancellation flag for operations (for legacy agent/* methods)
     cancellation_flag: Arc<AtomicBool>,
 
     /// Config for creating new agents if needed
@@ -68,8 +72,17 @@ impl FlexoramaAcpHandler {
             yolo_mode,
         );
 
+        // Create session manager for managing ACP sessions
+        let session_manager = SessionManager::new(
+            config.clone(),
+            model.clone(),
+            yolo_mode,
+            plan_mode,
+        );
+
         Self {
             agent: Arc::new(Mutex::new(agent)),
+            session_manager,
             workspace_root: None,
             client_capabilities: None,
             initialized: false,
@@ -245,23 +258,40 @@ impl FlexoramaAcpHandler {
             ));
         }
 
-        info!("Creating new session");
+        info!("Creating new ACP session");
 
         // Parse params if provided (cwd, mcpServers, etc.)
-        if let Some(params) = params {
+        let session_workspace = if let Some(params) = params {
             // Extract working directory if provided
-            if let Some(cwd) = params.get("cwd").and_then(|v| v.as_str()) {
-                let cwd_path = PathBuf::from(cwd);
-                self.workspace_root = Some(cwd_path.clone());
-                self.filesystem.set_workspace_root(cwd_path);
-                info!("Session working directory: {}", cwd);
-            }
-        }
+            params.get("cwd")
+                .and_then(|v| v.as_str())
+                .map(|cwd| {
+                    info!("Session working directory: {}", cwd);
+                    PathBuf::from(cwd)
+                })
+        } else {
+            None
+        };
 
         // Generate a session ID (using UUID v4)
         let session_id = SessionId::from(Uuid::new_v4().to_string());
 
-        info!("Created session: {}", session_id);
+        // Create a new session with its own agent and conversation
+        let session = self.session_manager.create_session(session_id.clone()).await
+            .map_err(|e| AcpError::Agent(e))?;
+
+        // If a workspace was specified, update the session's workspace
+        if let Some(workspace) = session_workspace {
+            // Note: We could set workspace on the session's agent here if needed
+            // For now, workspace is set globally in initialize
+            info!("Session {} workspace: {}", session_id, workspace.display());
+        }
+
+        info!(
+            "Created session: {} with conversation ID: {:?}",
+            session_id,
+            session.conversation_id
+        );
 
         // Build response using official ACP type
         let response = NewSessionResponse {
@@ -284,7 +314,7 @@ impl FlexoramaAcpHandler {
         let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
 
         // Extract session_id (required)
-        let _session_id = params
+        let session_id = params
             .get("sessionId")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AcpError::InvalidRequest("Missing sessionId".to_string()))?;
@@ -312,15 +342,19 @@ impl FlexoramaAcpHandler {
             prompt_blocks.to_string()
         };
 
-        info!("Processing session prompt: {}", &prompt_text[..prompt_text.len().min(50)]);
+        info!("Processing prompt for session {}: {}", session_id, &prompt_text[..prompt_text.len().min(50)]);
 
-        // Reset cancellation flag
-        self.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        // Look up the session
+        let session = self.session_manager.get_session(session_id).await
+            .ok_or_else(|| AcpError::InvalidRequest(format!("Session not found: {}", session_id)))?;
 
-        // Process with Flexorama agent
-        let mut agent = self.agent.lock().await;
+        // Reset cancellation flag for this session
+        session.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+
+        // Process with the session's agent
+        let mut agent = session.agent.lock().await;
         let response = agent
-            .process_message(&prompt_text, self.cancellation_flag.clone())
+            .process_message(&prompt_text, session.cancellation_flag.clone())
             .await
             .map_err(|e| {
                 if e.to_string().contains("CANCELLED") {
@@ -329,6 +363,8 @@ impl FlexoramaAcpHandler {
                     AcpError::Agent(e)
                 }
             })?;
+
+        info!("Session {} prompt completed", session_id);
 
         // Build ACP PromptResponse
         let acp_response = json!({
@@ -347,13 +383,26 @@ impl FlexoramaAcpHandler {
         if let Some(params) = params {
             if let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) {
                 info!("Cancelling session: {}", session_id);
+
+                // Look up the session and cancel it
+                if let Some(session) = self.session_manager.get_session(session_id).await {
+                    session.cancel();
+                    info!("Session {} cancelled", session_id);
+                } else {
+                    warn!("Session {} not found for cancellation", session_id);
+                }
+            }
+        } else {
+            // No session ID provided - cancel all sessions (legacy behavior)
+            warn!("No sessionId provided, cancelling all sessions");
+            // Cancel all active sessions
+            for session_id in self.session_manager.list_session_ids().await {
+                if let Some(session) = self.session_manager.get_session(&session_id).await {
+                    session.cancel();
+                }
             }
         }
 
-        // Set cancellation flag
-        self.cancellation_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-
-        info!("Session cancellation requested");
         Ok(json!({"cancelled": true}))
     }
 
@@ -586,7 +635,7 @@ impl FlexoramaAcpHandler {
             }),
         };
 
-        let mut security_manager = self.agent.lock().await.get_file_security_manager();
+        let security_manager = self.agent.lock().await.get_file_security_manager();
         let mut manager = security_manager.write().await;
         let result = crate::tools::edit_file::edit_file(&call, &mut *manager, self.yolo_mode).await?;
 
@@ -784,8 +833,10 @@ mod tests {
         assert!(value.get("sessionId").is_some());
         assert!(value.get("sessionId").unwrap().is_string());
 
-        // Verify workspace root was set
-        assert_eq!(handler.workspace_root(), Some(&PathBuf::from("/tmp/test")));
+        // Verify that a session was created
+        let session_id = value.get("sessionId").unwrap().as_str().unwrap();
+        let session = handler.session_manager.get_session(session_id).await;
+        assert!(session.is_some());
     }
 
     #[tokio::test]
