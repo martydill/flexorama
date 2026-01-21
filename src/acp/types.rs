@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::mpsc;
+
+/// Channel sender for outgoing notifications
+pub type NotificationSender = mpsc::UnboundedSender<JsonRpcNotification>;
 
 /// JSON-RPC 2.0 Request
 #[derive(Debug, Clone, Serialize, Deserialize)]

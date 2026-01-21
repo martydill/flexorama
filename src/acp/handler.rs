@@ -2,12 +2,13 @@ use crate::acp::capabilities::{ClientCapabilities};
 use crate::acp::errors::{AcpError, AcpResult};
 use crate::acp::filesystem::FileSystemHandler;
 use crate::acp::session::SessionManager;
-use crate::acp::types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+use crate::acp::types::{JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NotificationSender};
 use crate::agent::Agent;
 use crate::config::Config;
 use agent_client_protocol_schema::{
-    AgentCapabilities, Implementation, InitializeResponse, PromptCapabilities,
-    McpCapabilities, V1 as PROTOCOL_V1, NewSessionResponse, SessionId,
+    AgentCapabilities, ContentBlock, Implementation, InitializeResponse, PromptCapabilities,
+    McpCapabilities, V1 as PROTOCOL_V1, NewSessionResponse, SessionId, SessionNotification,
+    PromptResponse, StopReason, ContentChunk, SessionUpdate, TextContent,
 };
 use uuid::Uuid;
 use log::{debug, error, info, warn};
@@ -55,6 +56,9 @@ pub struct FlexoramaAcpHandler {
 
     /// Plan mode flag
     plan_mode: bool,
+
+    /// Notification sender for sending session/update notifications
+    notification_sender: Option<NotificationSender>,
 }
 
 impl FlexoramaAcpHandler {
@@ -93,6 +97,46 @@ impl FlexoramaAcpHandler {
             filesystem,
             yolo_mode,
             plan_mode,
+            notification_sender: None,
+        }
+    }
+
+    /// Set the notification sender for sending session/update notifications
+    pub fn set_notification_sender(&mut self, sender: NotificationSender) {
+        self.notification_sender = Some(sender);
+    }
+
+    /// Send a session/update notification with agent message content
+    fn send_agent_message_notification(&self, session_id: &str, content: &str) {
+        if let Some(ref sender) = self.notification_sender {
+            // Build the SessionNotification using official ACP schema types
+            let notification = SessionNotification {
+                session_id: SessionId::from(session_id.to_string()),
+                update: SessionUpdate::AgentMessageChunk(ContentChunk {
+                    content: ContentBlock::Text(TextContent {
+                        text: content.to_string(),
+                        annotations: None,
+                        meta: None,
+                    }),
+                    meta: None,
+                }),
+                meta: None,
+            };
+
+            // Convert to JSON-RPC notification
+            let json_notification = JsonRpcNotification {
+                jsonrpc: "2.0".to_string(),
+                method: "session/update".to_string(),
+                params: Some(serde_json::to_value(notification).unwrap()),
+            };
+
+            if let Err(e) = sender.send(json_notification) {
+                error!("Failed to send session/update notification: {}", e);
+            } else {
+                debug!("Sent session/update notification for session {}", session_id);
+            }
+        } else {
+            warn!("No notification sender configured, cannot send session/update");
         }
     }
 
@@ -324,15 +368,31 @@ impl FlexoramaAcpHandler {
             .get("prompt")
             .ok_or_else(|| AcpError::InvalidRequest("Missing prompt".to_string()))?;
 
-        // Convert ContentBlocks to a simple text prompt for now
-        // TODO: Handle images, resources, etc.
+        // Convert ContentBlocks to a simple text prompt
+        // Handles text blocks and resource blocks (with text content)
         let prompt_text = if let Some(blocks) = prompt_blocks.as_array() {
             blocks
                 .iter()
                 .filter_map(|block| {
+                    // Handle text content blocks: {"type": "text", "text": "..."}
                     if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                         Some(text.to_string())
-                    } else {
+                    }
+                    // Handle resource blocks: {"type": "resource", "resource": {"text": "...", "uri": "..."}}
+                    else if let Some(resource) = block.get("resource") {
+                        if let Some(text) = resource.get("text").and_then(|v| v.as_str()) {
+                            // Include URI context if available
+                            let uri = resource.get("uri").and_then(|v| v.as_str());
+                            if let Some(uri) = uri {
+                                Some(format!("--- Content of {} ---\n{}\n--- End of {} ---", uri, text, uri))
+                            } else {
+                                Some(text.to_string())
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    else {
                         None
                     }
                 })
@@ -353,28 +413,37 @@ impl FlexoramaAcpHandler {
 
         // Process with the session's agent
         let mut agent = session.agent.lock().await;
-        let response = agent
+        let result = agent
             .process_message(&prompt_text, session.cancellation_flag.clone())
-            .await
-            .map_err(|e| {
-                if e.to_string().contains("CANCELLED") {
-                    AcpError::Cancelled
-                } else {
-                    AcpError::Agent(e)
+            .await;
+
+        // Build official ACP PromptResponse using schema types
+        // According to ACP spec, cancellation should return PromptResponse with StopReason::Cancelled
+        let acp_response = match result {
+            Ok(response) => {
+                info!("Session {} prompt completed", session_id);
+
+                // Send the response content via session/update notification (ACP compliant)
+                self.send_agent_message_notification(&session_id, &response);
+
+                PromptResponse {
+                    stop_reason: StopReason::EndTurn,
+                    meta: None,
                 }
-            })?;
-
-        info!("Session {} prompt completed", session_id);
-
-        // Build ACP PromptResponse
-        let acp_response = json!({
-            "stopReason": "endTurn",  // We completed successfully
-            "meta": {
-                "response": response
             }
-        });
+            Err(e) if e.to_string().contains("CANCELLED") => {
+                info!("Session {} prompt cancelled", session_id);
+                PromptResponse {
+                    stop_reason: StopReason::Cancelled,
+                    meta: None,
+                }
+            }
+            Err(e) => {
+                return Err(AcpError::Agent(e));
+            }
+        };
 
-        Ok(acp_response)
+        Ok(serde_json::to_value(acp_response).unwrap())
     }
 
     /// Handle session/cancel request (ACP official protocol)
