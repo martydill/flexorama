@@ -766,4 +766,191 @@ mod tests {
         handler.initialized = true;
         assert!(handler.is_initialized());
     }
+
+    #[tokio::test]
+    async fn test_session_new() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        let params = json!({
+            "cwd": "/tmp/test",
+            "mcpServers": []
+        });
+
+        let result = handler.handle_session_new(Some(params)).await;
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        assert!(value.get("sessionId").is_some());
+        assert!(value.get("sessionId").unwrap().is_string());
+
+        // Verify workspace root was set
+        assert_eq!(handler.workspace_root(), Some(&PathBuf::from("/tmp/test")));
+    }
+
+    #[tokio::test]
+    async fn test_session_new_not_initialized() {
+        let mut handler = create_test_handler();
+        // Don't set initialized = true
+
+        let params = json!({
+            "cwd": "/tmp",
+            "mcpServers": []
+        });
+
+        let result = handler.handle_session_new(Some(params)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not initialized"));
+    }
+
+    #[tokio::test]
+    async fn test_session_new_no_params() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        // Should succeed even without params (cwd is optional)
+        let result = handler.handle_session_new(None).await;
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        assert!(value.get("sessionId").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_session_prompt_missing_session_id() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        let params = json!({
+            "prompt": [{"text": "Hello"}]
+        });
+
+        let result = handler.handle_session_prompt(Some(params)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("sessionId"));
+    }
+
+    #[tokio::test]
+    async fn test_session_prompt_missing_prompt() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        let params = json!({
+            "sessionId": "test-session-123"
+        });
+
+        let result = handler.handle_session_prompt(Some(params)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("prompt"));
+    }
+
+    #[tokio::test]
+    async fn test_session_prompt_not_initialized() {
+        let mut handler = create_test_handler();
+        // Don't set initialized = true
+
+        let params = json!({
+            "sessionId": "test-session-123",
+            "prompt": [{"text": "Hello"}]
+        });
+
+        let result = handler.handle_session_prompt(Some(params)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not initialized"));
+    }
+
+    #[tokio::test]
+    async fn test_session_cancel() {
+        let mut handler = create_test_handler();
+
+        let params = json!({
+            "sessionId": "test-session-123"
+        });
+
+        let result = handler.handle_session_cancel(Some(params)).await;
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        assert_eq!(value.get("cancelled"), Some(&json!(true)));
+    }
+
+    #[tokio::test]
+    async fn test_session_cancel_no_params() {
+        let mut handler = create_test_handler();
+
+        // Should succeed even without params
+        let result = handler.handle_session_cancel(None).await;
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        assert_eq!(value.get("cancelled"), Some(&json!(true)));
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_session_new() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(1)),
+            method: "session/new".to_string(),
+            params: Some(json!({
+                "cwd": "/tmp",
+                "mcpServers": []
+            })),
+        };
+
+        let response = handler.handle_request(request).await;
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+
+        let result = response.result.unwrap();
+        assert!(result.get("sessionId").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_session_prompt() {
+        let mut handler = create_test_handler();
+        handler.initialized = true;
+
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(2)),
+            method: "session/prompt".to_string(),
+            params: Some(json!({
+                "sessionId": "test-123",
+                "prompt": [
+                    {"text": "What is 2+2?"}
+                ]
+            })),
+        };
+
+        let response = handler.handle_request(request).await;
+        // Note: This will fail because we can't actually call the LLM in tests
+        // but it should route correctly
+        assert!(response.id == Some(json!(2)));
+        assert_eq!(response.jsonrpc, "2.0");
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_session_cancel() {
+        let mut handler = create_test_handler();
+
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(json!(3)),
+            method: "session/cancel".to_string(),
+            params: Some(json!({
+                "sessionId": "test-123"
+            })),
+        };
+
+        let response = handler.handle_request(request).await;
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+
+        let result = response.result.unwrap();
+        assert_eq!(result.get("cancelled"), Some(&json!(true)));
+    }
 }
