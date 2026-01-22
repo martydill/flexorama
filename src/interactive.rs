@@ -114,7 +114,7 @@ pub async fn run_tui_interactive(
                 let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
                 if let Some(flag) = cancel {
                     flag.store(true, Ordering::SeqCst);
-                    app_println!("\n{} Cancelling AI conversation...", "🛑".yellow());
+                    app_println!("\n{} Cancelled conversation", "🛑".yellow());
                 }
                 let _ = input_tx.send(InputEvent::Cancelled);
             }
@@ -122,7 +122,7 @@ pub async fn run_tui_interactive(
                 let cancel = { cancel_for_input.lock().expect("cancel lock").clone() };
                 if let Some(flag) = cancel {
                     flag.store(true, Ordering::SeqCst);
-                    app_println!("\n{} Cancelling AI conversation...", "🛑".yellow());
+                    app_println!("\n{} Cancelled conversation", "🛑".yellow());
                     let _ = input_tx.send(InputEvent::Cancelled);
                     continue;
                 }

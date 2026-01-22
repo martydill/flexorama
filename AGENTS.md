@@ -322,7 +322,7 @@ flexorama --stream -m "What's the weather like?"  # Shows real-time response
 The agent supports cancelling ongoing AI conversations using the ESC key:
 
 - **ESC Key**: Press ESC during AI processing to immediately cancel the current conversation
-- **Visual Feedback**: Shows "🛑 Cancelling AI conversation..." when cancellation is triggered
+- **Visual Feedback**: Shows "🛑 Cancelled conversation" when cancellation is triggered
 - **Clean Exit**: Gracefully stops API calls and tool execution
 - **Continue Working**: Returns to the prompt without losing conversation context
 
@@ -339,7 +339,7 @@ The agent supports cancelling ongoing AI conversations using the ESC key:
 flexorama "Write a detailed analysis of quantum computing"
 
 # Press ESC during processing to cancel
-# Output: 🛑 Cancelling AI conversation...
+# Output: 🛑 Cancelled conversation
 
 # Continue with a new request
 flexorama "What's the weather like today?"

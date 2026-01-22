@@ -35,7 +35,7 @@ flexorama
 > Write a comprehensive analysis of machine learning algorithms
 
 # Press ESC during processing to cancel
-# Output: 🛑 Cancelling AI conversation...
+# Output: 🛑 Cancelled conversation
 
 # Continue with a new request
 > What's the weather like today?
@@ -58,7 +58,7 @@ flexorama -m "Generate a complete Rust application with multiple modules"
 flexorama -m "Explain quantum computing in detail"
 
 # Press ESC during streaming to cancel
-# Output: 🛑 Cancelling AI conversation...
+# Output: 🛑 Cancelled conversation
 ```
 
 ## Behavior
