@@ -2,6 +2,7 @@
 
 #[macro_use]
 pub mod output;
+pub mod acp;
 pub mod agent;
 pub mod anthropic;
 pub mod autocomplete;

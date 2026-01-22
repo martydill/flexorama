@@ -49,6 +49,14 @@ pub struct Cli {
     #[arg(long = "plan-mode")]
     pub plan_mode: bool,
 
+    /// Enable ACP (Agent Client Protocol) server mode
+    #[arg(long)]
+    pub acp: bool,
+
+    /// Enable debug logging for ACP messages
+    #[arg(long)]
+    pub acp_debug: bool,
+
     /// Enable the optional web UI
     #[arg(long)]
     pub web: bool,

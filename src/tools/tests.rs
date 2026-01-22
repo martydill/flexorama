@@ -386,6 +386,108 @@ async fn read_file_handles_unicode_content() {
     assert!(result.content.contains(unicode_content));
 }
 
+#[tokio::test]
+async fn read_file_rejects_parent_traversal() {
+    let call = make_call("read_file", json!({ "path": "../outside.txt" }));
+    let result = read_file(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path"));
+    assert!(result.content.contains("Path traversal"));
+}
+
+#[tokio::test]
+async fn read_file_rejects_absolute_outside_project() {
+    let outside_path = std::env::temp_dir().join("flexorama-outside.txt");
+    let call = make_call(
+        "read_file",
+        json!({ "path": outside_path.to_string_lossy() }),
+    );
+    let result = read_file(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path"));
+}
+
+#[tokio::test]
+async fn glob_rejects_parent_traversal() {
+    let call = make_call(
+        "glob",
+        json!({
+            "pattern": "*.txt",
+            "base_path": "../outside",
+        }),
+    );
+    let result = glob_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid base_path for glob"));
+    assert!(result.content.contains("Path traversal"));
+}
+
+#[tokio::test]
+async fn glob_rejects_absolute_outside_project() {
+    let outside_path = std::env::temp_dir().join("flexorama-glob-outside");
+    let call = make_call(
+        "glob",
+        json!({
+            "pattern": "*.txt",
+            "base_path": outside_path.to_string_lossy(),
+        }),
+    );
+    let result = glob_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid base_path for glob"));
+}
+
+#[tokio::test]
+async fn search_in_files_rejects_parent_traversal() {
+    let call = make_call(
+        "search_in_files",
+        json!({
+            "path": "../outside",
+            "query": "needle",
+        }),
+    );
+    let result = search_in_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for search_in_files"));
+    assert!(result.content.contains("Path traversal"));
+}
+
+#[tokio::test]
+async fn search_in_files_rejects_absolute_outside_project() {
+    let outside_path = std::env::temp_dir().join("flexorama-search-outside");
+    let call = make_call(
+        "search_in_files",
+        json!({
+            "path": outside_path.to_string_lossy(),
+            "query": "needle",
+        }),
+    );
+    let result = search_in_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for search_in_files"));
+}
+
+#[tokio::test]
+async fn list_directory_rejects_parent_traversal() {
+    let call = make_call("list_directory", json!({ "path": "../outside" }));
+    let result = list_directory(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for list_directory"));
+    assert!(result.content.contains("Path traversal"));
+}
+
+#[tokio::test]
+async fn list_directory_rejects_absolute_outside_project() {
+    let outside_path = std::env::temp_dir().join("flexorama-list-outside");
+    let call = make_call(
+        "list_directory",
+        json!({ "path": outside_path.to_string_lossy() }),
+    );
+    let result = list_directory(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Invalid path for list_directory"));
+}
+
 // ==================== Additional write_file tests ====================
 
 #[tokio::test]

@@ -28,7 +28,7 @@ use utils::{create_spinner, print_usage_stats};
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web;
+    let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web && !cli.acp;
     let stream = !cli.no_stream;
 
     // Create code formatter early so TUI can render input/output immediately
@@ -39,8 +39,8 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Initialize logger
-    output::init_logger(log::LevelFilter::Info);
+    // Initialize logger - in ACP mode, all logs go to stderr to keep stdout clean for JSON-RPC
+    output::init_logger(log::LevelFilter::Info, cli.acp);
     debug!("Starting Flexorama");
 
     // Display large red warning if yolo mode is enabled
@@ -78,17 +78,20 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| config.default_model.clone());
 
-    app_println!("Using configuration:");
-    app_println!("  Provider: {}", config.provider);
-    app_println!("  Base URL: {}", config.base_url);
-    app_println!("  Model: {}", model);
+    // In ACP mode, all logging must go to stderr, never stdout
+    if !cli.acp {
+        app_println!("Using configuration:");
+        app_println!("  Provider: {}", config.provider);
+        app_println!("  Base URL: {}", config.base_url);
+        app_println!("  Model: {}", model);
 
-    // Show yolo mode status
-    if cli.yolo {
-        app_println!(
-            "  {} YOLO MODE ENABLED - All permission checks bypassed!",
-            "🔥".red().bold()
-        );
+        // Show yolo mode status
+        if cli.yolo {
+            app_println!(
+                "  {} YOLO MODE ENABLED - All permission checks bypassed!",
+                "🔥".red().bold()
+            );
+        }
     }
 
     // Validate API key without exposing it
@@ -115,7 +118,8 @@ async fn main() -> Result<()> {
             env_hint
         );
         std::process::exit(1);
-    } else {
+    } else if !cli.acp {
+        // Only print API key info when not in ACP mode (stdout must be clean)
         app_println!(
             "  API Key: {}",
             if config.api_key.len() > 10 {
@@ -255,31 +259,37 @@ async fn main() -> Result<()> {
     match &cli.system_prompt {
         Some(system_prompt) => {
             agent.set_system_prompt(system_prompt.clone());
-            app_println!(
-                "{} Using custom system prompt: {}",
-                "✓".green(),
-                system_prompt
-            );
+            if !cli.acp {
+                app_println!(
+                    "{} Using custom system prompt: {}",
+                    "✓".green(),
+                    system_prompt
+                );
+            }
         }
         None => {
             // Use config's default system prompt if available
             if let Some(default_prompt) = &config.default_system_prompt {
                 agent.set_system_prompt(default_prompt.clone());
-                app_println!("{} Using default system prompt from config", "✓".green());
+                if !cli.acp {
+                    app_println!("{} Using default system prompt from config", "✓".green());
+                }
             }
         }
     }
 
     if cli.plan_mode {
         agent.apply_plan_mode_prompt();
-        app_println!(
-            "{} Plan mode enabled: generating read-only plans and saving them to the database.",
-            "✓".green()
-        );
+        if !cli.acp {
+            app_println!(
+                "{} Plan mode enabled: generating read-only plans and saving them to the database.",
+                "✓".green()
+            );
+        }
     }
 
-    // Add context files
-    add_context_files(&mut agent, &cli.context_files).await?;
+    // Add context files (silent in ACP mode to avoid stdout pollution)
+    add_context_files(&mut agent, &cli.context_files, cli.acp).await?;
 
     // Create initial conversation in database
     match agent.start_new_conversation().await {
@@ -292,7 +302,9 @@ async fn main() -> Result<()> {
     }
 
     // Run the appropriate mode
-    if cli.web {
+    if cli.acp {
+        run_acp_mode(agent, config, model, cli.acp_debug).await?;
+    } else if cli.web {
         run_web_mode(
             cli,
             agent,
@@ -363,6 +375,28 @@ async fn run_web_mode(
     };
 
     web::launch_web_ui(state, cli.web_port).await?;
+    Ok(())
+}
+
+/// Run ACP (Agent Client Protocol) mode
+async fn run_acp_mode(
+    agent: Agent,
+    config: Config,
+    model: String,
+    debug: bool,
+) -> Result<()> {
+    use acp::run_acp_server;
+
+    info!("Starting ACP server mode");
+
+    if debug {
+        eprintln!("[ACP] Debug mode enabled");
+        eprintln!("[ACP] Model: {}", model);
+        eprintln!("[ACP] Ready for JSON-RPC messages on stdin/stdout");
+    }
+
+    run_acp_server(agent, config, model, debug).await?;
+
     Ok(())
 }
 

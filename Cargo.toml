@@ -43,6 +43,10 @@ serde_yaml = "0.9"
 bytes = "1"
 arboard = "3.0"
 tower-http = { version = "0.5", features = ["cors"] }
+# ACP support
+agent-client-protocol = "0.6"
+agent-client-protocol-schema = "0.6"
+thiserror = "1.0"
 
 [dev-dependencies]
 http-body-util = "0.1"

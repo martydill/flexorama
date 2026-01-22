@@ -29,6 +29,7 @@ The hybrid cli/web coding agent that works your way.
  - Local model support using the ollama provider with Ollama
  - Todo checklists 
  - Interactive and non-interactive mode
+ - [Agent Client Protocol (ACP)](https://agentclientprotocol.com/overview/introduction) support for editor integration
 
 
 ## Web interface

@@ -1,4 +1,4 @@
-use crate::tools::path::expand_and_absolutize;
+use crate::tools::path::resolve_project_path;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
 use anyhow::Result;
 use log::debug;
@@ -23,7 +23,16 @@ pub async fn search_in_files(call: &ToolCall) -> Result<ToolResult> {
     debug!("TOOL CALL: search_in_files('{}', '{}')", path, query);
 
     let tool_use_id = call.id.clone();
-    let search_root = expand_and_absolutize(path)?;
+    let search_root = match resolve_project_path(path) {
+        Ok(path) => path,
+        Err(e) => {
+            return Ok(ToolResult {
+                tool_use_id,
+                content: format!("Invalid path for search_in_files: {}", e),
+                is_error: true,
+            });
+        }
+    };
     let absolute_path_display = search_root.display().to_string();
     let query_owned = query.to_string();
     let max_results = 200usize;
