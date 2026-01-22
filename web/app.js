@@ -82,6 +82,7 @@ const state = {
   todos: [],
   statsCharts: {
     tokens: null,
+    requests: null,
     conversations: null,
     models: null,
     providers: null,
@@ -2806,6 +2807,27 @@ function createTokenUsageChart(ctx, data) {
   });
 }
 
+function createRequestsChart(ctx, data) {
+  if (!data || data.length === 0) return null;
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [
+        {
+          label: 'Requests',
+          data: data.map(d => d.total_requests),
+          borderColor: CHART_COLORS.cyan,
+          backgroundColor: 'rgba(124, 255, 178, 0.1)',
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    },
+    options: { ...getChartDefaults() },
+  });
+}
+
 function createConversationsChart(ctx, data) {
   if (!data || data.length === 0) return null;
   return new Chart(ctx, {
@@ -3035,6 +3057,10 @@ function updateStatsCharts() {
   if (state.statsData.usage) {
     state.statsCharts.tokens = createTokenUsageChart(
       document.getElementById('chart-tokens')?.getContext('2d'),
+      state.statsData.usage
+    );
+    state.statsCharts.requests = createRequestsChart(
+      document.getElementById('chart-requests')?.getContext('2d'),
       state.statsData.usage
     );
   }
