@@ -2438,66 +2438,30 @@ async function handleImagePaste(file) {
 }
 
 function renderImageThumbnails() {
-  let container = document.getElementById("image-thumbnails");
-  if (!container) {
-    // Create the container if it doesn't exist
-    const composer = document.querySelector(".composer");
-    if (!composer) return;
-
-    container = document.createElement("div");
-    container.id = "image-thumbnails";
-    container.style.display = "flex";
-    container.style.gap = "8px";
-    container.style.padding = "8px";
-    container.style.flexWrap = "wrap";
-    container.style.backgroundColor = "var(--bg-secondary)";
-    container.style.borderTop = "1px solid var(--border-color)";
-
-    // Insert before the input row
-    composer.insertBefore(container, composer.firstChild);
-  }
+  const container = document.getElementById("image-thumbnails");
+  if (!container) return;
 
   // Clear and rebuild thumbnails
   container.innerHTML = "";
 
   if (state.pendingImages.length === 0) {
-    container.style.display = "none";
+    container.classList.remove("visible");
     return;
   }
 
-  container.style.display = "flex";
+  container.classList.add("visible");
 
   state.pendingImages.forEach((img, index) => {
     const thumbWrapper = document.createElement("div");
-    thumbWrapper.style.position = "relative";
-    thumbWrapper.style.display = "inline-block";
+    thumbWrapper.className = "image-thumb-wrapper";
 
     const thumb = document.createElement("img");
     thumb.src = img.preview;
-    thumb.style.width = "80px";
-    thumb.style.height = "80px";
-    thumb.style.objectFit = "cover";
-    thumb.style.borderRadius = "4px";
-    thumb.style.border = "2px solid var(--border-color)";
+    thumb.className = "image-thumb";
 
     const removeBtn = document.createElement("button");
     removeBtn.innerHTML = "×";
-    removeBtn.style.position = "absolute";
-    removeBtn.style.top = "-8px";
-    removeBtn.style.right = "-8px";
-    removeBtn.style.width = "20px";
-    removeBtn.style.height = "20px";
-    removeBtn.style.borderRadius = "50%";
-    removeBtn.style.border = "none";
-    removeBtn.style.backgroundColor = "var(--danger)";
-    removeBtn.style.color = "white";
-    removeBtn.style.cursor = "pointer";
-    removeBtn.style.fontSize = "14px";
-    removeBtn.style.fontWeight = "bold";
-    removeBtn.style.display = "flex";
-    removeBtn.style.alignItems = "center";
-    removeBtn.style.justifyContent = "center";
-    removeBtn.style.padding = "0";
+    removeBtn.className = "image-thumb-remove";
     removeBtn.onclick = () => {
       state.pendingImages.splice(index, 1);
       renderImageThumbnails();
