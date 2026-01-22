@@ -35,6 +35,13 @@ struct GeminiSystemInstruction {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+struct GeminiInlineData {
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+    data: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct GeminiPart {
     #[serde(rename = "text", skip_serializing_if = "Option::is_none")]
     text: Option<String>,
@@ -42,6 +49,8 @@ struct GeminiPart {
     function_call: Option<GeminiFunctionCall>,
     #[serde(rename = "functionResponse", skip_serializing_if = "Option::is_none")]
     function_response: Option<GeminiFunctionResponse>,
+    #[serde(rename = "inlineData", skip_serializing_if = "Option::is_none")]
+    inline_data: Option<GeminiInlineData>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -229,6 +238,20 @@ impl GeminiClient {
                                     text: Some(text.clone()),
                                     function_call: None,
                                     function_response: None,
+                                    inline_data: None,
+                                });
+                            }
+                        }
+                        "image" => {
+                            if let Some(source) = &block.source {
+                                parts.push(GeminiPart {
+                                    text: None,
+                                    function_call: None,
+                                    function_response: None,
+                                    inline_data: Some(GeminiInlineData {
+                                        mime_type: source.media_type.clone(),
+                                        data: source.data.clone(),
+                                    }),
                                 });
                             }
                         }
@@ -247,6 +270,7 @@ impl GeminiClient {
                                         thought_signature: Some(signature),
                                     }),
                                     function_response: None,
+                                    inline_data: None,
                                 });
                             } else {
                                 debug!(
@@ -275,6 +299,7 @@ impl GeminiClient {
                                     name,
                                     response: response_value,
                                 }),
+                                inline_data: None,
                             });
                         }
                         _ => {}
@@ -298,6 +323,7 @@ impl GeminiClient {
                 text: Some(prompt.clone()),
                 function_call: None,
                 function_response: None,
+                inline_data: None,
             }],
         });
 
@@ -351,6 +377,7 @@ impl GeminiClient {
                                 content: None,
                                 is_error: None,
                                 thought_signature: call.thought_signature,
+                                source: None,
                             });
                         }
                         if let Some(response) = part.function_response {

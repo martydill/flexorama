@@ -13,10 +13,11 @@ The Flexorama supports the following features:
 5. **Tool Support**: Execute various tools for file operations, code analysis, bash commands, etc.
 6. **Context Management**: Maintains conversation history
 7. **@file Syntax**: Auto-include files using @path-to-file syntax
-8. **Progress Spinner**: Visual feedback while waiting for LLM responses
-9. **System Prompts**: Set custom system prompts to control AI behavior and personality
-10. **Streaming Support**: Real-time response streaming for immediate feedback
-11. **Conversation Cancellation**: Press ESC to cancel ongoing AI conversations
+8. **Image Support**: Include images as context using @image.png syntax (supports PNG, JPEG, GIF, WebP)
+9. **Progress Spinner**: Visual feedback while waiting for LLM responses
+10. **System Prompts**: Set custom system prompts to control AI behavior and personality
+11. **Streaming Support**: Real-time response streaming for immediate feedback
+12. **Conversation Cancellation**: Press ESC to cancel ongoing AI conversations
 
 ### Available Tools
 
@@ -58,6 +59,11 @@ flexorama -f config.toml -f Cargo.toml "Explain this project"
 flexorama "What does @Cargo.toml contain?"
 flexorama "Compare @src/main.rs and @src/lib.rs"
 flexorama "@file1.txt @file2.txt"
+
+# Using images as context
+flexorama "What's in this image? @screenshot.png"
+flexorama "Compare these diagrams @diagram1.png @diagram2.jpg"
+flexorama -f image.png "Describe the architecture shown here"
 
 # With system prompts (NEW!)
 flexorama -s "You are a Rust expert" "Help me with this code"

@@ -333,10 +333,15 @@ pub async fn add_context_files(agent: &mut Agent, context_files: &[String], sile
     // Add any additional context files specified by the user
     for file_path in context_files {
         debug!("Adding context file: {}", file_path);
+        let is_image = crate::image::is_image_path(file_path);
         match agent.add_context_file(file_path).await {
             Ok(_) => {
                 if !silent {
-                    app_println!("{} Added context file: {}", "✓".green(), file_path);
+                    if is_image {
+                        app_println!("{} Added image: {}", "🖼️".green(), file_path);
+                    } else {
+                        app_println!("{} Added context file: {}", "✓".green(), file_path);
+                    }
                 }
             }
             Err(e) => app_eprintln!(

@@ -16,6 +16,14 @@ pub struct Message {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageSource {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub media_type: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentBlock {
     #[serde(rename = "type")]
     pub block_type: String,
@@ -35,6 +43,8 @@ pub struct ContentBlock {
     pub is_error: Option<bool>,
     #[serde(skip_serializing, skip_deserializing)]
     pub thought_signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<ImageSource>,
 }
 
 impl ContentBlock {
@@ -49,6 +59,26 @@ impl ContentBlock {
             content: None,
             is_error: None,
             thought_signature: None,
+            source: None,
+        }
+    }
+
+    pub fn image(media_type: String, base64_data: String) -> Self {
+        Self {
+            block_type: "image".to_string(),
+            text: None,
+            id: None,
+            name: None,
+            input: None,
+            tool_use_id: None,
+            content: None,
+            is_error: None,
+            thought_signature: None,
+            source: Some(ImageSource {
+                source_type: "base64".to_string(),
+                media_type,
+                data: base64_data,
+            }),
         }
     }
 
@@ -63,6 +93,7 @@ impl ContentBlock {
             content: None,
             is_error: None,
             thought_signature: None,
+            source: None,
         }
     }
 
@@ -77,7 +108,12 @@ impl ContentBlock {
             content: Some(content),
             is_error,
             thought_signature: None,
+            source: None,
         }
+    }
+
+    pub fn is_image(&self) -> bool {
+        self.block_type == "image"
     }
 }
 
@@ -538,6 +574,7 @@ impl AnthropicClient {
                                                                     content: None,
                                                                     is_error: None,
                                                                     thought_signature: None,
+                                                                    source: None,
                                                                 });
                                                         }
                                                         _ => {

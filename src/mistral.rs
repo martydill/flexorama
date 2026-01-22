@@ -26,10 +26,31 @@ struct MistralRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+enum MistralContent {
+    Text(String),
+    Parts(Vec<MistralContentPart>),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+enum MistralContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: MistralImageUrl },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct MistralImageUrl {
+    url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct MistralMessage {
     role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    content: Option<String>,
+    content: Option<MistralContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<MistralToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -392,8 +413,21 @@ impl MistralClient {
 
         if let Some(choice) = response.choices.into_iter().next() {
             if let Some(content) = choice.message.content {
-                if !content.is_empty() {
-                    content_blocks.push(ContentBlock::text(content));
+                match content {
+                    MistralContent::Text(text) => {
+                        if !text.is_empty() {
+                            content_blocks.push(ContentBlock::text(text));
+                        }
+                    }
+                    MistralContent::Parts(parts) => {
+                        for part in parts {
+                            if let MistralContentPart::Text { text } = part {
+                                if !text.is_empty() {
+                                    content_blocks.push(ContentBlock::text(text));
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -423,14 +457,14 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<M
     if let Some(prompt) = system_prompt {
         mistral_messages.push(MistralMessage {
             role: "system".to_string(),
-            content: Some(prompt.clone()),
+            content: Some(MistralContent::Text(prompt.clone())),
             tool_calls: None,
             tool_call_id: None,
         });
     }
 
     for message in messages {
-        let mut text_parts = Vec::new();
+        let mut content_parts: Vec<MistralContentPart> = Vec::new();
         let mut tool_calls = Vec::new();
         let mut tool_results = Vec::new();
 
@@ -438,7 +472,18 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<M
             match block.block_type.as_str() {
                 "text" => {
                     if let Some(text) = &block.text {
-                        text_parts.push(text.clone());
+                        content_parts.push(MistralContentPart::Text { text: text.clone() });
+                    }
+                }
+                "image" => {
+                    if let Some(source) = &block.source {
+                        let data_url = format!(
+                            "data:{};base64,{}",
+                            source.media_type, source.data
+                        );
+                        content_parts.push(MistralContentPart::ImageUrl {
+                            image_url: MistralImageUrl { url: data_url },
+                        });
                     }
                 }
                 "tool_use" => {
@@ -471,7 +516,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<M
                         let content = block.content.clone().unwrap_or_default();
                         tool_results.push(MistralMessage {
                             role: "tool".to_string(),
-                            content: Some(content),
+                            content: Some(MistralContent::Text(content)),
                             tool_calls: None,
                             tool_call_id: Some(tool_use_id.clone()),
                         });
@@ -481,11 +526,22 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<M
             }
         }
 
-        let text = text_parts.join("\n");
-        if !tool_calls.is_empty() || !text.is_empty() {
+        if !tool_calls.is_empty() || !content_parts.is_empty() {
+            let content = if content_parts.is_empty() {
+                None
+            } else if content_parts.len() == 1 {
+                if let MistralContentPart::Text { text } = &content_parts[0] {
+                    Some(MistralContent::Text(text.clone()))
+                } else {
+                    Some(MistralContent::Parts(content_parts))
+                }
+            } else {
+                Some(MistralContent::Parts(content_parts))
+            };
+
             mistral_messages.push(MistralMessage {
                 role: message.role.clone(),
-                content: if text.is_empty() { None } else { Some(text) },
+                content,
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {

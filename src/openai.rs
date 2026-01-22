@@ -27,10 +27,31 @@ struct OpenAIRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+enum OpenAIContent {
+    Text(String),
+    Parts(Vec<OpenAIContentPart>),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+enum OpenAIContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: OpenAIImageUrl },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OpenAIImageUrl {
+    url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct OpenAIMessage {
     role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    content: Option<String>,
+    content: Option<OpenAIContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<OpenAIToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -393,8 +414,21 @@ impl OpenAIClient {
 
         if let Some(choice) = response.choices.into_iter().next() {
             if let Some(content) = choice.message.content {
-                if !content.is_empty() {
-                    content_blocks.push(ContentBlock::text(content));
+                match content {
+                    OpenAIContent::Text(text) => {
+                        if !text.is_empty() {
+                            content_blocks.push(ContentBlock::text(text));
+                        }
+                    }
+                    OpenAIContent::Parts(parts) => {
+                        for part in parts {
+                            if let OpenAIContentPart::Text { text } = part {
+                                if !text.is_empty() {
+                                    content_blocks.push(ContentBlock::text(text));
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -424,14 +458,14 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
     if let Some(prompt) = system_prompt {
         openai_messages.push(OpenAIMessage {
             role: "system".to_string(),
-            content: Some(prompt.clone()),
+            content: Some(OpenAIContent::Text(prompt.clone())),
             tool_calls: None,
             tool_call_id: None,
         });
     }
 
     for message in messages {
-        let mut text_parts = Vec::new();
+        let mut content_parts: Vec<OpenAIContentPart> = Vec::new();
         let mut tool_calls = Vec::new();
         let mut tool_results = Vec::new();
 
@@ -439,7 +473,18 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
             match block.block_type.as_str() {
                 "text" => {
                     if let Some(text) = &block.text {
-                        text_parts.push(text.clone());
+                        content_parts.push(OpenAIContentPart::Text { text: text.clone() });
+                    }
+                }
+                "image" => {
+                    if let Some(source) = &block.source {
+                        let data_url = format!(
+                            "data:{};base64,{}",
+                            source.media_type, source.data
+                        );
+                        content_parts.push(OpenAIContentPart::ImageUrl {
+                            image_url: OpenAIImageUrl { url: data_url },
+                        });
                     }
                 }
                 "tool_use" => {
@@ -472,7 +517,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
                         let content = block.content.clone().unwrap_or_default();
                         tool_results.push(OpenAIMessage {
                             role: "tool".to_string(),
-                            content: Some(content),
+                            content: Some(OpenAIContent::Text(content)),
                             tool_calls: None,
                             tool_call_id: Some(tool_use_id.clone()),
                         });
@@ -482,11 +527,22 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
             }
         }
 
-        let text = text_parts.join("\n");
-        if !tool_calls.is_empty() || !text.is_empty() {
+        if !tool_calls.is_empty() || !content_parts.is_empty() {
+            let content = if content_parts.is_empty() {
+                None
+            } else if content_parts.len() == 1 {
+                if let OpenAIContentPart::Text { text } = &content_parts[0] {
+                    Some(OpenAIContent::Text(text.clone()))
+                } else {
+                    Some(OpenAIContent::Parts(content_parts))
+                }
+            } else {
+                Some(OpenAIContent::Parts(content_parts))
+            };
+            
             openai_messages.push(OpenAIMessage {
                 role: message.role.clone(),
-                content: if text.is_empty() { None } else { Some(text) },
+                content,
                 tool_calls: if tool_calls.is_empty() {
                     None
                 } else {

@@ -189,27 +189,50 @@ impl ConversationManager {
 
         let expanded_path = shellexpand::tilde(file_path);
         let absolute_path = Path::new(&*expanded_path).absolutize()?;
+        let absolute_path_buf = absolute_path.to_path_buf();
 
-        match fs::read_to_string(&absolute_path).await {
-            Ok(content) => {
-                let context_message = format!(
-                    "Context from file '{}':\n\n```\n{}\n```",
-                    absolute_path.display(),
-                    content
-                );
+        if crate::image::is_image_file(&absolute_path_buf) {
+            self.add_image_context(&absolute_path_buf).await
+        } else {
+            match fs::read_to_string(&absolute_path).await {
+                Ok(content) => {
+                    let context_message = format!(
+                        "Context from file '{}':\n\n```\n{}\n```",
+                        absolute_path.display(),
+                        content
+                    );
 
-                self.conversation.push(crate::anthropic::Message {
-                    role: "user".to_string(),
-                    content: vec![crate::anthropic::ContentBlock::text(context_message)],
-                });
+                    self.conversation.push(crate::anthropic::Message {
+                        role: "user".to_string(),
+                        content: vec![crate::anthropic::ContentBlock::text(context_message)],
+                    });
 
-                debug!("Added context file: {}", absolute_path.display());
-                Ok(())
-            }
-            Err(e) => {
-                anyhow::bail!("Failed to read file '{}': {}", absolute_path.display(), e);
+                    debug!("Added context file: {}", absolute_path.display());
+                    Ok(())
+                }
+                Err(e) => {
+                    anyhow::bail!("Failed to read file '{}': {}", absolute_path.display(), e);
+                }
             }
         }
+    }
+
+    /// Add an image file as context to the conversation
+    async fn add_image_context(&mut self, path: &Path) -> Result<()> {
+        let (media_type, base64_data) = crate::image::load_image_as_base64(path)?;
+
+        let content = vec![
+            ContentBlock::image(media_type, base64_data),
+            ContentBlock::text(format!("Image file: {}", path.display())),
+        ];
+
+        self.conversation.push(crate::anthropic::Message {
+            role: "user".to_string(),
+            content,
+        });
+
+        debug!("Added image context: {}", path.display());
+        Ok(())
     }
 
     /// Extract file paths from message using @path syntax

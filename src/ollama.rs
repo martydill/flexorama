@@ -37,6 +37,8 @@ struct OllamaMessage {
     content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<OllamaToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    images: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -562,17 +564,24 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
             role: "system".to_string(),
             content: prompt.clone(),
             tool_calls: None,
+            images: None,
         });
     }
 
     for message in messages {
         let mut text_parts = Vec::new();
+        let mut image_data: Vec<String> = Vec::new();
 
         for block in &message.content {
             match block.block_type.as_str() {
                 "text" => {
                     if let Some(text) = &block.text {
                         text_parts.push(text.clone());
+                    }
+                }
+                "image" => {
+                    if let Some(source) = &block.source {
+                        image_data.push(source.data.clone());
                     }
                 }
                 "tool_use" => {}
@@ -587,11 +596,16 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
         }
 
         let text = text_parts.join("\n");
-        if !text.is_empty() {
+        if !text.is_empty() || !image_data.is_empty() {
             ollama_messages.push(OllamaMessage {
                 role: message.role.clone(),
                 content: text,
                 tool_calls: None,
+                images: if image_data.is_empty() {
+                    None
+                } else {
+                    Some(image_data)
+                },
             });
         }
     }
@@ -760,6 +774,7 @@ mod tests {
             role: "user".to_string(),
             content: "Hello".to_string(),
             tool_calls: None,
+            images: None,
         };
         let json = serde_json::to_string(&message).unwrap();
         assert!(json.contains("user"));
@@ -842,6 +857,7 @@ mod tests {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
                 tool_calls: None,
+                images: None,
             }],
             tools: None,
             stream: Some(false),
@@ -905,6 +921,7 @@ mod tests {
                 role: "assistant".to_string(),
                 content: "Hello user".to_string(),
                 tool_calls: None,
+                images: None,
             },
             done: true,
             prompt_eval_count: Some(5),
@@ -938,6 +955,7 @@ mod tests {
                         arguments: json!({"param": "value"}),
                     },
                 }]),
+                images: None,
             },
             done: true,
             prompt_eval_count: None,
@@ -972,6 +990,7 @@ mod tests {
                         arguments: json!({}),
                     },
                 }]),
+                images: None,
             },
             done: true,
             prompt_eval_count: Some(15),
@@ -993,6 +1012,7 @@ mod tests {
                 role: "assistant".to_string(),
                 content: "".to_string(),
                 tool_calls: None,
+                images: None,
             },
             done: true,
             prompt_eval_count: None,
@@ -1019,6 +1039,7 @@ mod tests {
                         arguments: json!({}),
                     },
                 }]),
+                images: None,
             },
             done: true,
             prompt_eval_count: None,
