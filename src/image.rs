@@ -103,22 +103,13 @@ mod tests {
 
     #[test]
     fn test_get_media_type() {
-        assert_eq!(
-            get_media_type(Path::new("test.png")).unwrap(),
-            "image/png"
-        );
-        assert_eq!(
-            get_media_type(Path::new("test.jpg")).unwrap(),
-            "image/jpeg"
-        );
+        assert_eq!(get_media_type(Path::new("test.png")).unwrap(), "image/png");
+        assert_eq!(get_media_type(Path::new("test.jpg")).unwrap(), "image/jpeg");
         assert_eq!(
             get_media_type(Path::new("test.jpeg")).unwrap(),
             "image/jpeg"
         );
-        assert_eq!(
-            get_media_type(Path::new("test.gif")).unwrap(),
-            "image/gif"
-        );
+        assert_eq!(get_media_type(Path::new("test.gif")).unwrap(), "image/gif");
         assert_eq!(
             get_media_type(Path::new("test.webp")).unwrap(),
             "image/webp"

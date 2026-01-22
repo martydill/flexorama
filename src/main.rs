@@ -8,8 +8,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
 
-use flexorama::{app_eprintln, app_println};
 use flexorama::*;
+use flexorama::{app_eprintln, app_println};
 
 use agent::Agent;
 use cli::Cli;
@@ -379,12 +379,7 @@ async fn run_web_mode(
 }
 
 /// Run ACP (Agent Client Protocol) mode
-async fn run_acp_mode(
-    agent: Agent,
-    config: Config,
-    model: String,
-    debug: bool,
-) -> Result<()> {
+async fn run_acp_mode(agent: Agent, config: Config, model: String, debug: bool) -> Result<()> {
     use acp::run_acp_server;
 
     info!("Starting ACP server mode");
@@ -630,10 +625,13 @@ mod tests {
     fn test_cli_parsing_multiple_flags() {
         let args = vec![
             "flexorama",
-            "-m", "Hello",
-            "--model", "gpt-4",
+            "-m",
+            "Hello",
+            "--model",
+            "gpt-4",
             "--yolo",
-            "-f", "test.txt"
+            "-f",
+            "test.txt",
         ];
         let result = Cli::try_parse_from(args);
         assert!(result.is_ok());

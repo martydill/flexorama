@@ -163,13 +163,21 @@ mod tests {
     #[test]
     fn test_flexorama_logo_contains_box_drawing_chars() {
         // The full logo uses box drawing characters
-        assert!(FLEXORAMA_LOGO.contains("█") || FLEXORAMA_LOGO.contains("╗") || FLEXORAMA_LOGO.contains("╚"));
+        assert!(
+            FLEXORAMA_LOGO.contains("█")
+                || FLEXORAMA_LOGO.contains("╗")
+                || FLEXORAMA_LOGO.contains("╚")
+        );
     }
 
     #[test]
     fn test_flexorama_logo_minimal_contains_block_chars() {
         // The minimal logo uses block elements
-        assert!(FLEXORAMA_LOGO_MINIMAL.contains("█") || FLEXORAMA_LOGO_MINIMAL.contains("▀") || FLEXORAMA_LOGO_MINIMAL.contains("▄"));
+        assert!(
+            FLEXORAMA_LOGO_MINIMAL.contains("█")
+                || FLEXORAMA_LOGO_MINIMAL.contains("▀")
+                || FLEXORAMA_LOGO_MINIMAL.contains("▄")
+        );
     }
 
     #[test]
@@ -227,7 +235,11 @@ mod tests {
         // Test that logos don't have excessively long lines
         for line in FLEXORAMA_LOGO.lines() {
             // ASCII art logos can be wide, allow up to 500 chars per line
-            assert!(line.len() < 500, "Logo line is too long: {} chars", line.len());
+            assert!(
+                line.len() < 500,
+                "Logo line is too long: {} chars",
+                line.len()
+            );
         }
     }
 

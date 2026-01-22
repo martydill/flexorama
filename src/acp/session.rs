@@ -44,9 +44,15 @@ impl Session {
         let conversation_id = agent.start_new_conversation().await.ok();
 
         if let Some(ref conv_id) = conversation_id {
-            info!("Session {} created with conversation ID: {}", session_id, conv_id);
+            info!(
+                "Session {} created with conversation ID: {}",
+                session_id, conv_id
+            );
         } else {
-            info!("Session {} created without database conversation", session_id);
+            info!(
+                "Session {} created without database conversation",
+                session_id
+            );
         }
 
         Ok(Self {
@@ -60,7 +66,8 @@ impl Session {
     /// Cancel this session
     pub fn cancel(&self) {
         info!("Cancelling session: {}", self.session_id);
-        self.cancellation_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancellation_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -104,7 +111,7 @@ impl SessionManager {
                 self.yolo_mode,
                 self.plan_mode,
             )
-            .await?
+            .await?,
         );
 
         let mut sessions = self.sessions.lock().await;
@@ -263,11 +270,15 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(!session.cancellation_flag.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!session
+            .cancellation_flag
+            .load(std::sync::atomic::Ordering::SeqCst));
 
         session.cancel();
 
-        assert!(session.cancellation_flag.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(session
+            .cancellation_flag
+            .load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[tokio::test]

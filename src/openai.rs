@@ -478,10 +478,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
                 }
                 "image" => {
                     if let Some(source) = &block.source {
-                        let data_url = format!(
-                            "data:{};base64,{}",
-                            source.media_type, source.data
-                        );
+                        let data_url = format!("data:{};base64,{}", source.media_type, source.data);
                         content_parts.push(OpenAIContentPart::ImageUrl {
                             image_url: OpenAIImageUrl { url: data_url },
                         });
@@ -539,7 +536,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
             } else {
                 Some(OpenAIContent::Parts(content_parts))
             };
-            
+
             openai_messages.push(OpenAIMessage {
                 role: message.role.clone(),
                 content,

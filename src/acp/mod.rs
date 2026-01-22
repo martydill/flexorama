@@ -18,7 +18,6 @@
 /// ```bash
 /// flexorama --acp
 /// ```
-
 pub mod capabilities;
 pub mod errors;
 pub mod filesystem;

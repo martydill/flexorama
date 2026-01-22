@@ -54,10 +54,7 @@ impl StdioTransport {
             Ok(msg) => Ok(msg),
             Err(e) => {
                 error!("Failed to parse JSON-RPC message: {}", e);
-                Err(AcpError::InvalidMessage(format!(
-                    "Invalid JSON: {}",
-                    e
-                )))
+                Err(AcpError::InvalidMessage(format!("Invalid JSON: {}", e)))
             }
         }
     }
@@ -65,8 +62,7 @@ impl StdioTransport {
     /// Write a JSON-RPC message to stdout
     /// Each message is followed by a newline
     pub async fn write_message(&mut self, msg: &JsonRpcMessage) -> AcpResult<()> {
-        let json = serde_json::to_string(msg)
-            .map_err(|e| AcpError::Json(e))?;
+        let json = serde_json::to_string(msg).map_err(|e| AcpError::Json(e))?;
 
         if self.debug {
             eprintln!("[ACP TX] {}", json);
@@ -82,10 +78,7 @@ impl StdioTransport {
             .await
             .map_err(|e| AcpError::Io(e))?;
 
-        self.stdout
-            .flush()
-            .await
-            .map_err(|e| AcpError::Io(e))?;
+        self.stdout.flush().await.map_err(|e| AcpError::Io(e))?;
 
         trace!("Wrote {} bytes to stdout", json.len() + 1);
 

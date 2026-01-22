@@ -139,7 +139,8 @@ impl OllamaClient {
 
         // Only add authorization header if API key is not empty
         if !self.api_key.is_empty() {
-            request_builder = request_builder.header("authorization", format!("Bearer {}", self.api_key));
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", self.api_key));
         }
 
         request_builder
@@ -158,7 +159,10 @@ impl OllamaClient {
         {
             Ok(resp) => resp,
             Err(e) => {
-                warn!("Failed to fetch Ollama models: {}. Using default models.", e);
+                warn!(
+                    "Failed to fetch Ollama models: {}. Using default models.",
+                    e
+                );
                 return Ok(vec!["llama2".to_string(), "gemma3:1b".to_string()]);
             }
         };
@@ -178,11 +182,7 @@ impl OllamaClient {
 
         match serde_json::from_str::<OllamaTagsResponse>(&response_text) {
             Ok(tags) => {
-                let model_names: Vec<String> = tags
-                    .models
-                    .into_iter()
-                    .map(|m| m.name)
-                    .collect();
+                let model_names: Vec<String> = tags.models.into_iter().map(|m| m.name).collect();
 
                 if model_names.is_empty() {
                     warn!("No models found in Ollama. Using default models.");
@@ -193,7 +193,10 @@ impl OllamaClient {
                 }
             }
             Err(e) => {
-                warn!("Failed to parse Ollama tags response: {}. Using default models.", e);
+                warn!(
+                    "Failed to parse Ollama tags response: {}. Using default models.",
+                    e
+                );
                 Ok(vec!["llama2".to_string(), "gemma3:1b".to_string()])
             }
         }
@@ -225,7 +228,8 @@ impl OllamaClient {
         let endpoint = format!("{}/api/chat", self.base_url);
 
         // Log the full request
-        let request_json = serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize".to_string());
+        let request_json = serde_json::to_string_pretty(&request)
+            .unwrap_or_else(|_| "Failed to serialize".to_string());
         debug!("=== Ollama Request ===");
         debug!("Endpoint: {}", endpoint);
         debug!("Model: {}", model);
@@ -295,7 +299,8 @@ impl OllamaClient {
         let endpoint = format!("{}/api/chat", self.base_url);
 
         // Log the full request
-        let request_json = serde_json::to_string_pretty(&request).unwrap_or_else(|_| "Failed to serialize".to_string());
+        let request_json = serde_json::to_string_pretty(&request)
+            .unwrap_or_else(|_| "Failed to serialize".to_string());
         debug!("=== Ollama Streaming Request ===");
         debug!("Endpoint: {}", endpoint);
         debug!("Model: {}", model);
@@ -340,7 +345,10 @@ impl OllamaClient {
 
             // Safety check: if we get too many empty chunks, something is wrong
             if empty_chunk_count > MAX_EMPTY_CHUNKS {
-                warn!("Received {} empty chunks in a row. Breaking stream to prevent infinite loop.", empty_chunk_count);
+                warn!(
+                    "Received {} empty chunks in a row. Breaking stream to prevent infinite loop.",
+                    empty_chunk_count
+                );
                 warn!("This likely means the model doesn't support tool calling or encountered an error.");
                 break;
             }
@@ -374,7 +382,10 @@ impl OllamaClient {
                                 }
 
                                 // Only log every 10th chunk or important ones to reduce spam
-                                if chunk_count % 10 == 0 || response.done || response.message.tool_calls.is_some() {
+                                if chunk_count % 10 == 0
+                                    || response.done
+                                    || response.message.tool_calls.is_some()
+                                {
                                     debug!("Streaming chunk #{}: done={}, content_len={}, has_tools={}, empty_streak={}",
                                            chunk_count, response.done, response.message.content.len(),
                                            response.message.tool_calls.is_some(), empty_chunk_count);
@@ -395,8 +406,9 @@ impl OllamaClient {
                                             entry.id = Some(id);
                                         }
                                         entry.name = Some(call.function.name);
-                                        entry.arguments = serde_json::to_string(&call.function.arguments)
-                                            .unwrap_or_else(|_| "{}".to_string());
+                                        entry.arguments =
+                                            serde_json::to_string(&call.function.arguments)
+                                                .unwrap_or_else(|_| "{}".to_string());
                                     }
                                 }
 
@@ -408,7 +420,10 @@ impl OllamaClient {
                                 }
 
                                 if response.done {
-                                    debug!("Stream complete after {} chunks. Done=true received.", chunk_count);
+                                    debug!(
+                                        "Stream complete after {} chunks. Done=true received.",
+                                        chunk_count
+                                    );
                                     break;
                                 }
                             } else {
@@ -440,8 +455,10 @@ impl OllamaClient {
                 .unwrap_or_else(|| format!("ollama_call_{}", Uuid::new_v4().simple()));
             let name = builder.name.clone().unwrap_or_else(|| "tool".to_string());
             let input = parse_arguments(&builder.arguments);
-            debug!("Adding tool_use block - index: {}, id: {}, name: {}, args: {}",
-                   index, id, name, builder.arguments);
+            debug!(
+                "Adding tool_use block - index: {}, id: {}, name: {}, args: {}",
+                index, id, name, builder.arguments
+            );
             content_blocks.push(ContentBlock::tool_use(id, name, input));
         }
 
@@ -459,7 +476,10 @@ impl OllamaClient {
             usage,
         };
 
-        debug!("Final AnthropicResponse: {} content blocks", content_blocks.len());
+        debug!(
+            "Final AnthropicResponse: {} content blocks",
+            content_blocks.len()
+        );
         for (i, block) in content_blocks.iter().enumerate() {
             debug!("  Block {}: {:?}", i, block);
         }
@@ -527,12 +547,14 @@ impl OllamaClient {
                     .id
                     .clone()
                     .unwrap_or_else(|| format!("ollama_call_{}", Uuid::new_v4().simple()));
-                debug!("  Tool call {}: id={}, name={}, args={:?}",
-                       idx, id, call.function.name, call.function.arguments);
+                debug!(
+                    "  Tool call {}: id={}, name={}, args={:?}",
+                    idx, id, call.function.name, call.function.arguments
+                );
                 content_blocks.push(ContentBlock::tool_use(
                     id,
                     call.function.name.clone(),
-                    call.function.arguments.clone()
+                    call.function.arguments.clone(),
                 ));
             }
         }
@@ -630,14 +652,18 @@ mod tests {
 
     #[test]
     fn test_ollama_client_new() {
-        let client = OllamaClient::new("test-key".to_string(), "http://localhost:11434".to_string());
+        let client =
+            OllamaClient::new("test-key".to_string(), "http://localhost:11434".to_string());
         assert_eq!(client.api_key, "test-key");
         assert_eq!(client.base_url, "http://localhost:11434");
     }
 
     #[test]
     fn test_ollama_client_new_trims_trailing_slash() {
-        let client = OllamaClient::new("test-key".to_string(), "http://localhost:11434/".to_string());
+        let client = OllamaClient::new(
+            "test-key".to_string(),
+            "http://localhost:11434/".to_string(),
+        );
         assert_eq!(client.base_url, "http://localhost:11434");
     }
 
@@ -931,7 +957,9 @@ mod tests {
         let response = client.map_response(ollama_response);
         assert_eq!(response.content.len(), 1);
         match &response.content[0] {
-            ContentBlock { block_type, text, .. } => {
+            ContentBlock {
+                block_type, text, ..
+            } => {
                 assert_eq!(block_type, "text");
                 assert_eq!(text.as_ref().unwrap(), "Hello user");
             }
@@ -965,7 +993,13 @@ mod tests {
         let response = client.map_response(ollama_response);
         assert_eq!(response.content.len(), 1);
         match &response.content[0] {
-            ContentBlock { block_type, name, input, id, .. } => {
+            ContentBlock {
+                block_type,
+                name,
+                input,
+                id,
+                ..
+            } => {
                 assert_eq!(block_type, "tool_use");
                 assert_eq!(id.as_ref().unwrap(), "call_1");
                 assert_eq!(name.as_ref().unwrap(), "test_tool");
@@ -1063,15 +1097,7 @@ mod tests {
             role: "user".to_string(),
             content: vec![ContentBlock::text("Hi".to_string())],
         }];
-        let request = client.build_request(
-            "llama2",
-            messages,
-            &[],
-            1000,
-            0.7,
-            None,
-            false,
-        );
+        let request = client.build_request("llama2", messages, &[], 1000, 0.7, None, false);
 
         assert_eq!(request.model, "llama2");
         assert_eq!(request.messages.len(), 1);
@@ -1090,15 +1116,7 @@ mod tests {
             content: vec![ContentBlock::text("Hi".to_string())],
         }];
         let system = "You are helpful".to_string();
-        let request = client.build_request(
-            "llama2",
-            messages,
-            &[],
-            1000,
-            0.5,
-            Some(&system),
-            true,
-        );
+        let request = client.build_request("llama2", messages, &[], 1000, 0.5, Some(&system), true);
 
         assert_eq!(request.messages.len(), 2);
         assert_eq!(request.messages[0].role, "system");
@@ -1162,5 +1180,3 @@ mod tests {
         assert!(!json.contains("parameters"));
     }
 }
-
-

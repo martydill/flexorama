@@ -1187,18 +1187,20 @@ mod tests {
         // Create multiple conversations with messages
         for i in 0..25 {
             let conv_id = db
-                .create_conversation(
-                    Some(format!("System prompt {}", i)),
-                    "gpt-4",
-                    None,
-                )
+                .create_conversation(Some(format!("System prompt {}", i)), "gpt-4", None)
                 .await
                 .unwrap();
 
             // Add a message to each conversation so they appear in recent conversations
-            db.add_message(&conv_id, "user", &format!("Test message {}", i), "gpt-4", 10)
-                .await
-                .unwrap();
+            db.add_message(
+                &conv_id,
+                "user",
+                &format!("Test message {}", i),
+                "gpt-4",
+                10,
+            )
+            .await
+            .unwrap();
 
             // Sleep for a millisecond to ensure different updated_at times
             tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
@@ -1257,18 +1259,21 @@ mod tests {
                 .await
                 .unwrap();
 
-            db.add_message(&conv_id, "user", &format!("Test message {}", i), "gpt-4", 10)
-                .await
-                .unwrap();
+            db.add_message(
+                &conv_id,
+                "user",
+                &format!("Test message {}", i),
+                "gpt-4",
+                10,
+            )
+            .await
+            .unwrap();
 
             tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         }
 
         // Test that the old method still works (should call new method with offset 0)
-        let conversations = db
-            .get_recent_conversations(10, None)
-            .await
-            .unwrap();
+        let conversations = db.get_recent_conversations(10, None).await.unwrap();
 
         assert_eq!(
             conversations.len(),
@@ -1321,14 +1326,22 @@ mod tests {
             .unwrap();
 
         // Should find 10 conversations with "Special" in messages, but only return 5
-        assert_eq!(page1.len(), 5, "First page with filter should have 5 conversations");
+        assert_eq!(
+            page1.len(),
+            5,
+            "First page with filter should have 5 conversations"
+        );
 
         let page2 = db
             .get_recent_conversations_with_offset(5, 5, Some("Special"))
             .await
             .unwrap();
 
-        assert_eq!(page2.len(), 5, "Second page with filter should have 5 conversations");
+        assert_eq!(
+            page2.len(),
+            5,
+            "Second page with filter should have 5 conversations"
+        );
 
         // Third page should be empty (only 10 "Special" messages total)
         let page3 = db

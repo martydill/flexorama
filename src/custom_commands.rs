@@ -240,7 +240,9 @@ fn split_frontmatter(content: &str) -> Result<(Option<String>, String)> {
     }
 
     if !found_end {
-        return Err(anyhow!("Custom command frontmatter is missing a closing ---"));
+        return Err(anyhow!(
+            "Custom command frontmatter is missing a closing ---"
+        ));
     }
 
     let frontmatter = frontmatter_lines.join("\n");
@@ -364,7 +366,11 @@ fn required_arg_count(command: &CustomCommand) -> Option<usize> {
 
 fn missing_args_message(command: &CustomCommand) -> String {
     let base = format!("Command '/{}' requires arguments.", command.name);
-    if let Some(hint) = command.argument_hint.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty())
+    if let Some(hint) = command
+        .argument_hint
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
     {
         format!("{} Usage: /{} {}", base, command.name, hint)
     } else {
@@ -469,7 +475,10 @@ Do something with $1"#;
         assert_eq!(cmd.argument_hint.as_deref(), Some("[path]"));
         assert_eq!(cmd.description.as_deref(), Some("Read and write"));
         assert_eq!(cmd.model.as_deref(), Some("test-model"));
-        assert_eq!(cmd.allowed_tools, vec!["read_file".to_string(), "write_file".to_string()]);
+        assert_eq!(
+            cmd.allowed_tools,
+            vec!["read_file".to_string(), "write_file".to_string()]
+        );
         assert_eq!(cmd.content, "Do something with $1");
     }
 

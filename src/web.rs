@@ -559,11 +559,13 @@ fn build_permission_handler(
     })
 }
 
-
 async fn ensure_default_conversation(state: &WebState) -> Result<Option<String>> {
     // Check for conversations with messages (not just empty conversations)
     let existing = state.database.get_recent_conversations(1, None).await?;
-    eprintln!("DEBUG: Found {} conversations with messages", existing.len());
+    eprintln!(
+        "DEBUG: Found {} conversations with messages",
+        existing.len()
+    );
 
     if !existing.is_empty() {
         eprintln!("DEBUG: Conversations exist, not creating default");
@@ -765,11 +767,18 @@ async fn list_conversations(
     let limit = query.limit.unwrap_or(10);
     let offset = query.offset.unwrap_or(0);
 
-    let result = db.get_recent_conversations_with_offset(limit, offset, None).await;
+    let result = db
+        .get_recent_conversations_with_offset(limit, offset, None)
+        .await;
 
     match result {
         Ok(conversations) => {
-            eprintln!("DEBUG: list_conversations found {} conversations (limit={}, offset={})", conversations.len(), limit, offset);
+            eprintln!(
+                "DEBUG: list_conversations found {} conversations (limit={}, offset={})",
+                conversations.len(),
+                limit,
+                offset
+            );
             let items = build_conversation_list_items(db.as_ref(), conversations).await;
             eprintln!("DEBUG: Returning {} conversation items", items.len());
             Json(items).into_response()
@@ -828,7 +837,11 @@ async fn build_conversation_list_items(
             .get_conversation_messages(&conversation.id)
             .await
             .unwrap_or_default();
-        eprintln!("DEBUG: Conversation {} has {} messages", conversation.id, messages.len());
+        eprintln!(
+            "DEBUG: Conversation {} has {} messages",
+            conversation.id,
+            messages.len()
+        );
         let first_user = messages
             .iter()
             .find(|m| m.role == "user")
@@ -1934,7 +1947,9 @@ async fn update_custom_command(
 ) -> impl IntoResponse {
     let existing = match custom_commands::load_custom_command(&name).await {
         Ok(Some(command)) => command,
-        Ok(None) => return (StatusCode::NOT_FOUND, "Command not found".to_string()).into_response(),
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, "Command not found".to_string()).into_response()
+        }
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -2181,10 +2196,7 @@ async fn get_conversation_stats_by_provider(
                 })
                 .collect();
 
-            let response = ConversationsByProviderResponse {
-                period,
-                data,
-            };
+            let response = ConversationsByProviderResponse { period, data };
             Json(response).into_response()
         },
     )
@@ -2213,10 +2225,7 @@ async fn get_conversation_stats_by_subagent(
                 })
                 .collect();
 
-            let response = ConversationsBySubagentResponse {
-                period,
-                data,
-            };
+            let response = ConversationsBySubagentResponse { period, data };
             Json(response).into_response()
         },
     )
@@ -2290,7 +2299,11 @@ async fn get_file_autocomplete(
         // Split the prefix into directory and filename parts
         let path = Path::new(prefix);
         if let Some(parent) = path.parent() {
-            let parent_str = if parent.as_os_str().is_empty() { "." } else { parent.to_str().unwrap_or(".") };
+            let parent_str = if parent.as_os_str().is_empty() {
+                "."
+            } else {
+                parent.to_str().unwrap_or(".")
+            };
             let file_part = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
             (parent_str, file_part)
         } else {
@@ -2318,10 +2331,7 @@ async fn get_file_autocomplete(
     for entry in entries {
         if let Ok(entry) = entry {
             let path = entry.path();
-            let filename = path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("");
+            let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
 
             if filter_prefix.is_empty() || filename.to_lowercase().starts_with(&filter_lower) {
                 let relative_path = match path.strip_prefix(&root) {
@@ -2660,7 +2670,10 @@ mod tests {
         assert_eq!(extract_provider_from_model("claude-3-opus"), "Anthropic");
         assert_eq!(extract_provider_from_model("gpt-4o"), "OpenAI");
         assert_eq!(extract_provider_from_model("gemini-1.5-pro"), "Gemini");
-        assert_eq!(extract_provider_from_model("mistral-large-latest"), "Mistral");
+        assert_eq!(
+            extract_provider_from_model("mistral-large-latest"),
+            "Mistral"
+        );
         assert_eq!(extract_provider_from_model("glm-4.6"), "Z.AI");
         assert_eq!(extract_provider_from_model("local-model"), "Other");
     }
@@ -2871,7 +2884,10 @@ mod tests {
             .route("/api/skills/:name/activate", post(activate_skill))
             .route("/api/skills/:name/deactivate", post(deactivate_skill))
             .route("/api/skills/active", get(get_active_skills))
-            .route("/api/commands", get(list_custom_commands).post(create_custom_command))
+            .route(
+                "/api/commands",
+                get(list_custom_commands).post(create_custom_command),
+            )
             .route(
                 "/api/commands/:name",
                 get(get_custom_command)
@@ -3133,7 +3149,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["description"], "Updated");
         assert_eq!(body["argument_hint"], "[ticket]");
-        assert!(body["allowed_tools"].as_array().expect("allowed tools").is_empty());
+        assert!(body["allowed_tools"]
+            .as_array()
+            .expect("allowed tools")
+            .is_empty());
         assert!(body["model"].is_null());
         assert_eq!(body["content"], "Updated content $1");
 
@@ -3927,8 +3946,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=")
@@ -3971,8 +3989,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         // Test lowercase prefix matching uppercase files
         let request = axum::http::Request::builder()
@@ -3993,10 +4010,22 @@ mod tests {
             .iter()
             .map(|f| f["path"].as_str().unwrap().to_string())
             .collect();
-        assert!(paths.iter().any(|p| p.ends_with("Cargo.toml")), "Should find Cargo.toml");
-        assert!(paths.iter().any(|p| p.ends_with("CARGO.lock")), "Should find CARGO.lock");
-        assert!(paths.iter().any(|p| p.ends_with("cargo.rs")), "Should find cargo.rs");
-        assert!(!paths.iter().any(|p| p.ends_with("test.txt")), "Should not find test.txt");
+        assert!(
+            paths.iter().any(|p| p.ends_with("Cargo.toml")),
+            "Should find Cargo.toml"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("CARGO.lock")),
+            "Should find CARGO.lock"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("cargo.rs")),
+            "Should find cargo.rs"
+        );
+        assert!(
+            !paths.iter().any(|p| p.ends_with("test.txt")),
+            "Should not find test.txt"
+        );
         assert_eq!(files.len(), 3);
     }
 
@@ -4014,8 +4043,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=test")
@@ -4034,9 +4062,18 @@ mod tests {
             .iter()
             .map(|f| f["path"].as_str().unwrap().to_string())
             .collect();
-        assert!(paths.iter().any(|p| p.ends_with("test.txt")), "Should find test.txt");
-        assert!(paths.iter().any(|p| p.ends_with("testing.rs")), "Should find testing.rs");
-        assert!(!paths.iter().any(|p| p.ends_with("example.rs")), "Should not find example.rs");
+        assert!(
+            paths.iter().any(|p| p.ends_with("test.txt")),
+            "Should find test.txt"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("testing.rs")),
+            "Should find testing.rs"
+        );
+        assert!(
+            !paths.iter().any(|p| p.ends_with("example.rs")),
+            "Should not find example.rs"
+        );
         assert_eq!(files.len(), 2);
     }
 
@@ -4054,8 +4091,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=")
@@ -4098,8 +4134,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=")
@@ -4156,8 +4191,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=src/m")
@@ -4191,8 +4225,7 @@ mod tests {
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=../")
@@ -4218,15 +4251,13 @@ mod tests {
 
         // Create more than 50 files
         for i in 0..100 {
-            std::fs::write(root.join(format!("file{:03}.txt", i)), "content")
-                .expect("create file");
+            std::fs::write(root.join(format!("file{:03}.txt", i)), "content").expect("create file");
         }
 
         let original_dir = std::env::current_dir().expect("get current dir");
         std::env::set_current_dir(root).expect("change dir");
 
-        let router = Router::new()
-            .route("/api/file-autocomplete", get(get_file_autocomplete));
+        let router = Router::new().route("/api/file-autocomplete", get(get_file_autocomplete));
 
         let request = axum::http::Request::builder()
             .uri("/api/file-autocomplete?prefix=file")

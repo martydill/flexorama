@@ -289,7 +289,7 @@ impl MistralClient {
                                     break;
                                 }
 
-                                if let Ok(event) = 
+                                if let Ok(event) =
                                     serde_json::from_str::<MistralStreamResponse>(event_data)
                                 {
                                     if let Some(choice) = event.choices.first() {
@@ -477,10 +477,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<M
                 }
                 "image" => {
                     if let Some(source) = &block.source {
-                        let data_url = format!(
-                            "data:{};base64,{}",
-                            source.media_type, source.data
-                        );
+                        let data_url = format!("data:{};base64,{}", source.media_type, source.data);
                         content_parts.push(MistralContentPart::ImageUrl {
                             image_url: MistralImageUrl { url: data_url },
                         });

@@ -1,22 +1,24 @@
-use crate::acp::capabilities::{ClientCapabilities};
+use crate::acp::capabilities::ClientCapabilities;
 use crate::acp::errors::{AcpError, AcpResult};
 use crate::acp::filesystem::FileSystemHandler;
 use crate::acp::session::SessionManager;
-use crate::acp::types::{JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NotificationSender};
+use crate::acp::types::{
+    JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NotificationSender,
+};
 use crate::agent::Agent;
 use crate::config::Config;
 use agent_client_protocol_schema::{
-    AgentCapabilities, ContentBlock, Implementation, InitializeResponse, PromptCapabilities,
-    McpCapabilities, V1 as PROTOCOL_V1, NewSessionResponse, SessionId, SessionNotification,
-    PromptResponse, StopReason, ContentChunk, SessionUpdate, TextContent,
+    AgentCapabilities, ContentBlock, ContentChunk, Implementation, InitializeResponse,
+    McpCapabilities, NewSessionResponse, PromptCapabilities, PromptResponse, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, V1 as PROTOCOL_V1,
 };
-use uuid::Uuid;
 use log::{debug, error, info, warn};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 /// Flexorama ACP Handler
 /// Implements the Agent Client Protocol server-side logic
@@ -63,17 +65,13 @@ impl FlexoramaAcpHandler {
 
         let filesystem = FileSystemHandler::new(
             file_security,
-            None,  // workspace_root will be set during initialization
+            None, // workspace_root will be set during initialization
             yolo_mode,
         );
 
         // Create session manager for managing ACP sessions
-        let session_manager = SessionManager::new(
-            config.clone(),
-            model.clone(),
-            yolo_mode,
-            plan_mode,
-        );
+        let session_manager =
+            SessionManager::new(config.clone(), model.clone(), yolo_mode, plan_mode);
 
         Self {
             agent: Arc::new(Mutex::new(agent)),
@@ -121,7 +119,10 @@ impl FlexoramaAcpHandler {
             if let Err(e) = sender.send(json_notification) {
                 error!("Failed to send session/update notification: {}", e);
             } else {
-                debug!("Sent session/update notification for session {}", session_id);
+                debug!(
+                    "Sent session/update notification for session {}",
+                    session_id
+                );
             }
         } else {
             warn!("No notification sender configured, cannot send session/update");
@@ -147,7 +148,9 @@ impl FlexoramaAcpHandler {
             "agent/cancel" => self.handle_cancel(request.params).await,
 
             // LSP-style methods (for compatibility)
-            "workspace/didChangeConfiguration" => self.handle_configuration_change(request.params).await,
+            "workspace/didChangeConfiguration" => {
+                self.handle_configuration_change(request.params).await
+            }
             "textDocument/didOpen" => self.handle_text_document_opened(request.params).await,
             "textDocument/didChange" => self.handle_text_document_changed(request.params).await,
             "textDocument/didClose" => self.handle_text_document_closed(request.params).await,
@@ -169,7 +172,10 @@ impl FlexoramaAcpHandler {
 
             method => {
                 warn!("Unknown method: {}", method);
-                Err(AcpError::InvalidRequest(format!("Unknown method: {}", method)))
+                Err(AcpError::InvalidRequest(format!(
+                    "Unknown method: {}",
+                    method
+                )))
             }
         };
 
@@ -178,7 +184,12 @@ impl FlexoramaAcpHandler {
             Err(err) => {
                 error!("Error handling {}: {}", request.method, err);
                 let rpc_error: JsonRpcError = err.into();
-                JsonRpcResponse::error(request.id, rpc_error.code, rpc_error.message, rpc_error.data)
+                JsonRpcResponse::error(
+                    request.id,
+                    rpc_error.code,
+                    rpc_error.message,
+                    rpc_error.data,
+                )
             }
         }
     }
@@ -187,11 +198,15 @@ impl FlexoramaAcpHandler {
     async fn handle_initialize(&mut self, params: Option<Value>) -> AcpResult<Value> {
         info!("Handling initialize request");
 
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
 
         // Log the received params for debugging
         if self.debug {
-            debug!("Initialize params: {}", serde_json::to_string_pretty(&params).unwrap_or_default());
+            debug!(
+                "Initialize params: {}",
+                serde_json::to_string_pretty(&params).unwrap_or_default()
+            );
         }
 
         // Parse protocol version if present (ACP handshake style)
@@ -226,7 +241,9 @@ impl FlexoramaAcpHandler {
         }
 
         // Parse client capabilities - support both "capabilities" and "clientCapabilities"
-        let caps_field = params.get("clientCapabilities").or_else(|| params.get("capabilities"));
+        let caps_field = params
+            .get("clientCapabilities")
+            .or_else(|| params.get("capabilities"));
         if let Some(caps) = caps_field {
             match serde_json::from_value(caps.clone()) {
                 Ok(client_caps) => {
@@ -243,21 +260,21 @@ impl FlexoramaAcpHandler {
 
         // Build official ACP InitializeResponse
         let agent_capabilities = AgentCapabilities {
-            load_session: false,  // We don't support session loading yet
+            load_session: false, // We don't support session loading yet
             prompt_capabilities: PromptCapabilities {
-                image: false,  // We support text prompts
+                image: false, // We support text prompts
                 audio: false,
-                embedded_context: true,  // We support embedded context (file contents, etc.)
+                embedded_context: true, // We support embedded context (file contents, etc.)
                 meta: None,
             },
-            mcp_capabilities: McpCapabilities::default(),  // Default MCP support
+            mcp_capabilities: McpCapabilities::default(), // Default MCP support
             meta: None,
         };
 
         let response = InitializeResponse {
-            protocol_version: PROTOCOL_V1,  // ACP v1
+            protocol_version: PROTOCOL_V1, // ACP v1
             agent_capabilities,
-            auth_methods: vec![],  // No authentication required
+            auth_methods: vec![], // No authentication required
             agent_info: Some(Implementation {
                 name: "flexorama".to_string(),
                 title: Some("Flexorama".to_string()),
@@ -295,12 +312,10 @@ impl FlexoramaAcpHandler {
         // Parse params if provided (cwd, mcpServers, etc.)
         let session_workspace = if let Some(params) = params {
             // Extract working directory if provided
-            params.get("cwd")
-                .and_then(|v| v.as_str())
-                .map(|cwd| {
-                    info!("Session working directory: {}", cwd);
-                    PathBuf::from(cwd)
-                })
+            params.get("cwd").and_then(|v| v.as_str()).map(|cwd| {
+                info!("Session working directory: {}", cwd);
+                PathBuf::from(cwd)
+            })
         } else {
             None
         };
@@ -309,7 +324,10 @@ impl FlexoramaAcpHandler {
         let session_id = SessionId::from(Uuid::new_v4().to_string());
 
         // Create a new session with its own agent and conversation
-        let session = self.session_manager.create_session(session_id.clone()).await
+        let session = self
+            .session_manager
+            .create_session(session_id.clone())
+            .await
             .map_err(|e| AcpError::Agent(e))?;
 
         // If a workspace was specified, update the session's workspace
@@ -321,14 +339,13 @@ impl FlexoramaAcpHandler {
 
         info!(
             "Created session: {} with conversation ID: {:?}",
-            session_id,
-            session.conversation_id
+            session_id, session.conversation_id
         );
 
         // Build response using official ACP type
         let response = NewSessionResponse {
             session_id,
-            modes: None,  // We don't support modes yet
+            modes: None, // We don't support modes yet
             meta: None,
         };
 
@@ -343,7 +360,8 @@ impl FlexoramaAcpHandler {
             ));
         }
 
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
 
         // Extract session_id (required)
         let session_id = params
@@ -372,15 +390,17 @@ impl FlexoramaAcpHandler {
                             // Include URI context if available
                             let uri = resource.get("uri").and_then(|v| v.as_str());
                             if let Some(uri) = uri {
-                                Some(format!("--- Content of {} ---\n{}\n--- End of {} ---", uri, text, uri))
+                                Some(format!(
+                                    "--- Content of {} ---\n{}\n--- End of {} ---",
+                                    uri, text, uri
+                                ))
                             } else {
                                 Some(text.to_string())
                             }
                         } else {
                             None
                         }
-                    }
-                    else {
+                    } else {
                         None
                     }
                 })
@@ -390,14 +410,25 @@ impl FlexoramaAcpHandler {
             prompt_blocks.to_string()
         };
 
-        info!("Processing prompt for session {}: {}", session_id, &prompt_text[..prompt_text.len().min(50)]);
+        info!(
+            "Processing prompt for session {}: {}",
+            session_id,
+            &prompt_text[..prompt_text.len().min(50)]
+        );
 
         // Look up the session
-        let session = self.session_manager.get_session(session_id).await
-            .ok_or_else(|| AcpError::InvalidRequest(format!("Session not found: {}", session_id)))?;
+        let session = self
+            .session_manager
+            .get_session(session_id)
+            .await
+            .ok_or_else(|| {
+                AcpError::InvalidRequest(format!("Session not found: {}", session_id))
+            })?;
 
         // Reset cancellation flag for this session
-        session.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        session
+            .cancellation_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         // Process with the session's agent
         let mut agent = session.agent.lock().await;
@@ -496,7 +527,8 @@ impl FlexoramaAcpHandler {
             ));
         }
 
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
 
         let prompt = params
             .get("prompt")
@@ -506,7 +538,8 @@ impl FlexoramaAcpHandler {
         info!("Processing prompt: {}", &prompt[..prompt.len().min(50)]);
 
         // Reset cancellation flag
-        self.cancellation_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.cancellation_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
 
         // Process with Flexorama agent
         let mut agent = self.agent.lock().await;
@@ -537,13 +570,15 @@ impl FlexoramaAcpHandler {
     /// Handle cancel request
     async fn handle_cancel(&mut self, _params: Option<Value>) -> AcpResult<Value> {
         info!("Cancelling current operation");
-        self.cancellation_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancellation_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(json!({"cancelled": true}))
     }
 
     /// Handle read file request
     async fn handle_read_file(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -555,7 +590,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle write file request
     async fn handle_write_file(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -571,7 +607,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle list directory request
     async fn handle_list_directory(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -594,7 +631,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle glob request
     async fn handle_glob(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let pattern = params
             .get("pattern")
             .and_then(|v| v.as_str())
@@ -606,7 +644,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle delete request
     async fn handle_delete(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -618,7 +657,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle create directory request
     async fn handle_create_directory(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -630,7 +670,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle add context file request
     async fn handle_add_context_file(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -644,7 +685,9 @@ impl FlexoramaAcpHandler {
 
         // Add to agent context
         let mut agent = self.agent.lock().await;
-        agent.add_context_file(path_str).await
+        agent
+            .add_context_file(path_str)
+            .await
             .map_err(|e| AcpError::Agent(e))?;
 
         Ok(json!({"success": true, "path": path_str}))
@@ -653,7 +696,9 @@ impl FlexoramaAcpHandler {
     /// Handle clear context request
     async fn handle_clear_context(&self, _params: Option<Value>) -> AcpResult<Value> {
         let mut agent = self.agent.lock().await;
-        agent.clear_conversation_keep_agents_md().await
+        agent
+            .clear_conversation_keep_agents_md()
+            .await
             .map_err(|e| AcpError::Agent(e))?;
 
         Ok(json!({"success": true}))
@@ -661,7 +706,8 @@ impl FlexoramaAcpHandler {
 
     /// Handle apply edit request
     async fn handle_apply_edit(&self, params: Option<Value>) -> AcpResult<Value> {
-        let params = params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
+        let params =
+            params.ok_or_else(|| AcpError::InvalidRequest("Missing params".to_string()))?;
         let path = params
             .get("path")
             .and_then(|v| v.as_str())
@@ -694,7 +740,8 @@ impl FlexoramaAcpHandler {
 
         let security_manager = self.agent.lock().await.get_file_security_manager();
         let mut manager = security_manager.write().await;
-        let result = crate::tools::edit_file::edit_file(&call, &mut *manager, self.yolo_mode).await?;
+        let result =
+            crate::tools::edit_file::edit_file(&call, &mut *manager, self.yolo_mode).await?;
 
         if result.is_error {
             Err(AcpError::Agent(anyhow::anyhow!(result.content)))

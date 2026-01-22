@@ -286,7 +286,11 @@ pub async fn run_tui_interactive(
 }
 
 /// Check for and add context files
-pub async fn add_context_files(agent: &mut Agent, context_files: &[String], silent: bool) -> Result<()> {
+pub async fn add_context_files(
+    agent: &mut Agent,
+    context_files: &[String],
+    silent: bool,
+) -> Result<()> {
     // Always add AGENTS.md from ~/.flexorama/ if it exists (priority)
     let home_agents_md = get_home_agents_md_path();
     if home_agents_md.exists() {

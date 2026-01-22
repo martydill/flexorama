@@ -12,6 +12,7 @@ The hybrid cli/web coding agent that works your way.
  - Syntax highlighting for code snippets
  - Direct bash command execution with !
  - Adding context files with @path_to_file_name
+ - Image support (for models that support it)
  - <tab> autocomplete for file paths and commands
  - MCP support
  - Local and global AGENTS.md support

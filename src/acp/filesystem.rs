@@ -119,7 +119,9 @@ impl FileSystemHandler {
         };
 
         let mut security_manager = self.file_security.write().await;
-        let result = crate::tools::write_file::write_file(&call, &mut *security_manager, self.yolo_mode).await?;
+        let result =
+            crate::tools::write_file::write_file(&call, &mut *security_manager, self.yolo_mode)
+                .await?;
 
         if result.is_error {
             Err(AcpError::Agent(anyhow::anyhow!(result.content)))
@@ -231,7 +233,9 @@ impl FileSystemHandler {
         };
 
         let mut security_manager = self.file_security.write().await;
-        let result = crate::tools::delete_file::delete_file(&call, &mut *security_manager, self.yolo_mode).await?;
+        let result =
+            crate::tools::delete_file::delete_file(&call, &mut *security_manager, self.yolo_mode)
+                .await?;
 
         if result.is_error {
             Err(AcpError::Agent(anyhow::anyhow!(result.content)))
@@ -260,7 +264,12 @@ impl FileSystemHandler {
         };
 
         let mut security_manager = self.file_security.write().await;
-        let result = crate::tools::create_directory::create_directory(&call, &mut *security_manager, self.yolo_mode).await?;
+        let result = crate::tools::create_directory::create_directory(
+            &call,
+            &mut *security_manager,
+            self.yolo_mode,
+        )
+        .await?;
 
         if result.is_error {
             Err(AcpError::Agent(anyhow::anyhow!(result.content)))
@@ -285,7 +294,9 @@ mod tests {
 
     #[test]
     fn test_resolve_path_absolute() {
-        let security = Arc::new(RwLock::new(FileSecurityManager::new(FileSecurity::default())));
+        let security = Arc::new(RwLock::new(FileSecurityManager::new(
+            FileSecurity::default(),
+        )));
         let handler = FileSystemHandler::new(security, None, false);
 
         #[cfg(windows)]
@@ -303,7 +314,9 @@ mod tests {
 
     #[test]
     fn test_resolve_path_relative_with_workspace() {
-        let security = Arc::new(RwLock::new(FileSecurityManager::new(FileSecurity::default())));
+        let security = Arc::new(RwLock::new(FileSecurityManager::new(
+            FileSecurity::default(),
+        )));
         let mut handler = FileSystemHandler::new(security, None, false);
         handler.set_workspace_root(PathBuf::from("/workspace"));
 

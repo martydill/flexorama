@@ -2390,7 +2390,6 @@ mod tests {
         assert!(result.ends_with("..."));
     }
 
-
     #[test]
     fn test_build_message_preview_whitespace_only() {
         let messages = vec![
@@ -2436,13 +2435,8 @@ mod tests {
         let config = crate::config::Config::default();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let agent = rt.block_on(async {
-            crate::agent::Agent::new_with_plan_mode(
-                config,
-                "test-model".to_string(),
-                false,
-                false,
-            )
-            .await
+            crate::agent::Agent::new_with_plan_mode(config, "test-model".to_string(), false, false)
+                .await
         });
         // Should not panic
         print_usage_stats(&agent);
