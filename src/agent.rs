@@ -1271,6 +1271,25 @@ impl Agent {
         self.conversation_manager.conversation.len()
     }
 
+    /// Add an image to the conversation
+    pub fn add_image(
+        &mut self,
+        media_type: String,
+        base64_data: String,
+        description: Option<String>,
+    ) {
+        let mut content = vec![ContentBlock::image(media_type, base64_data)];
+
+        if let Some(desc) = description {
+            content.push(ContentBlock::text(desc));
+        }
+
+        self.conversation_manager.conversation.push(Message {
+            role: "user".to_string(),
+            content,
+        });
+    }
+
     /// List recent conversations from the database
     pub async fn list_recent_conversations(
         &self,

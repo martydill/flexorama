@@ -58,6 +58,14 @@ struct ConversationListItem {
 }
 
 #[derive(Serialize, Clone)]
+struct ImageSourceDto {
+    #[serde(rename = "type")]
+    source_type: String,
+    media_type: String,
+    data: String,
+}
+
+#[derive(Serialize, Clone)]
 struct ContentBlockDto {
     #[serde(rename = "type")]
     block_type: String,
@@ -68,6 +76,7 @@ struct ContentBlockDto {
     tool_use_id: Option<String>,
     content: Option<String>,
     is_error: Option<bool>,
+    source: Option<ImageSourceDto>,
 }
 
 #[derive(Serialize)]
@@ -103,9 +112,16 @@ struct NewConversationRequest {
     system_prompt: Option<String>,
 }
 
+#[derive(Deserialize, Clone)]
+struct ImageData {
+    media_type: String,
+    data: String,
+}
+
 #[derive(Deserialize)]
 struct MessageRequest {
     message: String,
+    images: Option<Vec<ImageData>>,
 }
 
 #[derive(Serialize)]
@@ -1025,6 +1041,13 @@ async fn send_message_to_conversation(
 
     let cancellation_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+    // Add images to conversation if provided
+    if let Some(images) = &payload.images {
+        for image in images {
+            agent.add_image(image.media_type.clone(), image.data.clone(), None);
+        }
+    }
+
     let mut message = payload.message.clone();
     match custom_commands::render_custom_command_input(&message).await {
         Ok(Some(rendered)) => {
@@ -1096,6 +1119,7 @@ async fn stream_message_to_conversation(
     let (tx, rx) = mpsc::channel::<Result<Bytes, Infallible>>(32);
     let cancellation_flag = Arc::new(AtomicBool::new(false));
     let message = payload.message.clone();
+    let images = payload.images.clone();
     let permission_hub = state.permission_hub.clone();
     let conversation_id = id.clone();
     let state_clone = state.clone();
@@ -1128,6 +1152,13 @@ async fn stream_message_to_conversation(
         };
 
         let mut agent = agent_arc.lock().await;
+
+        // Add images to conversation if provided
+        if let Some(images) = images {
+            for image in images {
+                agent.add_image(image.media_type, image.data, None);
+            }
+        }
 
         let on_stream = {
             let sender = tx.clone();
@@ -2410,6 +2441,11 @@ fn block_to_dto(block: &ContentBlock) -> ContentBlockDto {
         tool_use_id: block.tool_use_id.clone(),
         content: block.content.clone(),
         is_error: block.is_error,
+        source: block.source.as_ref().map(|s| ImageSourceDto {
+            source_type: s.source_type.clone(),
+            media_type: s.media_type.clone(),
+            data: s.data.clone(),
+        }),
     }
 }
 
@@ -2424,6 +2460,7 @@ fn is_context_block(block: &ContentBlock) -> bool {
 fn block_text_summary(block: &ContentBlockDto) -> String {
     match block.block_type.as_str() {
         "text" => block.text.clone().unwrap_or_default(),
+        "image" => "[Image]".to_string(),
         "tool_use" => format!(
             "Tool call: {}",
             block.name.as_deref().unwrap_or("unknown tool")

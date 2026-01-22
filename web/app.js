@@ -78,6 +78,7 @@ const state = {
   streaming: true,
   planMode: false,
   pendingPermissions: new Set(),
+  pendingImages: [],
   todos: [],
   statsCharts: {
     tokens: null,
@@ -482,6 +483,27 @@ function renderBlock(block) {
     if (detail.textContent) wrapper.appendChild(detail);
     wrapper.appendChild(actions);
     wrapper.appendChild(status);
+    return wrapper;
+  }
+
+  if (blockType === "image") {
+    wrapper.className = "image-block";
+    const img = document.createElement("img");
+    if (block.source) {
+      const dataUrl = `data:${block.source.media_type};base64,${block.source.data}`;
+      img.src = dataUrl;
+      img.style.maxWidth = "400px";
+      img.style.maxHeight = "400px";
+      img.style.borderRadius = "8px";
+      img.style.border = "1px solid var(--border-color)";
+      img.style.cursor = "pointer";
+      img.onclick = () => {
+        // Open image in new tab when clicked
+        const newTab = window.open();
+        newTab.document.body.innerHTML = `<img src="${dataUrl}" style="max-width: 100%; height: auto;">`;
+      };
+    }
+    wrapper.appendChild(img);
     return wrapper;
   }
 
@@ -1117,16 +1139,28 @@ async function sendMessage() {
   appendMessage("user", text);
   updateConversationPreview(state.activeConversationId, text);
   input.value = "";
-  await sendMessageStreaming(text);
+
+  // Capture images before clearing
+  const images = state.pendingImages.length > 0 ? [...state.pendingImages] : null;
+  clearPendingImages();
+
+  await sendMessageStreaming(text, images);
 }
 
-async function sendMessageOnce(text) {
+async function sendMessageOnce(text, images = null) {
   setStatus("Waiting for response...");
   const poller = startPermissionPolling();
   try {
+    const requestBody = { message: text };
+    if (images && images.length > 0) {
+      requestBody.images = images.map(img => ({
+        media_type: img.media_type,
+        data: img.data,
+      }));
+    }
     const result = await api(`/api/conversations/${state.activeConversationId}/message`, {
       method: "POST",
-      body: { message: text },
+      body: requestBody,
     });
     appendMessage("assistant", result.response || "(empty response)");
     
@@ -1146,7 +1180,7 @@ async function sendMessageOnce(text) {
   }
 }
 
-async function sendMessageStreaming(text) {
+async function sendMessageStreaming(text, images = null) {
   // Capture the conversation ID at the start - use this throughout the function
   const conversationId = state.activeConversationId;
   const convIdStr = String(conversationId);
@@ -1205,10 +1239,18 @@ async function sendMessageStreaming(text) {
       headers["X-CSRF-Token"] = state.csrfToken;
     }
 
+    const requestBody = { message: text };
+    if (images && images.length > 0) {
+      requestBody.images = images.map(img => ({
+        media_type: img.media_type,
+        data: img.data,
+      }));
+    }
+
     const res = await fetch(`/api/conversations/${conversationId}/message/stream`, {
       method: "POST",
       headers: headers,
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify(requestBody),
       signal: streamState.abortController.signal,
     });
 
@@ -2377,6 +2419,101 @@ async function handleAutocompleteInput() {
   showAutocomplete(files, atPos, prefix);
 }
 
+// Image handling functions
+async function handleImagePaste(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64Data = e.target.result.split(",")[1]; // Remove data:image/...;base64, prefix
+    const mediaType = file.type;
+
+    state.pendingImages.push({
+      media_type: mediaType,
+      data: base64Data,
+      preview: e.target.result, // Keep full data URL for preview
+    });
+
+    renderImageThumbnails();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderImageThumbnails() {
+  let container = document.getElementById("image-thumbnails");
+  if (!container) {
+    // Create the container if it doesn't exist
+    const composer = document.querySelector(".composer");
+    if (!composer) return;
+
+    container = document.createElement("div");
+    container.id = "image-thumbnails";
+    container.style.display = "flex";
+    container.style.gap = "8px";
+    container.style.padding = "8px";
+    container.style.flexWrap = "wrap";
+    container.style.backgroundColor = "var(--bg-secondary)";
+    container.style.borderTop = "1px solid var(--border-color)";
+
+    // Insert before the input row
+    composer.insertBefore(container, composer.firstChild);
+  }
+
+  // Clear and rebuild thumbnails
+  container.innerHTML = "";
+
+  if (state.pendingImages.length === 0) {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "flex";
+
+  state.pendingImages.forEach((img, index) => {
+    const thumbWrapper = document.createElement("div");
+    thumbWrapper.style.position = "relative";
+    thumbWrapper.style.display = "inline-block";
+
+    const thumb = document.createElement("img");
+    thumb.src = img.preview;
+    thumb.style.width = "80px";
+    thumb.style.height = "80px";
+    thumb.style.objectFit = "cover";
+    thumb.style.borderRadius = "4px";
+    thumb.style.border = "2px solid var(--border-color)";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.innerHTML = "×";
+    removeBtn.style.position = "absolute";
+    removeBtn.style.top = "-8px";
+    removeBtn.style.right = "-8px";
+    removeBtn.style.width = "20px";
+    removeBtn.style.height = "20px";
+    removeBtn.style.borderRadius = "50%";
+    removeBtn.style.border = "none";
+    removeBtn.style.backgroundColor = "var(--danger)";
+    removeBtn.style.color = "white";
+    removeBtn.style.cursor = "pointer";
+    removeBtn.style.fontSize = "14px";
+    removeBtn.style.fontWeight = "bold";
+    removeBtn.style.display = "flex";
+    removeBtn.style.alignItems = "center";
+    removeBtn.style.justifyContent = "center";
+    removeBtn.style.padding = "0";
+    removeBtn.onclick = () => {
+      state.pendingImages.splice(index, 1);
+      renderImageThumbnails();
+    };
+
+    thumbWrapper.appendChild(thumb);
+    thumbWrapper.appendChild(removeBtn);
+    container.appendChild(thumbWrapper);
+  });
+}
+
+function clearPendingImages() {
+  state.pendingImages = [];
+  renderImageThumbnails();
+}
+
 function bindEvents() {
   document.getElementById("send-message").addEventListener("click", sendMessage);
 
@@ -2420,6 +2557,23 @@ function bindEvents() {
   // Handle input changes for autocomplete
   messageInput.addEventListener("input", () => {
     handleAutocompleteInput();
+  });
+
+  // Handle image paste
+  messageInput.addEventListener("paste", (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          handleImagePaste(file);
+        }
+      }
+    }
   });
 
   // Hide autocomplete when clicking outside
