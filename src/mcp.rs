@@ -42,6 +42,23 @@ pub enum McpMethod {
         name: String,
         arguments: Option<Value>,
     },
+    #[serde(rename = "resources/list")]
+    ListResources {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
+    },
+    #[serde(rename = "resources/read")]
+    ReadResource { uri: String },
+    #[serde(rename = "prompts/list")]
+    ListPrompts {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
+    },
+    #[serde(rename = "prompts/get")]
+    GetPrompt {
+        name: String,
+        arguments: Option<Value>,
+    },
     #[serde(rename = "ping")]
     Ping,
     #[serde(rename = "notifications/initialized")]
@@ -51,10 +68,22 @@ pub enum McpMethod {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpClientCapabilities {
     pub tools: Option<McpToolsCapability>,
+    pub resources: Option<McpResourcesCapability>,
+    pub prompts: Option<McpPromptsCapability>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpToolsCapability {
+    pub list_changed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpResourcesCapability {
+    pub list_changed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpPromptsCapability {
     pub list_changed: Option<bool>,
 }
 
@@ -88,6 +117,26 @@ pub struct McpTool {
     pub description: Option<String>,
     #[serde(alias = "inputSchema", rename = "input_schema")]
     pub input_schema: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpResource {
+    pub uri: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    #[serde(alias = "mimeType", rename = "mime_type")]
+    pub mime_type: Option<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpPrompt {
+    pub name: String,
+    pub description: Option<String>,
+    pub arguments: Option<Value>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
 }
 
 #[derive(Debug)]
@@ -484,6 +533,12 @@ impl McpConnection {
                     tools: Some(McpToolsCapability {
                         list_changed: Some(true),
                     }),
+                    resources: Some(McpResourcesCapability {
+                        list_changed: Some(true),
+                    }),
+                    prompts: Some(McpPromptsCapability {
+                        list_changed: Some(true),
+                    }),
                 },
                 client_info: McpClientInfo {
                     name: "flexorama".to_string(),
@@ -774,6 +829,106 @@ impl McpConnection {
                 serde_json::to_string_pretty(result)
                     .unwrap_or_else(|_| "<Invalid JSON>".to_string())
             );
+        }
+
+        Ok(response.result.unwrap_or(json!({})))
+    }
+
+    pub async fn list_resources(&mut self) -> Result<Vec<McpResource>> {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(self.next_id()),
+            method: McpMethod::ListResources { cursor: None },
+        };
+
+        let response = self.send_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!(
+                "Failed to list MCP resources from '{}': {:?}",
+                self.name,
+                error
+            ));
+        }
+
+        let result = response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result returned for MCP resources list"))?;
+        let resources_value = result
+            .get("resources")
+            .cloned()
+            .unwrap_or_else(|| json!([]));
+        let resources: Vec<McpResource> = serde_json::from_value(resources_value)?;
+        Ok(resources)
+    }
+
+    pub async fn read_resource(&mut self, uri: &str) -> Result<Value> {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(self.next_id()),
+            method: McpMethod::ReadResource {
+                uri: uri.to_string(),
+            },
+        };
+
+        let response = self.send_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!(
+                "Failed to read MCP resource '{}' from '{}': {:?}",
+                uri,
+                self.name,
+                error
+            ));
+        }
+
+        Ok(response.result.unwrap_or(json!({})))
+    }
+
+    pub async fn list_prompts(&mut self) -> Result<Vec<McpPrompt>> {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(self.next_id()),
+            method: McpMethod::ListPrompts { cursor: None },
+        };
+
+        let response = self.send_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!(
+                "Failed to list MCP prompts from '{}': {:?}",
+                self.name,
+                error
+            ));
+        }
+
+        let result = response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("No result returned for MCP prompts list"))?;
+        let prompts_value = result.get("prompts").cloned().unwrap_or_else(|| json!([]));
+        let prompts: Vec<McpPrompt> = serde_json::from_value(prompts_value)?;
+        Ok(prompts)
+    }
+
+    pub async fn get_prompt(&mut self, name: &str, arguments: Option<Value>) -> Result<Value> {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some(self.next_id()),
+            method: McpMethod::GetPrompt {
+                name: name.to_string(),
+                arguments,
+            },
+        };
+
+        let response = self.send_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!(
+                "Failed to get MCP prompt '{}' from '{}': {:?}",
+                name,
+                self.name,
+                error
+            ));
         }
 
         Ok(response.result.unwrap_or(json!({})))
@@ -1120,6 +1275,47 @@ impl McpManager {
         }
     }
 
+    pub async fn list_resources(&self, server_name: &str) -> Result<Vec<McpResource>> {
+        let mut connections = self.connections.write().await;
+        if let Some(connection) = connections.get_mut(server_name) {
+            connection.list_resources().await
+        } else {
+            Err(anyhow::anyhow!("Server '{}' is not connected", server_name))
+        }
+    }
+
+    pub async fn read_resource(&self, server_name: &str, uri: &str) -> Result<Value> {
+        let mut connections = self.connections.write().await;
+        if let Some(connection) = connections.get_mut(server_name) {
+            connection.read_resource(uri).await
+        } else {
+            Err(anyhow::anyhow!("Server '{}' is not connected", server_name))
+        }
+    }
+
+    pub async fn list_prompts(&self, server_name: &str) -> Result<Vec<McpPrompt>> {
+        let mut connections = self.connections.write().await;
+        if let Some(connection) = connections.get_mut(server_name) {
+            connection.list_prompts().await
+        } else {
+            Err(anyhow::anyhow!("Server '{}' is not connected", server_name))
+        }
+    }
+
+    pub async fn get_prompt(
+        &self,
+        server_name: &str,
+        name: &str,
+        arguments: Option<Value>,
+    ) -> Result<Value> {
+        let mut connections = self.connections.write().await;
+        if let Some(connection) = connections.get_mut(server_name) {
+            connection.get_prompt(name, arguments).await
+        } else {
+            Err(anyhow::anyhow!("Server '{}' is not connected", server_name))
+        }
+    }
+
     pub async fn connect_all_enabled(&self) -> Result<()> {
         let config = self.config.read().await;
         let mut connected_count = 0;
@@ -1237,6 +1433,12 @@ mod tests {
                     tools: Some(McpToolsCapability {
                         list_changed: Some(true),
                     }),
+                    resources: Some(McpResourcesCapability {
+                        list_changed: Some(true),
+                    }),
+                    prompts: Some(McpPromptsCapability {
+                        list_changed: Some(true),
+                    }),
                 },
                 client_info: McpClientInfo {
                     name: "flexorama".to_string(),
@@ -1295,16 +1497,84 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_request_ping_serialization() {
+    fn test_mcp_request_list_resources_serialization() {
         let request = McpRequest {
             jsonrpc: "2.0".to_string(),
             id: Some("4".to_string()),
-            method: McpMethod::Ping,
+            method: McpMethod::ListResources { cursor: None },
         };
 
         let serialized = serde_json::to_value(&request).unwrap();
         assert_eq!(serialized["jsonrpc"], "2.0");
         assert_eq!(serialized["id"], "4");
+        assert_eq!(serialized["method"], "resources/list");
+    }
+
+    #[test]
+    fn test_mcp_request_read_resource_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("5".to_string()),
+            method: McpMethod::ReadResource {
+                uri: "file:///tmp/test.txt".to_string(),
+            },
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "5");
+        assert_eq!(serialized["method"], "resources/read");
+        assert_eq!(serialized["params"]["uri"], "file:///tmp/test.txt");
+    }
+
+    #[test]
+    fn test_mcp_request_list_prompts_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("6".to_string()),
+            method: McpMethod::ListPrompts { cursor: None },
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "6");
+        assert_eq!(serialized["method"], "prompts/list");
+    }
+
+    #[test]
+    fn test_mcp_request_get_prompt_serialization() {
+        let arguments = json!({
+            "topic": "greeting"
+        });
+
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("7".to_string()),
+            method: McpMethod::GetPrompt {
+                name: "hello".to_string(),
+                arguments: Some(arguments.clone()),
+            },
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "7");
+        assert_eq!(serialized["method"], "prompts/get");
+        assert_eq!(serialized["params"]["name"], "hello");
+        assert_eq!(serialized["params"]["arguments"]["topic"], "greeting");
+    }
+
+    #[test]
+    fn test_mcp_request_ping_serialization() {
+        let request = McpRequest {
+            jsonrpc: "2.0".to_string(),
+            id: Some("8".to_string()),
+            method: McpMethod::Ping,
+        };
+
+        let serialized = serde_json::to_value(&request).unwrap();
+        assert_eq!(serialized["jsonrpc"], "2.0");
+        assert_eq!(serialized["id"], "8");
         assert_eq!(serialized["method"], "ping");
     }
 
@@ -1811,18 +2081,32 @@ mod tests {
             tools: Some(McpToolsCapability {
                 list_changed: Some(true),
             }),
+            resources: Some(McpResourcesCapability {
+                list_changed: Some(true),
+            }),
+            prompts: Some(McpPromptsCapability {
+                list_changed: Some(true),
+            }),
         };
 
         let serialized = serde_json::to_value(&capabilities).unwrap();
         assert!(serialized["tools"]["list_changed"].as_bool().unwrap());
+        assert!(serialized["resources"]["list_changed"].as_bool().unwrap());
+        assert!(serialized["prompts"]["list_changed"].as_bool().unwrap());
     }
 
     #[test]
     fn test_mcp_client_capabilities_no_tools() {
-        let capabilities = McpClientCapabilities { tools: None };
+        let capabilities = McpClientCapabilities {
+            tools: None,
+            resources: None,
+            prompts: None,
+        };
 
         let serialized = serde_json::to_value(&capabilities).unwrap();
         assert!(serialized["tools"].is_null());
+        assert!(serialized["resources"].is_null());
+        assert!(serialized["prompts"].is_null());
     }
 
     // Test McpClientInfo serialization
