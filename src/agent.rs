@@ -2413,4 +2413,69 @@ mod tests {
         let tools = agent.tools.read().await;
         assert!(tools.contains_key("use_skill"));
     }
+
+    #[test]
+    fn add_image_adds_to_conversation() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let media_type = "image/png".to_string();
+        let base64_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string();
+
+        agent.add_image(media_type.clone(), base64_data.clone(), None);
+
+        assert_eq!(agent.conversation_manager.conversation.len(), 1);
+        let message = &agent.conversation_manager.conversation[0];
+        assert_eq!(message.role, "user");
+        assert_eq!(message.content.len(), 1);
+
+        let block = &message.content[0];
+        assert_eq!(block.block_type, "image");
+        assert!(block.source.is_some());
+
+        let source = block.source.as_ref().unwrap();
+        assert_eq!(source.source_type, "base64");
+        assert_eq!(source.media_type, media_type);
+        assert_eq!(source.data, base64_data);
+    }
+
+    #[test]
+    fn add_image_with_description() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        let media_type = "image/jpeg".to_string();
+        let base64_data = "fake_base64_data".to_string();
+        let description = "Test image description".to_string();
+
+        agent.add_image(media_type.clone(), base64_data.clone(), Some(description.clone()));
+
+        assert_eq!(agent.conversation_manager.conversation.len(), 1);
+        let message = &agent.conversation_manager.conversation[0];
+        assert_eq!(message.role, "user");
+        assert_eq!(message.content.len(), 2);
+
+        // First block should be the image
+        let image_block = &message.content[0];
+        assert_eq!(image_block.block_type, "image");
+        assert!(image_block.source.is_some());
+
+        // Second block should be the description
+        let text_block = &message.content[1];
+        assert_eq!(text_block.block_type, "text");
+        assert_eq!(text_block.text.as_deref(), Some(description.as_str()));
+    }
+
+    #[test]
+    fn add_image_without_description() {
+        let config = Config::default();
+        let mut agent = Agent::new(config, "test-model".to_string(), false, false);
+
+        agent.add_image("image/png".to_string(), "data123".to_string(), None);
+
+        let message = &agent.conversation_manager.conversation[0];
+        // Should only have the image block, no text block
+        assert_eq!(message.content.len(), 1);
+        assert_eq!(message.content[0].block_type, "image");
+    }
 }

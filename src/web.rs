@@ -4408,4 +4408,124 @@ mod tests {
         // Verify they are the same Arc (same memory address)
         assert!(Arc::ptr_eq(&agent1, &agent2));
     }
+
+    #[test]
+    fn test_block_to_dto_with_image_source() {
+        let image_block = ContentBlock::image(
+            "image/png".to_string(),
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string(),
+        );
+
+        let dto = block_to_dto(&image_block);
+
+        assert_eq!(dto.block_type, "image");
+        assert!(dto.source.is_some());
+
+        let source = dto.source.as_ref().unwrap();
+        assert_eq!(source.source_type, "base64");
+        assert_eq!(source.media_type, "image/png");
+        assert!(!source.data.is_empty());
+    }
+
+    #[test]
+    fn test_block_to_dto_text_block_no_source() {
+        let text_block = ContentBlock::text("Hello world".to_string());
+        let dto = block_to_dto(&text_block);
+
+        assert_eq!(dto.block_type, "text");
+        assert_eq!(dto.text.as_deref(), Some("Hello world"));
+        assert!(dto.source.is_none());
+    }
+
+    #[test]
+    fn test_block_text_summary_image_type() {
+        let image_dto = ContentBlockDto {
+            block_type: "image".to_string(),
+            text: None,
+            id: None,
+            name: None,
+            input: None,
+            tool_use_id: None,
+            content: None,
+            is_error: None,
+            source: Some(ImageSourceDto {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "fake_data".to_string(),
+            }),
+        };
+
+        let summary = block_text_summary(&image_dto);
+        assert_eq!(summary, "[Image]");
+    }
+
+    #[test]
+    fn test_block_text_summary_text_type() {
+        let text_dto = ContentBlockDto {
+            block_type: "text".to_string(),
+            text: Some("Hello world".to_string()),
+            id: None,
+            name: None,
+            input: None,
+            tool_use_id: None,
+            content: None,
+            is_error: None,
+            source: None,
+        };
+
+        let summary = block_text_summary(&text_dto);
+        assert_eq!(summary, "Hello world");
+    }
+
+    #[test]
+    fn test_message_request_deserialize_with_images() {
+        let json = r#"{
+            "message": "Check this image",
+            "images": [
+                {
+                    "media_type": "image/png",
+                    "data": "base64data123"
+                },
+                {
+                    "media_type": "image/jpeg",
+                    "data": "base64data456"
+                }
+            ]
+        }"#;
+
+        let request: MessageRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(request.message, "Check this image");
+        assert!(request.images.is_some());
+
+        let images = request.images.unwrap();
+        assert_eq!(images.len(), 2);
+        assert_eq!(images[0].media_type, "image/png");
+        assert_eq!(images[0].data, "base64data123");
+        assert_eq!(images[1].media_type, "image/jpeg");
+        assert_eq!(images[1].data, "base64data456");
+    }
+
+    #[test]
+    fn test_message_request_deserialize_without_images() {
+        let json = r#"{
+            "message": "Just text"
+        }"#;
+
+        let request: MessageRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(request.message, "Just text");
+        assert!(request.images.is_none());
+    }
+
+    #[test]
+    fn test_message_request_deserialize_with_empty_images() {
+        let json = r#"{
+            "message": "Text with empty images",
+            "images": []
+        }"#;
+
+        let request: MessageRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(request.message, "Text with empty images");
+        assert!(request.images.is_some());
+        assert_eq!(request.images.unwrap().len(), 0);
+    }
 }
