@@ -43,7 +43,6 @@ The optional web UI provides a ChatGPT-style browser-based interface for chats, 
  - Hooks
  - Web search tool
  - Compacting
- - Pasting or referencing images
  - Memory editing
  - Sandboxing 
 
