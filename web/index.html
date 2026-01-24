@@ -1118,13 +1118,32 @@
               <input id="mcp-name" placeholder="Name">
               <input id="mcp-command" placeholder="Command (optional)">
               <input id="mcp-args" placeholder="Args (space separated)">
-              <input id="mcp-url" placeholder="WebSocket URL (optional)">
+              <input id="mcp-url" placeholder="Server URL (ws/http)">
               <select id="mcp-enabled">
                 <option value="true">Enabled</option>
                 <option value="false">Disabled</option>
               </select>
             </div>
             <textarea id="mcp-env" class="small" rows="4" placeholder="ENV (one key/value pair on each line)"></textarea>
+            <div class="section-title" style="margin-top:12px;">Authentication</div>
+            <div class="form-grid">
+              <select id="mcp-auth-type">
+                <option value="none">None</option>
+                <option value="oauth">OAuth (Client Credentials)</option>
+              </select>
+              <select id="mcp-auth-client">
+                <option value="body">Client Credentials (Body)</option>
+                <option value="basic">Client Credentials (Basic)</option>
+              </select>
+            </div>
+            <div id="mcp-auth-oauth" class="form-grid" style="margin-top:6px; display:none;">
+              <input id="mcp-auth-token-url" placeholder="OAuth token URL (optional)">
+              <input id="mcp-auth-client-id" placeholder="OAuth client ID">
+              <input id="mcp-auth-client-secret" type="password" placeholder="OAuth client secret">
+              <input id="mcp-auth-scope" placeholder="OAuth scope (optional)">
+              <input id="mcp-auth-audience" placeholder="OAuth audience (optional)">
+            </div>
+            <textarea id="mcp-auth-extra" class="small" rows="3" placeholder="OAuth extra params (one key/value pair on each line)" style="display:none;"></textarea>
             <div class="stack" style="margin-top:8px; flex-wrap: wrap; gap:8px;">
               <button class="primary" id="save-mcp-detail">Save Server</button>
               <button class="secondary danger" id="delete-mcp-detail" style="display:none">Delete</button>

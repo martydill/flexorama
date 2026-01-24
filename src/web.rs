@@ -5,7 +5,7 @@ use crate::conversation::ConversationManager;
 use crate::csrf::CsrfManager;
 use crate::custom_commands;
 use crate::database::{Conversation, DatabaseManager, ToolCallRecord};
-use crate::mcp::{McpManager, McpServerConfig};
+use crate::mcp::{McpAuthConfig, McpManager, McpServerConfig};
 use crate::security::{PermissionHandler, PermissionKind, PermissionPrompt};
 use crate::skill::SkillManager;
 use crate::subagent::{SubagentConfig, SubagentManager};
@@ -152,6 +152,7 @@ struct UpsertServerRequest {
     args: Option<Vec<String>>,
     url: Option<String>,
     env: Option<HashMap<String, String>>,
+    auth: Option<McpAuthConfig>,
     enabled: Option<bool>,
 }
 
@@ -1421,6 +1422,7 @@ async fn upsert_mcp_server_inner(
         args: payload.args,
         url: payload.url,
         env: payload.env,
+        auth: payload.auth,
         enabled,
     };
 
@@ -3582,6 +3584,7 @@ mod tests {
             args: Some(vec!["server.js".to_string()]),
             url: None,
             env: None,
+            auth: None,
             enabled: false,
         };
         state
@@ -3626,6 +3629,7 @@ mod tests {
             args: None,
             url: None,
             env: None,
+            auth: None,
             enabled: false,
         };
         state
