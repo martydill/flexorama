@@ -49,6 +49,15 @@ fn generate_state() -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// Create a reqwest HTTP client with a proper User-Agent header.
+/// Some services (like GoDaddy) block requests without a User-Agent.
+fn create_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent("flexorama/0.1.0")
+        .build()
+        .unwrap_or_else(|_| create_http_client())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpRequest {
     pub jsonrpc: String,
@@ -249,7 +258,7 @@ async fn handle_mcp_response(
                     *tools.write().await = parsed_tools;
                     let mut version = tools_version.write().await;
                     *version += 1;
-                    info!(
+                    debug!(
                         "Updated {} tools from MCP server {} via notification",
                         tools.read().await.len(),
                         name
@@ -624,7 +633,7 @@ async fn exchange_code_for_token(
     code_verifier: &str,
     client_auth: McpOAuthClientAuth,
 ) -> Result<OAuthTokenResponse> {
-    let client = reqwest::Client::new();
+    let client = create_http_client();
 
     let mut form = HashMap::<String, String>::new();
     form.insert("grant_type".to_string(), "authorization_code".to_string());
@@ -1221,22 +1230,22 @@ impl McpConnection {
 
     /// Log detailed information about a tool and its parameters
     fn log_tool_details(&self, tool: &McpTool) {
-        info!("📋 Tool Details:");
-        info!("   Name: {}", tool.name);
+        debug!("📋 Tool Details:");
+        debug!("   Name: {}", tool.name);
 
         if let Some(description) = &tool.description {
-            info!("   Description: {}", description);
+            debug!("   Description: {}", description);
         } else {
-            info!("   Description: <No description provided>");
+            debug!("   Description: <No description provided>");
         }
 
         // Log input schema details
         if let Some(schema_obj) = tool.input_schema.as_object() {
             if let Some(properties) = schema_obj.get("properties").and_then(|p| p.as_object()) {
                 if properties.is_empty() {
-                    info!("   Parameters: <No parameters>");
+                    debug!("   Parameters: <No parameters>");
                 } else {
-                    info!("   Parameters ({}):", properties.len());
+                    debug!("   Parameters ({}):", properties.len());
                     for (param_name, param_schema) in properties {
                         let param_type = param_schema
                             .get("type")
@@ -1253,20 +1262,20 @@ impl McpConnection {
                             .unwrap_or(false);
 
                         let required_marker = if required { " (required)" } else { "" };
-                        info!(
+                        debug!(
                             "     • {} [{}]{}: {}",
                             param_name, param_type, required_marker, param_desc
                         );
                     }
                 }
             } else {
-                info!("   Parameters: <No parameters defined>");
+                debug!("   Parameters: <No parameters defined>");
             }
         } else {
-            info!("   Parameters: <Invalid schema>");
+            debug!("   Parameters: <Invalid schema>");
         }
 
-        info!(
+        debug!(
             "   Raw Schema: {}",
             serde_json::to_string(&tool.input_schema)
                 .unwrap_or_else(|_| "<Invalid JSON>".to_string())
@@ -1279,7 +1288,7 @@ impl McpConnection {
         args: &[String],
         env: &HashMap<String, String>,
     ) -> Result<()> {
-        info!("Starting MCP server: {} {}", command, args.join(" "));
+        debug!("Starting MCP server: {} {}", command, args.join(" "));
         debug!("MCP server details:");
         debug!("  Command: {}", command);
         debug!("  Args: {:?}", args);
@@ -1403,7 +1412,7 @@ impl McpConnection {
         // Initialize connection
         match self.initialize().await {
             Ok(_) => {
-                info!(
+                debug!(
                     "MCP server '{}' initialization completed successfully",
                     self.name
                 );
@@ -1480,7 +1489,7 @@ impl McpConnection {
             let full_path = path.replace("%APPDATA%", &expanded_path);
 
             if Path::new(&full_path).exists() {
-                info!("Found npx at: {}", full_path);
+                debug!("Found npx at: {}", full_path);
                 return Ok(full_path);
             }
         }
@@ -1490,7 +1499,7 @@ impl McpConnection {
             if let Some(parent) = Path::new(&node_path).parent() {
                 let npx_path = parent.join("npx.cmd");
                 if npx_path.exists() {
-                    info!("Found npx at: {}", npx_path.display());
+                    debug!("Found npx at: {}", npx_path.display());
                     return Ok(npx_path.to_string_lossy().to_string());
                 }
             }
@@ -1502,7 +1511,7 @@ impl McpConnection {
     }
 
     pub async fn connect_websocket(&mut self, url: &str, auth_header: Option<String>) -> Result<()> {
-        info!("Connecting to MCP server via WebSocket: {}", url);
+        debug!("Connecting to MCP server via WebSocket: {}", url);
 
         let mut request = url.into_client_request()?;
         if let Some(header_value) = auth_header {
@@ -1521,9 +1530,9 @@ impl McpConnection {
     }
 
     pub async fn connect_http(&mut self, url: &str, auth_header: Option<String>) -> Result<()> {
-        info!("Connecting to MCP server via HTTP: {}", url);
+        debug!("Connecting to MCP server via HTTP: {}", url);
 
-        let client = reqwest::Client::new();
+        let client = create_http_client();
         self.http_url = Some(url.to_string());
         self.http_client = Some(client.clone());
         self.http_auth_header = auth_header.clone();
@@ -1599,12 +1608,12 @@ impl McpConnection {
         // Load tools
         self.load_tools().await?;
 
-        info!("MCP server {} initialized successfully", self.name);
+        debug!("MCP server {} initialized successfully", self.name);
         Ok(())
     }
 
     async fn load_tools(&mut self) -> Result<()> {
-        info!("Loading tools from MCP server '{}'...", self.name);
+        debug!("Loading tools from MCP server '{}'...", self.name);
 
         let tools_request = McpRequest {
             jsonrpc: "2.0".to_string(),
@@ -1659,7 +1668,7 @@ impl McpConnection {
                 // Try to parse tools with better error handling
                 match serde_json::from_value::<Vec<Value>>(tools_value.clone()) {
                     Ok(raw_tools) => {
-                        info!(
+                        debug!(
                             "MCP server '{}' returned {} tools",
                             self.name,
                             raw_tools.len()
@@ -1714,7 +1723,7 @@ impl McpConnection {
                                         serde_json::to_string(&tool.input_schema)
                                             .unwrap_or_else(|_| "Invalid JSON".to_string())
                                     );
-                                    info!(
+                                    debug!(
                                         "✓ Loaded tool: {} from server '{}'",
                                         tool.name, self.name
                                     );
@@ -1754,8 +1763,8 @@ impl McpConnection {
                         let mut version = self.tools_version.write().await;
                         *version += 1;
 
-                        info!(
-                            "✅ Successfully loaded {} tools from MCP server '{}'",
+                        debug!(
+                            "Successfully loaded {} tools from MCP server '{}'",
                             self.tools.read().await.len(),
                             self.name
                         );
@@ -1814,20 +1823,20 @@ impl McpConnection {
         }
 
         // Log the tool call with details
-        info!("🔧 Calling MCP tool '{}' on server '{}'", name, self.name);
+        debug!("🔧 Calling MCP tool '{}' on server '{}'", name, self.name);
 
         if let Some(ref args) = arguments {
             if !args.is_null() {
-                info!(
+                debug!(
                     "   Arguments: {}",
                     serde_json::to_string_pretty(args)
                         .unwrap_or_else(|_| "<Invalid JSON>".to_string())
                 );
             } else {
-                info!("   Arguments: <No arguments>");
+                debug!("   Arguments: <No arguments>");
             }
         } else {
-            info!("   Arguments: <No arguments>");
+            debug!("   Arguments: <No arguments>");
         }
 
         let tool_request = McpRequest {
@@ -1849,8 +1858,8 @@ impl McpConnection {
             return Err(anyhow::anyhow!("Tool call failed: {:?}", error));
         }
 
-        info!(
-            "✅ MCP tool '{}' completed successfully on server '{}'",
+        debug!(
+            "MCP tool '{}' completed successfully on server '{}'",
             name, self.name
         );
 
@@ -2253,7 +2262,7 @@ impl McpConnection {
         self.http_auth_header = None;
         self.sse_enabled = false;
 
-        info!("Disconnected from MCP server {}", self.name);
+        debug!("Disconnected from MCP server {}", self.name);
         Ok(())
     }
 }
@@ -2289,7 +2298,7 @@ impl McpManager {
     /// Initialize with MCP configuration from unified config
     pub async fn initialize(&self, mcp_config: McpConfig) -> Result<()> {
         *self.config.write().await = mcp_config;
-        info!(
+        debug!(
             "MCP manager initialized with {} servers",
             self.config.read().await.servers.len()
         );
@@ -2314,7 +2323,7 @@ impl McpManager {
 
         // Save unified config
         unified_config.save(config_path.as_deref()).await?;
-        info!("Saved MCP configuration to unified config file");
+        debug!("Saved MCP configuration to unified config file");
         Ok(())
     }
 
@@ -2381,50 +2390,50 @@ impl McpManager {
             return Err(anyhow::anyhow!("Server '{}' is disabled", name));
         }
 
-        info!("🔌 Connecting to MCP server: {}", name);
-        info!("   Configuration:");
+        debug!("🔌 Connecting to MCP server: {}", name);
+        debug!("   Configuration:");
 
         if let Some(url) = &server_config.url {
             if url.starts_with("ws://") || url.starts_with("wss://") {
-                info!("     Type: WebSocket");
+                debug!("     Type: WebSocket");
             } else if url.starts_with("http://") || url.starts_with("https://") {
-                info!("     Type: HTTP");
+                debug!("     Type: HTTP");
             } else {
-                info!("     Type: URL");
+                debug!("     Type: URL");
             }
-            info!("     URL: {}", url);
+            debug!("     URL: {}", url);
         } else if let Some(command) = &server_config.command {
-            info!("     Type: STDIO");
-            info!("     Command: {}", command);
+            debug!("     Type: STDIO");
+            debug!("     Command: {}", command);
             if let Some(args) = &server_config.args {
-                info!("     Args: {}", args.join(" "));
+                debug!("     Args: {}", args.join(" "));
             }
             if let Some(env_vars) = &server_config.env {
-                info!("     Environment Variables: {}", env_vars.len());
+                debug!("     Environment Variables: {}", env_vars.len());
                 for (key, value) in env_vars {
-                    info!("       {}={}", key, value);
+                    debug!("       {}={}", key, value);
                 }
             }
         }
         if let Some(auth) = &server_config.auth {
             match auth {
                 McpAuthConfig::OAuth(oauth) => {
-                    info!(
+                    debug!(
                         "     Auth: OAuth client_credentials (client_auth: {:?})",
                         oauth.client_auth
                     );
                     if let Some(auth_url) = &oauth.authorization_url {
-                        info!("     OAuth Authorization URL: {}", auth_url);
+                        debug!("     OAuth Authorization URL: {}", auth_url);
                     }
                     if let Some(token_url) = &oauth.token_url {
-                        info!("     OAuth Token URL: {}", token_url);
+                        debug!("     OAuth Token URL: {}", token_url);
                     } else {
-                        info!("     OAuth Token URL: <derived from server URL>");
+                        debug!("     OAuth Token URL: <derived from server URL>");
                     }
                 }
             }
         }
-        info!("     Enabled: {}", server_config.enabled);
+        debug!("     Enabled: {}", server_config.enabled);
 
         let mut connection = McpConnection::new(name.to_string());
         if let Some(McpAuthConfig::OAuth(oauth)) = &server_config.auth {
@@ -2478,12 +2487,12 @@ impl McpManager {
             .insert(name.to_string(), connection);
         info!("✅ Successfully connected to MCP server: {}", name);
 
-        // Log summary of available tools
+        // Log summary of available tools (debug level)
         if let Some(connection) = self.connections.read().await.get(name) {
             let tools = connection.get_tools().await;
-            info!("📊 Available tools from '{}': {}", name, tools.len());
+            debug!("📊 Available tools from '{}': {}", name, tools.len());
             for tool in &tools {
-                info!(
+                debug!(
                     "   • {} - {}",
                     tool.name,
                     tool.description.as_deref().unwrap_or("<No description>")
@@ -2597,7 +2606,7 @@ impl McpManager {
                     }
                 }
 
-                let client = reqwest::Client::new();
+                let client = create_http_client();
                 let mut request = client.post(&token_url).header("accept", "application/json");
                 if oauth.client_auth == McpOAuthClientAuth::Basic {
                     request = request.basic_auth(&oauth.client_id, Some(client_secret));
@@ -2639,7 +2648,7 @@ impl McpManager {
         let mut connections = self.connections.write().await;
         if let Some(mut connection) = connections.remove(name) {
             connection.disconnect().await?;
-            info!("Disconnected from MCP server: {}", name);
+            debug!("Disconnected from MCP server: {}", name);
         }
         Ok(())
     }
@@ -2766,12 +2775,12 @@ impl McpManager {
         let mut connected_count = 0;
         let mut failed_count = 0;
 
-        info!("🌐 Connecting to all enabled MCP servers...");
-        info!("   Total servers configured: {}", config.servers.len());
+        debug!("🌐 Connecting to all enabled MCP servers...");
+        debug!("   Total servers configured: {}", config.servers.len());
 
         for (name, server_config) in config.servers.iter() {
             if server_config.enabled {
-                info!("   Attempting to connect to: {}", name);
+                debug!("   Attempting to connect to: {}", name);
 
                 // Add timeout for individual server connections
                 let connect_result = tokio::time::timeout(
@@ -2783,7 +2792,7 @@ impl McpManager {
                 match connect_result {
                     Ok(Ok(_)) => {
                         connected_count += 1;
-                        info!("✅ Connected to MCP server: {}", name);
+                        debug!("✅ Connected to MCP server: {}", name);
                     }
                     Ok(Err(e)) => {
                         failed_count += 1;
@@ -2798,22 +2807,22 @@ impl McpManager {
                     }
                 }
             } else {
-                info!("⏭️  Skipping disabled server: {}", name);
+                debug!("⏭️  Skipping disabled server: {}", name);
             }
         }
 
-        info!("📊 MCP Connection Summary:");
-        info!("   Successfully connected: {}", connected_count);
-        info!("   Failed connections: {}", failed_count);
-        info!(
+        debug!("📊 MCP Connection Summary:");
+        debug!("   Successfully connected: {}", connected_count);
+        debug!("   Failed connections: {}", failed_count);
+        debug!(
             "   Skipped (disabled): {}",
             config.servers.len() - connected_count - failed_count
         );
 
         if connected_count > 0 {
-            // Log total tools available across all servers
+            // Log total tools available across all servers (debug level)
             let all_tools = self.get_all_tools().await?;
-            info!(
+            debug!(
                 "🛠️  Total tools available across all MCP servers: {}",
                 all_tools.len()
             );
@@ -2828,7 +2837,7 @@ impl McpManager {
             }
 
             for (server_name, tools) in tools_by_server {
-                info!("   Server '{}': {} tools", server_name, tools.len());
+                debug!("   Server '{}': {} tools", server_name, tools.len());
             }
         }
 
