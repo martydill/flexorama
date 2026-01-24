@@ -1188,6 +1188,7 @@ pub struct McpConnection {
     pub http_url: Option<String>,
     pub http_client: Option<reqwest::Client>,
     pub http_auth_header: Option<String>,
+    pub http_session_id: Option<String>,
     pub oauth_authorization_url: Option<String>,
     pub oauth_client_id: Option<String>,
     pub oauth_scope: Option<String>,
@@ -1212,6 +1213,7 @@ impl McpConnection {
             http_url: None,
             http_client: None,
             http_auth_header: None,
+            http_session_id: None,
             oauth_authorization_url: None,
             oauth_client_id: None,
             oauth_scope: None,
@@ -1993,6 +1995,9 @@ impl McpConnection {
             if let Some(auth_header) = &self.http_auth_header {
                 http_request = http_request.header("authorization", auth_header);
             }
+            if let Some(session_id) = &self.http_session_id {
+                http_request = http_request.header("mcp-session-id", session_id);
+            }
 
             if self.sse_enabled {
                 // Create response channel for SSE responses
@@ -2032,6 +2037,16 @@ impl McpConnection {
                         status,
                         body
                     ));
+                }
+
+                // Extract session ID from response headers if present
+                if let Some(session_id) = response
+                    .headers()
+                    .get("mcp-session-id")
+                    .and_then(|v| v.to_str().ok())
+                {
+                    debug!("Received MCP session ID for '{}': {}", self.name, session_id);
+                    self.http_session_id = Some(session_id.to_string());
                 }
 
                 let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx).await;
@@ -2081,6 +2096,16 @@ impl McpConnection {
                         status,
                         body
                     ));
+                }
+
+                // Extract session ID from response headers if present
+                if let Some(session_id) = response
+                    .headers()
+                    .get("mcp-session-id")
+                    .and_then(|v| v.to_str().ok())
+                {
+                    debug!("Received MCP session ID for '{}': {}", self.name, session_id);
+                    self.http_session_id = Some(session_id.to_string());
                 }
 
                 // Check Content-Type to determine how to parse the response
@@ -2191,6 +2216,9 @@ impl McpConnection {
             if let Some(auth_header) = &self.http_auth_header {
                 http_request = http_request.header("authorization", auth_header);
             }
+            if let Some(session_id) = &self.http_session_id {
+                http_request = http_request.header("mcp-session-id", session_id);
+            }
             let response = http_request.send().await?;
             if !response.status().is_success() {
                 let status = response.status();
@@ -2260,6 +2288,7 @@ impl McpConnection {
         self.http_url = None;
         self.http_client = None;
         self.http_auth_header = None;
+        self.http_session_id = None;
         self.sse_enabled = false;
 
         debug!("Disconnected from MCP server {}", self.name);
