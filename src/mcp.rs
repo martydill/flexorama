@@ -2668,18 +2668,21 @@ impl McpManager {
     }
 
     pub async fn disconnect_server(&self, name: &str) -> Result<()> {
-        // Check if the server exists in configuration
-        let config = self.load_config().await?;
-        if !config.servers.contains_key(name) {
-            return Err(anyhow::anyhow!("Server '{}' not found in configuration", name));
-        }
-
+        // First, try to remove and disconnect the connection
         let mut connections = self.connections.write().await;
         if let Some(mut connection) = connections.remove(name) {
             connection.disconnect().await?;
             debug!("Disconnected from MCP server: {}", name);
+            Ok(())
+        } else {
+            // Only check configuration if there's no active connection
+            let config = self.load_config().await?;
+            if !config.servers.contains_key(name) {
+                return Err(anyhow::anyhow!("Server '{}' not found", name));
+            }
+            // Server exists in config but isn't connected, which is fine
+            Ok(())
         }
-        Ok(())
     }
 
     pub async fn reconnect_server(&self, name: &str) -> Result<()> {
@@ -3607,9 +3610,9 @@ mod tests {
         };
 
         let serialized = serde_json::to_value(&capabilities).unwrap();
-        assert!(serialized["tools"]["list_changed"].as_bool().unwrap());
-        assert!(serialized["resources"]["list_changed"].as_bool().unwrap());
-        assert!(serialized["prompts"]["list_changed"].as_bool().unwrap());
+        assert!(serialized["tools"]["listChanged"].as_bool().unwrap());
+        assert!(serialized["resources"]["listChanged"].as_bool().unwrap());
+        assert!(serialized["prompts"]["listChanged"].as_bool().unwrap());
     }
 
     #[test]
