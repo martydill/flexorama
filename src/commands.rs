@@ -1321,12 +1321,14 @@ pub async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Resu
                     "⚠️".yellow()
                 );
                 app_println!("{} Usage: /mcp add <name> ws <url>", "⚠️".yellow());
+                app_println!("{} Usage: /mcp add <name> http <url>", "⚠️".yellow());
                 app_println!();
                 app_println!("{}", "Examples:".green().bold());
                 app_println!(
                     "  /mcp add myserver stdio npx -y @modelcontextprotocol/server-filesystem"
                 );
                 app_println!("  /mcp add websocket ws://localhost:8080");
+                app_println!("  /mcp add linear http https://mcp.linear.app/mcp");
                 return Ok(());
             }
 
@@ -1353,6 +1355,7 @@ pub async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Resu
                     },
                     url: None,
                     env: None,
+                    auth: None,
                     enabled: true,
                 };
 
@@ -1384,12 +1387,23 @@ pub async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Resu
                         app_println!("  - Insufficient permissions");
                     }
                 }
-            } else if connection_type == "ws" || connection_type == "websocket" {
+            } else if connection_type == "ws"
+                || connection_type == "websocket"
+                || connection_type == "http"
+                || connection_type == "https"
+            {
                 let url = args[3];
 
                 // Basic URL validation
-                if !url.starts_with("ws://") && !url.starts_with("wss://") {
-                    app_println!("{} URL must start with ws:// or wss://", "⚠️".yellow());
+                if !url.starts_with("ws://")
+                    && !url.starts_with("wss://")
+                    && !url.starts_with("http://")
+                    && !url.starts_with("https://")
+                {
+                    app_println!(
+                        "{} URL must start with ws://, wss://, http://, or https://",
+                        "⚠️".yellow()
+                    );
                     return Ok(());
                 }
 
@@ -1399,6 +1413,7 @@ pub async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Resu
                     args: None,
                     url: Some(url.to_string()),
                     env: None,
+                    auth: None,
                     enabled: true,
                 };
 
@@ -1423,10 +1438,14 @@ pub async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Resu
                     }
                 }
             } else {
-                app_println!("{} Connection type must be 'stdio' or 'ws'", "⚠️".yellow());
+                app_println!(
+                    "{} Connection type must be 'stdio', 'ws', or 'http'",
+                    "⚠️".yellow()
+                );
                 app_println!("{} Available types:", "💡".blue());
                 app_println!("  - stdio: For command-line based MCP servers");
                 app_println!("  - ws: For WebSocket-based MCP servers");
+                app_println!("  - http: For HTTP-based MCP servers");
             }
         }
         "remove" => {

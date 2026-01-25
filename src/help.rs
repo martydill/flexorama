@@ -34,6 +34,7 @@ pub fn print_mcp_help() {
     app_println!("  /mcp list                    - List all MCP servers and their status");
     app_println!("  /mcp add <name> stdio <cmd>  - Add a stdio MCP server");
     app_println!("  /mcp add <name> ws <url>     - Add a WebSocket MCP server");
+    app_println!("  /mcp add <name> http <url>   - Add an HTTP MCP server");
     app_println!("  /mcp remove <name>           - Remove an MCP server");
     app_println!("  /mcp connect <name>          - Connect to a specific server");
     app_println!("  /mcp disconnect <name>       - Disconnect from a specific server");
@@ -49,6 +50,7 @@ pub fn print_mcp_help() {
     app_println!("  /mcp test npx                - Test if npx is available");
     app_println!("  /mcp add myserver stdio npx -y @modelcontextprotocol/server-filesystem");
     app_println!("  /mcp add websocket ws://localhost:8080");
+    app_println!("  /mcp add linear http https://mcp.linear.app/mcp");
     app_println!("  /mcp connect myserver");
     app_println!("  /mcp tools");
     app_println!();
@@ -227,6 +229,7 @@ pub fn print_help() {
     app_println!("  /mcp list                    - List MCP servers");
     app_println!("  /mcp add <name> stdio <cmd>  - Add stdio server");
     app_println!("  /mcp add <name> ws <url>     - Add WebSocket server");
+    app_println!("  /mcp add <name> http <url>   - Add HTTP server");
     app_println!("  /mcp test <command>          - Test command availability");
     app_println!("  /mcp connect <name>          - Connect to server");
     app_println!("  /mcp tools                   - List available tools");

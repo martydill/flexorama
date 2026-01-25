@@ -14,11 +14,11 @@ pub fn create_mcp_tool(server_name: &str, mcp_tool: McpTool, mcp_manager: Arc<Mc
     let tool_name_original = mcp_tool.name.clone();
 
     // Log the creation of this MCP tool wrapper
-    log::info!("🔗 Creating MCP tool wrapper:");
-    log::info!("   Internal name: {}", tool_name);
-    log::info!("   Original tool name: {}", tool_name_original);
-    log::info!("   Server: {}", server_name);
-    log::info!("   Description: {}", description);
+    log::debug!("🔗 Creating MCP tool wrapper:");
+    log::debug!("   Internal name: {}", tool_name);
+    log::debug!("   Original tool name: {}", tool_name_original);
+    log::debug!("   Server: {}", server_name);
+    log::debug!("   Description: {}", description);
 
     // Debug the raw schema data
     log::debug!(
@@ -55,7 +55,7 @@ pub fn create_mcp_tool(server_name: &str, mcp_tool: McpTool, mcp_manager: Arc<Mc
         );
         default_schema
     } else {
-        log::info!("   ✅ Using schema from MCP tool '{}'", tool_name_original);
+        log::debug!("   ✅ Using schema from MCP tool '{}'", tool_name_original);
         log::debug!(
             "      Schema: {}",
             serde_json::to_string(&mcp_tool.input_schema)
@@ -75,20 +75,20 @@ pub fn create_mcp_tool(server_name: &str, mcp_tool: McpTool, mcp_manager: Arc<Mc
 
             Box::pin(async move {
                 // Log when the MCP tool is actually called
-                log::info!("🚀 Executing MCP tool:");
-                log::info!("   Tool: {}", tool_name_original);
-                log::info!("   Server: {}", server_name);
-                log::info!("   Call ID: {}", call.id);
+                log::debug!("🚀 Executing MCP tool:");
+                log::debug!("   Tool: {}", tool_name_original);
+                log::debug!("   Server: {}", server_name);
+                log::debug!("   Call ID: {}", call.id);
 
                 // Log arguments if present
                 if !call.arguments.is_null() {
-                    log::info!(
+                    log::debug!(
                         "   Arguments: {}",
                         serde_json::to_string_pretty(&call.arguments)
                             .unwrap_or_else(|_| "<Invalid JSON>".to_string())
                     );
                 } else {
-                    log::info!("   Arguments: <No arguments>");
+                    log::debug!("   Arguments: <No arguments>");
                 }
 
                 // Extract the actual tool name from the mcp_ prefix
@@ -104,7 +104,7 @@ pub fn create_mcp_tool(server_name: &str, mcp_tool: McpTool, mcp_manager: Arc<Mc
                     .await
                 {
                     Ok(result) => {
-                        log::info!("✅ MCP tool call successful");
+                        log::debug!("✅ MCP tool call successful");
                         log::debug!(
                             "   Result: {}",
                             serde_json::to_string_pretty(&result)

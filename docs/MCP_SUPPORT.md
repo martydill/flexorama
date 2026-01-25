@@ -12,7 +12,8 @@ MCP allows the Flexorama to connect to external servers that provide additional 
 
 1. **Stdio Servers**: Connect to MCP servers via standard input/output
 2. **WebSocket Servers**: Connect to MCP servers via WebSocket connections
-3. **Auto-discovery**: Automatically load tools from connected servers
+3. **HTTP Servers**: Connect to MCP servers over HTTP (POST and optional SSE)
+4. **Auto-discovery**: Automatically load tools from connected servers
 
 ### Server Management
 
@@ -40,6 +41,9 @@ MCP allows the Flexorama to connect to external servers that provide additional 
 
 # Add a WebSocket server
 /mcp add websocket ws://localhost:8080
+
+# Add an HTTP server
+/mcp add linear http https://mcp.linear.app/mcp
 
 # Connect to a server
 /mcp connect filesystem
@@ -76,11 +80,88 @@ name = "websocket"
 url = "ws://localhost:8080"
 enabled = true
 
+[servers.linear]
+name = "linear"
+url = "https://mcp.linear.app/mcp"
+enabled = true
+
 [servers.disabled_server]
 name = "disabled_server"
 command = "some-command"
 enabled = false
 ```
+
+### OAuth Authentication
+
+Flexorama supports two OAuth flows for authenticating with MCP servers:
+
+#### Authorization Code Flow with PKCE (Default)
+
+For MCP servers that require user authorization (like Linear, GitHub, etc.), use the
+`authorization_code` grant type. This is the default and recommended flow for user-facing OAuth.
+
+When you connect to a server requiring OAuth:
+1. Flexorama starts a local callback server
+2. Opens your browser to the authorization URL with PKCE parameters
+3. After you authorize, the callback receives the code
+4. Flexorama exchanges the code for an access token
+
+```toml
+[servers.linear]
+name = "linear"
+url = "https://mcp.linear.app/mcp"
+enabled = true
+
+[servers.linear.auth]
+type = "oauth"
+grant_type = "authorization_code"  # Default, can be omitted
+authorization_url = "https://linear.app/oauth/authorize"
+token_url = "https://api.linear.app/oauth/token"  # Optional, derived from server URL if omitted
+client_id = "your-client-id"
+client_secret = "your-client-secret"  # Optional for public clients using PKCE
+scope = "read write"
+```
+
+#### Client Credentials Flow
+
+For machine-to-machine authentication without user interaction, use the `client_credentials`
+grant type. This requires a client secret.
+
+`client_auth` controls how the client credentials are sent:
+- `basic`: HTTP Basic auth header
+- `body`: form fields in the token request body (default)
+
+```toml
+[servers.secure_api]
+name = "secure_api"
+url = "wss://api.example.com/mcp"
+enabled = true
+
+[servers.secure_api.auth]
+type = "oauth"
+grant_type = "client_credentials"
+token_url = "https://auth.example.com/oauth/token"
+client_id = "your-client-id"
+client_secret = "your-client-secret"  # Required for client_credentials
+scope = "mcp.read mcp.write"
+audience = "https://api.example.com"
+client_auth = "basic"
+```
+
+#### OAuth Configuration Options
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `type` | Must be `"oauth"` | Yes |
+| `grant_type` | `"authorization_code"` (default) or `"client_credentials"` | No |
+| `authorization_url` | URL for user authorization | Yes for authorization_code |
+| `token_url` | URL for token exchange | No (derived from server URL) |
+| `client_id` | OAuth client ID | Yes |
+| `client_secret` | OAuth client secret | Yes for client_credentials, optional for authorization_code with PKCE |
+| `scope` | OAuth scopes to request | No |
+| `audience` | OAuth audience parameter | No |
+| `client_auth` | `"basic"` or `"body"` | No (defaults to body) |
+| `extra_params` | Additional parameters to include | No |
 
 ## MCP Server Examples
 
@@ -128,6 +209,7 @@ enabled = false
 - **JSON-RPC 2.0**: Base protocol for communication
 - **Stdio Transport**: Communication via standard input/output
 - **WebSocket Transport**: Communication via WebSocket connections
+- **HTTP Transport**: JSON-RPC over HTTP POST, with optional SSE responses
 - **Tool Discovery**: Automatic tool listing and schema retrieval
 
 ### Error Handling
@@ -142,6 +224,7 @@ enabled = false
 2. **Command Execution**: Stdio servers execute commands - ensure they're safe
 3. **Network Connections**: WebSocket servers connect to remote endpoints
 4. **Tool Permissions**: MCP tools have access to external resources
+5. **OAuth Credentials**: Store client secrets securely and avoid sharing config files
 
 ## Troubleshooting
 
@@ -165,8 +248,8 @@ Use `/mcp list` to see server connection status and available tools.
 
 ## Future Enhancements
 
-1. **Authentication**: Support for authenticated MCP servers
-2. **Load Balancing**: Multiple server instances for high availability
-3. **Caching**: Tool result caching for performance
-4. **Monitoring**: Server health monitoring and metrics
-5. **Security**: Sandboxing and permission management
+1. **Load Balancing**: Multiple server instances for high availability
+2. **Caching**: Tool result caching for performance
+3. **Monitoring**: Server health monitoring and metrics
+4. **Security**: Sandboxing and permission management
+5. **Token Refresh**: Automatic refresh of OAuth tokens before expiration

@@ -1471,6 +1471,15 @@ function resetMcpForm() {
   document.getElementById("mcp-url").value = "";
   document.getElementById("mcp-env").value = "";
   document.getElementById("mcp-enabled").value = "true";
+  document.getElementById("mcp-auth-type").value = "none";
+  document.getElementById("mcp-auth-client").value = "body";
+  document.getElementById("mcp-auth-token-url").value = "";
+  document.getElementById("mcp-auth-client-id").value = "";
+  document.getElementById("mcp-auth-client-secret").value = "";
+  document.getElementById("mcp-auth-scope").value = "";
+  document.getElementById("mcp-auth-audience").value = "";
+  document.getElementById("mcp-auth-extra").value = "";
+  updateMcpAuthVisibility();
   renderMcpList();
   document.getElementById("connect-mcp-detail").style.display = "none";
   document.getElementById("disconnect-mcp-detail").style.display = "none";
@@ -1493,6 +1502,30 @@ function setMcpForm(server) {
     .map(([k, v]) => `${k}=${v}`)
     .join("\n");
   document.getElementById("mcp-enabled").value = String(server.config.enabled);
+  const auth = server.config.auth || null;
+  if (!auth) {
+    document.getElementById("mcp-auth-type").value = "none";
+    document.getElementById("mcp-auth-client").value = "body";
+    document.getElementById("mcp-auth-token-url").value = "";
+    document.getElementById("mcp-auth-client-id").value = "";
+    document.getElementById("mcp-auth-client-secret").value = "";
+    document.getElementById("mcp-auth-scope").value = "";
+    document.getElementById("mcp-auth-audience").value = "";
+    document.getElementById("mcp-auth-extra").value = "";
+  } else if (auth.type === "oauth") {
+    document.getElementById("mcp-auth-type").value = "oauth";
+    document.getElementById("mcp-auth-client").value = auth.client_auth || "body";
+    document.getElementById("mcp-auth-token-url").value = auth.token_url || "";
+    document.getElementById("mcp-auth-client-id").value = auth.client_id || "";
+    document.getElementById("mcp-auth-client-secret").value = auth.client_secret || "";
+    document.getElementById("mcp-auth-scope").value = auth.scope || "";
+    document.getElementById("mcp-auth-audience").value = auth.audience || "";
+    const extra = auth.extra_params || {};
+    document.getElementById("mcp-auth-extra").value = Object.entries(extra)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+  }
+  updateMcpAuthVisibility();
   document.getElementById("connect-mcp-detail").style.display = "";
   document.getElementById("disconnect-mcp-detail").style.display = "";
   document.getElementById("delete-mcp-detail").style.display = "";
@@ -1625,6 +1658,21 @@ function renderMcpList() {
 async function saveMcpServer() {
   const name = document.getElementById("mcp-name").value.trim();
   if (!name) return;
+  const authType = document.getElementById("mcp-auth-type").value;
+  let auth = null;
+  if (authType === "oauth") {
+    const extraParams = parseEnv(document.getElementById("mcp-auth-extra").value);
+    auth = {
+      type: "oauth",
+      token_url: document.getElementById("mcp-auth-token-url").value.trim() || null,
+      client_id: document.getElementById("mcp-auth-client-id").value.trim(),
+      client_secret: document.getElementById("mcp-auth-client-secret").value.trim(),
+      scope: document.getElementById("mcp-auth-scope").value.trim() || null,
+      audience: document.getElementById("mcp-auth-audience").value.trim() || null,
+      extra_params: Object.keys(extraParams).length ? extraParams : null,
+      client_auth: document.getElementById("mcp-auth-client").value,
+    };
+  }
   const payload = {
     name,
     command: document.getElementById("mcp-command").value.trim() || null,
@@ -1635,10 +1683,19 @@ async function saveMcpServer() {
       .filter(Boolean),
     url: document.getElementById("mcp-url").value.trim() || null,
     env: parseEnv(document.getElementById("mcp-env").value),
+    auth,
     enabled: document.getElementById("mcp-enabled").value === "true",
   };
   await api(`/api/mcp/servers/${name}`, { method: "PUT", body: payload });
   await loadMcp();
+}
+
+function updateMcpAuthVisibility() {
+  const authType = document.getElementById("mcp-auth-type").value;
+  const showOAuth = authType === "oauth";
+  document.getElementById("mcp-auth-oauth").style.display = showOAuth ? "grid" : "none";
+  document.getElementById("mcp-auth-client").style.display = showOAuth ? "" : "none";
+  document.getElementById("mcp-auth-extra").style.display = showOAuth ? "" : "none";
 }
 
 function parseEnv(text) {
@@ -2630,6 +2687,10 @@ function bindEvents() {
   document.getElementById("execute-plan").addEventListener("click", executePlan);
 
   document.getElementById("new-mcp").addEventListener("click", resetMcpForm);
+  const mcpAuthType = document.getElementById("mcp-auth-type");
+  if (mcpAuthType) {
+    mcpAuthType.addEventListener("change", updateMcpAuthVisibility);
+  }
   document.getElementById("save-mcp-detail").addEventListener("click", saveMcpServer);
   document.getElementById("connect-mcp-detail").addEventListener("click", async () => {
     const name = document.getElementById("mcp-name").value.trim();

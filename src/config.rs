@@ -60,7 +60,66 @@ pub struct McpServerConfig {
     pub args: Option<Vec<String>>,
     pub url: Option<String>,
     pub env: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub auth: Option<McpAuthConfig>,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum McpAuthConfig {
+    OAuth(McpOAuthConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpOAuthConfig {
+    #[serde(default)]
+    pub token_url: Option<String>,
+    #[serde(default)]
+    pub authorization_url: Option<String>,
+    pub client_id: String,
+    /// Client secret - required for client_credentials flow, optional for authorization_code with PKCE
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub audience: Option<String>,
+    #[serde(default)]
+    pub extra_params: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub client_auth: McpOAuthClientAuth,
+    /// OAuth grant type: "authorization_code" (default, with PKCE) or "client_credentials"
+    #[serde(default)]
+    pub grant_type: McpOAuthGrantType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum McpOAuthGrantType {
+    /// Authorization Code flow with PKCE - requires user interaction
+    AuthorizationCode,
+    /// Client Credentials flow - machine-to-machine, no user interaction
+    ClientCredentials,
+}
+
+impl Default for McpOAuthGrantType {
+    fn default() -> Self {
+        McpOAuthGrantType::AuthorizationCode
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum McpOAuthClientAuth {
+    Basic,
+    Body,
+}
+
+impl Default for McpOAuthClientAuth {
+    fn default() -> Self {
+        McpOAuthClientAuth::Body
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
