@@ -200,6 +200,171 @@ struct OAuthTokenCacheEntry {
     expires_at: Option<Instant>,
 }
 
+/// OAuth metadata discovered from well-known endpoints (RFC 8414 / MCP OAuth spec)
+#[derive(Debug, Clone, Default)]
+struct OAuthDiscoveryResult {
+    authorization_endpoint: Option<String>,
+    token_endpoint: Option<String>,
+    registration_endpoint: Option<String>,
+}
+
+/// Response from OAuth Dynamic Client Registration (RFC 7591)
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+struct DynamicClientRegistrationResponse {
+    client_id: String,
+    #[serde(default)]
+    client_secret: Option<String>,
+    #[serde(default)]
+    client_id_issued_at: Option<u64>,
+    #[serde(default)]
+    client_secret_expires_at: Option<u64>,
+}
+
+/// Perform OAuth discovery as per MCP spec (without client registration):
+/// 1. Fetch /.well-known/oauth-protected-resource to find authorization server
+/// 2. Fetch /.well-known/oauth-authorization-server for endpoints
+/// Returns the discovered endpoints; client registration should be done separately
+/// after the callback server is started (to get the correct redirect_uri).
+async fn discover_oauth_metadata(
+    server_url: &str,
+    client: &reqwest::Client,
+) -> Result<OAuthDiscoveryResult> {
+    let base = Url::parse(server_url)?;
+    let mut result = OAuthDiscoveryResult::default();
+
+    // Step 1: Try to fetch protected resource metadata
+    let protected_resource_url = {
+        let mut url = base.clone();
+        url.set_query(None);
+        url.set_fragment(None);
+        url.set_path("/.well-known/oauth-protected-resource");
+        url.to_string()
+    };
+
+    debug!("OAuth discovery: fetching protected resource metadata from {}", protected_resource_url);
+
+    let mut authorization_server_issuer: Option<String> = None;
+
+    match client.get(&protected_resource_url).send().await {
+        Ok(response) if response.status().is_success() => {
+            if let Ok(body) = response.text().await {
+                debug!("OAuth discovery: protected resource response: {}", truncate_for_log(&body, 1000));
+                if let Ok(value) = serde_json::from_str::<Value>(&body) {
+                    // Get authorization_servers array
+                    if let Some(servers) = value.get("authorization_servers").and_then(|v| v.as_array()) {
+                        if let Some(first) = servers.first().and_then(|v| v.as_str()) {
+                            authorization_server_issuer = Some(first.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(response) => {
+            debug!("OAuth discovery: protected resource fetch returned {}", response.status());
+        }
+        Err(e) => {
+            debug!("OAuth discovery: protected resource fetch failed: {}", e);
+        }
+    }
+
+    // Step 2: Fetch authorization server metadata
+    // Use discovered issuer or fall back to server origin
+    let auth_server_metadata_url = if let Some(issuer) = &authorization_server_issuer {
+        // Construct well-known URL from issuer
+        if let Ok(mut issuer_url) = Url::parse(issuer) {
+            issuer_url.set_query(None);
+            issuer_url.set_fragment(None);
+            issuer_url.set_path("/.well-known/oauth-authorization-server");
+            issuer_url.to_string()
+        } else {
+            // Fall back to base server
+            let mut url = base.clone();
+            url.set_query(None);
+            url.set_fragment(None);
+            url.set_path("/.well-known/oauth-authorization-server");
+            url.to_string()
+        }
+    } else {
+        let mut url = base.clone();
+        url.set_query(None);
+        url.set_fragment(None);
+        url.set_path("/.well-known/oauth-authorization-server");
+        url.to_string()
+    };
+
+    debug!("OAuth discovery: fetching authorization server metadata from {}", auth_server_metadata_url);
+
+    match client.get(&auth_server_metadata_url).send().await {
+        Ok(response) if response.status().is_success() => {
+            if let Ok(body) = response.text().await {
+                debug!("OAuth discovery: authorization server response: {}", truncate_for_log(&body, 1000));
+                if let Ok(value) = serde_json::from_str::<Value>(&body) {
+                    // Extract endpoints
+                    if let Some(endpoint) = value.get("authorization_endpoint").and_then(|v| v.as_str()) {
+                        result.authorization_endpoint = Some(endpoint.to_string());
+                    }
+                    if let Some(endpoint) = value.get("token_endpoint").and_then(|v| v.as_str()) {
+                        result.token_endpoint = Some(endpoint.to_string());
+                    }
+                    if let Some(endpoint) = value.get("registration_endpoint").and_then(|v| v.as_str()) {
+                        result.registration_endpoint = Some(endpoint.to_string());
+                    }
+                }
+            }
+        }
+        Ok(response) => {
+            debug!("OAuth discovery: authorization server metadata fetch returned {}", response.status());
+        }
+        Err(e) => {
+            debug!("OAuth discovery: authorization server metadata fetch failed: {}", e);
+        }
+    }
+
+    Ok(result)
+}
+
+/// Perform dynamic client registration (RFC 7591)
+/// Must be called with the actual redirect_uri that will be used for authorization.
+async fn register_oauth_client(
+    registration_endpoint: &str,
+    redirect_uri: &str,
+    client: &reqwest::Client,
+) -> Result<String> {
+    debug!("OAuth registration: registering client at {}", registration_endpoint);
+
+    let registration_request = json!({
+        "client_name": "Flexorama",
+        "redirect_uris": [redirect_uri],
+        "grant_types": ["authorization_code"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none"
+    });
+
+    let response = client
+        .post(registration_endpoint)
+        .header("content-type", "application/json")
+        .json(&registration_request)
+        .send()
+        .await?;
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    debug!("OAuth registration: response status={} body={}", status, truncate_for_log(&body, 1000));
+
+    if !status.is_success() {
+        return Err(anyhow::anyhow!(
+            "Dynamic client registration failed (HTTP {}): {}",
+            status,
+            truncate_for_log(&body, 500)
+        ));
+    }
+
+    let reg_response: DynamicClientRegistrationResponse = serde_json::from_str(&body)?;
+    info!("OAuth registration: successfully registered client");
+    Ok(reg_response.client_id)
+}
+
 async fn handle_mcp_response(
     name: &str,
     response: McpResponse,
@@ -436,8 +601,9 @@ fn truncate_for_log(value: &str, max_len: usize) -> String {
 
 fn try_open_browser(url: &str) -> bool {
     if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", "start", "", url])
+        // Use rundll32 with url.dll to open URLs reliably on Windows
+        Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
             .spawn()
             .is_ok()
     } else if cfg!(target_os = "macos") {
@@ -641,9 +807,14 @@ async fn exchange_code_for_token(
     form.insert("redirect_uri".to_string(), redirect_uri.to_string());
     form.insert("code_verifier".to_string(), code_verifier.to_string());
 
-    if client_auth == McpOAuthClientAuth::Body {
+    // For public clients (PKCE), always send client_id in body
+    // Only send client_secret if it's non-empty (confidential clients)
+    if client_auth == McpOAuthClientAuth::Body || client_secret.is_empty() {
         form.insert("client_id".to_string(), client_id.to_string());
-        form.insert("client_secret".to_string(), client_secret.to_string());
+        // Only include client_secret if it's not empty (public clients don't have one)
+        if !client_secret.is_empty() {
+            form.insert("client_secret".to_string(), client_secret.to_string());
+        }
     }
 
     let mut request = client
@@ -651,7 +822,8 @@ async fn exchange_code_for_token(
         .header("accept", "application/json")
         .header("content-type", "application/x-www-form-urlencoded");
 
-    if client_auth == McpOAuthClientAuth::Basic {
+    // Only use Basic auth if client_secret is provided
+    if client_auth == McpOAuthClientAuth::Basic && !client_secret.is_empty() {
         request = request.basic_auth(client_id, Some(client_secret));
     }
 
@@ -672,20 +844,35 @@ async fn exchange_code_for_token(
 }
 
 /// Perform the full OAuth authorization code flow with PKCE
+/// If client_id is None but registration_endpoint is provided, dynamic client registration
+/// will be performed first (RFC 7591).
 async fn perform_oauth_authorization_flow(
     name: &str,
     authorization_url: &str,
     token_url: &str,
-    client_id: &str,
+    client_id: Option<&str>,
     client_secret: &str,
     client_auth: McpOAuthClientAuth,
     scope: Option<&str>,
     audience: Option<&str>,
     extra_params: Option<&HashMap<String, String>>,
+    registration_endpoint: Option<&str>,
 ) -> Result<OAuthTokenCacheEntry> {
-    // Start callback server
+    // Start callback server first - we need the port for registration
     let (port, callback_rx) = start_oauth_callback_server().await?;
     let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
+
+    // Perform dynamic client registration if needed
+    let resolved_client_id = if let Some(id) = client_id {
+        id.to_string()
+    } else if let Some(reg_endpoint) = registration_endpoint {
+        let http_client = create_http_client();
+        register_oauth_client(reg_endpoint, &redirect_uri, &http_client).await?
+    } else {
+        return Err(anyhow::anyhow!(
+            "No client_id provided and no registration endpoint available for dynamic registration"
+        ));
+    };
 
     // Generate PKCE parameters
     let code_verifier = generate_code_verifier();
@@ -695,7 +882,7 @@ async fn perform_oauth_authorization_flow(
     // Build authorization URL with all required parameters
     let auth_url = build_authorization_url(
         authorization_url,
-        Some(client_id),
+        Some(&resolved_client_id),
         scope,
         audience,
         extra_params,
@@ -750,7 +937,7 @@ async fn perform_oauth_authorization_flow(
         token_url,
         &code,
         &redirect_uri,
-        client_id,
+        &resolved_client_id,
         client_secret,
         &code_verifier,
         client_auth,
@@ -837,63 +1024,94 @@ async fn maybe_handle_oauth_required(
     let wants_discovery = www_auth
         .map(|value| value.to_ascii_lowercase().contains("bearer realm=\"oauth\""))
         .unwrap_or(false);
-    // Try OAuth discovery if we need the auth URL or want to get more metadata
+    // Try full OAuth discovery (RFC 8414) - registration happens later with correct redirect_uri
     let mut discovered_token_url: Option<String> = None;
-    if wants_discovery || url.is_none() {
+    let mut discovered_registration_endpoint: Option<String> = None;
+    if wants_discovery || url.is_none() || client_id.is_none() {
         if let (Some(server_url), Some(client)) = (server_url, client) {
-            if let Ok(mut base) = Url::parse(server_url) {
-                base.set_query(None);
-                base.set_fragment(None);
-                base.set_path("/.well-known/oauth-authorization-server");
-                let discovery_url = base.to_string();
-                debug!(
-                    "MCP OAuth debug for '{}': fetching discovery document: {}",
-                    name, discovery_url
-                );
-                match client.get(&discovery_url).send().await {
-                    Ok(response) => {
-                        let status = response.status();
-                        let body = response.text().await.unwrap_or_default();
+            debug!(
+                "MCP OAuth debug for '{}': performing full OAuth discovery",
+                name
+            );
+
+            match discover_oauth_metadata(server_url, client).await {
+                Ok(discovery) => {
+                    debug!(
+                        "MCP OAuth debug for '{}': discovery result: auth_endpoint={:?}, token_endpoint={:?}, registration_endpoint={:?}",
+                        name, discovery.authorization_endpoint, discovery.token_endpoint, discovery.registration_endpoint
+                    );
+
+                    // Use discovered authorization endpoint if we don't have one
+                    if url.is_none() {
+                        if let Some(endpoint) = discovery.authorization_endpoint {
+                            url = Some(endpoint);
+                        }
+                    }
+
+                    // Use discovered token endpoint
+                    if let Some(endpoint) = discovery.token_endpoint {
+                        discovered_token_url = Some(endpoint);
+                    }
+
+                    // Store registration endpoint for later use (after we start callback server)
+                    if discovery.registration_endpoint.is_some() {
+                        discovered_registration_endpoint = discovery.registration_endpoint;
+                    }
+                }
+                Err(e) => {
+                    debug!(
+                        "MCP OAuth debug for '{}': full discovery failed: {}. Falling back to legacy discovery.",
+                        name, e
+                    );
+                    // Fall back to legacy discovery (just authorization server metadata)
+                    if let Ok(mut base) = Url::parse(server_url) {
+                        base.set_query(None);
+                        base.set_fragment(None);
+                        base.set_path("/.well-known/oauth-authorization-server");
+                        let discovery_url = base.to_string();
                         debug!(
-                            "MCP OAuth debug for '{}': discovery response status={} body={}",
-                            name,
-                            status,
-                            truncate_for_log(&body, 2000)
+                            "MCP OAuth debug for '{}': fetching legacy discovery document: {}",
+                            name, discovery_url
                         );
-                        if status.is_success() {
-                            if let Ok(value) = serde_json::from_str::<Value>(&body) {
-                                // Extract authorization endpoint
-                                if url.is_none() {
-                                    if let Some(endpoint) = value
-                                        .get("authorization_endpoint")
+                        if let Ok(response) = client.get(&discovery_url).send().await {
+                            let status = response.status();
+                            let body = response.text().await.unwrap_or_default();
+                            debug!(
+                                "MCP OAuth debug for '{}': legacy discovery response status={} body={}",
+                                name,
+                                status,
+                                truncate_for_log(&body, 2000)
+                            );
+                            if status.is_success() {
+                                if let Ok(value) = serde_json::from_str::<Value>(&body) {
+                                    if url.is_none() {
+                                        if let Some(endpoint) = value
+                                            .get("authorization_endpoint")
+                                            .and_then(|v| v.as_str())
+                                        {
+                                            url = Some(endpoint.to_string());
+                                        } else if let Some(endpoint) =
+                                            extract_oauth_url_from_json(&value)
+                                        {
+                                            url = Some(endpoint);
+                                        }
+                                    }
+                                    if let Some(token_ep) = value
+                                        .get("token_endpoint")
                                         .and_then(|v| v.as_str())
                                     {
-                                        url = Some(endpoint.to_string());
-                                    } else if let Some(endpoint) =
-                                        extract_oauth_url_from_json(&value)
-                                    {
-                                        url = Some(endpoint);
+                                        discovered_token_url = Some(token_ep.to_string());
                                     }
-                                }
-                                // Extract token endpoint
-                                if let Some(token_ep) = value
-                                    .get("token_endpoint")
-                                    .and_then(|v| v.as_str())
-                                {
-                                    discovered_token_url = Some(token_ep.to_string());
-                                    debug!(
-                                        "MCP OAuth debug for '{}': discovered token_endpoint: {}",
-                                        name, token_ep
-                                    );
+                                    // Also check for registration_endpoint in legacy discovery
+                                    if let Some(reg_ep) = value
+                                        .get("registration_endpoint")
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        discovered_registration_endpoint = Some(reg_ep.to_string());
+                                    }
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        debug!(
-                            "MCP OAuth debug for '{}': discovery request failed: {}",
-                            name, e
-                        );
                     }
                 }
             }
@@ -911,14 +1129,17 @@ async fn maybe_handle_oauth_required(
         || www_auth.is_some();
 
     if let Some(auth_url) = url {
-        // Try to extract client_id from the authorization URL if not provided
-        let resolved_client_id = client_id.map(|s| s.to_string()).or_else(|| {
-            Url::parse(&auth_url).ok().and_then(|u| {
-                u.query_pairs()
-                    .find(|(k, _)| k == "client_id")
-                    .map(|(_, v)| v.to_string())
-            })
-        });
+        // Try to resolve client_id from config or URL (registration happens later if needed)
+        let resolved_client_id = client_id
+            .map(|s| s.to_string())
+            // Fall back to extracting from URL if present
+            .or_else(|| {
+                Url::parse(&auth_url).ok().and_then(|u| {
+                    u.query_pairs()
+                        .find(|(k, _)| k == "client_id")
+                        .map(|(_, v)| v.to_string())
+                })
+            });
 
         // Try to derive token_url if not provided
         let resolved_token_url = token_url
@@ -951,23 +1172,28 @@ async fn maybe_handle_oauth_required(
                 })
             });
 
-        // If we have client_id and token_url, use the full PKCE flow
-        if let (Some(client_id), Some(token_url)) = (resolved_client_id.as_deref(), resolved_token_url) {
+        // Check if we need dynamic registration (have registration endpoint but no client_id)
+        let needs_dynamic_registration = resolved_client_id.is_none() && discovered_registration_endpoint.is_some();
+
+        // If we have client_id (or registration endpoint) and token_url, use the full PKCE flow
+        if (resolved_client_id.is_some() || needs_dynamic_registration) && resolved_token_url.is_some() {
             info!(
-                "MCP server '{}' requires OAuth. Starting authorization flow...",
-                name
+                "MCP server '{}' requires OAuth. Starting authorization flow{}...",
+                name,
+                if needs_dynamic_registration { " with dynamic client registration" } else { "" }
             );
 
             match perform_oauth_authorization_flow(
                 name,
                 &auth_url,
-                &token_url,
-                client_id,
+                resolved_token_url.as_ref().unwrap(),
+                resolved_client_id.as_deref(),
                 "", // No client secret for public PKCE flow
                 McpOAuthClientAuth::Body,
                 scope,
                 audience,
                 extra_params,
+                discovered_registration_endpoint.as_deref(),
             )
             .await
             {
@@ -1006,7 +1232,7 @@ async fn maybe_handle_oauth_required(
                 "MCP server '{}' requires OAuth authorization.",
                 name
             );
-            if resolved_client_id.is_none() {
+            if resolved_client_id.is_none() && discovered_registration_endpoint.is_none() {
                 warn!(
                     "Could not determine client_id. Please configure OAuth with client_id in your MCP server config."
                 );
@@ -1031,59 +1257,14 @@ async fn maybe_handle_oauth_required(
     OAuthHandleResult::NoToken
 }
 
-async fn start_http_sse(
-    url: &str,
-    client: &reqwest::Client,
-    auth_header: Option<&str>,
+/// Helper function to handle the SSE stream after a successful connection
+async fn handle_sse_stream(
+    response: reqwest::Response,
     name: String,
     pending_requests: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<McpResponse>>>>,
     tools: Arc<RwLock<Vec<McpTool>>>,
     tools_version: Arc<RwLock<u64>>,
-    oauth_authorization_url: Option<&str>,
-    oauth_client_id: Option<&str>,
-    oauth_scope: Option<&str>,
-    oauth_audience: Option<&str>,
-    oauth_extra_params: Option<&HashMap<String, String>>,
 ) -> Result<Option<tokio::sync::oneshot::Sender<()>>> {
-    let mut request = client.get(url).header("accept", "text/event-stream, application/json");
-    if let Some(header_value) = auth_header {
-        request = request.header("authorization", header_value);
-    }
-
-    let response = match request.send().await {
-        Ok(response) => response,
-        Err(e) => {
-            warn!("Failed to start MCP SSE stream for {}: {}", name, e);
-            return Ok(None);
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let headers = response.headers().clone();
-        let body = response.text().await.unwrap_or_default();
-        let _ = maybe_handle_oauth_required(
-            &name,
-            status,
-            &headers,
-            &body,
-            oauth_authorization_url,
-            Some(url),
-            Some(client),
-            oauth_client_id,
-            oauth_scope,
-            oauth_audience,
-            oauth_extra_params,
-            None, // token_url - will be derived from server_url
-        )
-        .await;
-        warn!(
-            "MCP SSE stream for {} returned HTTP {}: {}",
-            name, status, body
-        );
-        return Ok(None);
-    }
-
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -1159,6 +1340,122 @@ async fn start_http_sse(
     });
 
     Ok(Some(cancel_tx))
+}
+
+/// Result of attempting to start an HTTP SSE connection
+struct HttpSseResult {
+    /// SSE cancel sender if SSE connection was established
+    sse_cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    /// OAuth token obtained during connection attempt (for servers that don't support SSE GET)
+    oauth_token: Option<String>,
+}
+
+async fn start_http_sse(
+    url: &str,
+    client: &reqwest::Client,
+    auth_header: Option<&str>,
+    name: String,
+    pending_requests: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<McpResponse>>>>,
+    tools: Arc<RwLock<Vec<McpTool>>>,
+    tools_version: Arc<RwLock<u64>>,
+    oauth_authorization_url: Option<&str>,
+    oauth_client_id: Option<&str>,
+    oauth_scope: Option<&str>,
+    oauth_audience: Option<&str>,
+    oauth_extra_params: Option<&HashMap<String, String>>,
+) -> Result<HttpSseResult> {
+    let mut request = client.get(url).header("accept", "text/event-stream, application/json");
+    if let Some(header_value) = auth_header {
+        request = request.header("authorization", header_value);
+    }
+
+    let response = match request.send().await {
+        Ok(response) => response,
+        Err(e) => {
+            warn!("Failed to start MCP SSE stream for {}: {}", name, e);
+            return Ok(HttpSseResult { sse_cancel: None, oauth_token: None });
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = response.text().await.unwrap_or_default();
+        let oauth_result = maybe_handle_oauth_required(
+            &name,
+            status,
+            &headers,
+            &body,
+            oauth_authorization_url,
+            Some(url),
+            Some(client),
+            oauth_client_id,
+            oauth_scope,
+            oauth_audience,
+            oauth_extra_params,
+            None, // token_url - will be derived from server_url
+        )
+        .await;
+
+        // If OAuth succeeded, try SSE with token first, but if that fails (405),
+        // return the token for use with POST-based HTTP transport
+        if let OAuthHandleResult::Token(token_entry) = oauth_result {
+            info!("Obtained OAuth token for {}, trying SSE connection...", name);
+            let retry_request = client
+                .get(url)
+                .header("accept", "text/event-stream, application/json")
+                .header("authorization", &token_entry.header_value);
+
+            match retry_request.send().await {
+                Ok(retry_response) if retry_response.status().is_success() => {
+                    // SSE GET worked, continue with SSE stream
+                    let sse_result = handle_sse_stream(
+                        retry_response,
+                        name,
+                        pending_requests,
+                        tools,
+                        tools_version,
+                    )
+                    .await?;
+                    return Ok(HttpSseResult {
+                        sse_cancel: sse_result,
+                        oauth_token: Some(token_entry.header_value),
+                    });
+                }
+                Ok(retry_response) => {
+                    // SSE GET failed (likely 405 for servers using Streamable HTTP)
+                    // Return the token so caller can use it with POST
+                    let retry_status = retry_response.status();
+                    debug!(
+                        "SSE GET for {} returned {} - server likely uses Streamable HTTP, will use POST with token",
+                        name, retry_status
+                    );
+                    return Ok(HttpSseResult {
+                        sse_cancel: None,
+                        oauth_token: Some(token_entry.header_value),
+                    });
+                }
+                Err(e) => {
+                    warn!("Failed to connect to {} after OAuth: {}", name, e);
+                    // Still return the token in case POST works
+                    return Ok(HttpSseResult {
+                        sse_cancel: None,
+                        oauth_token: Some(token_entry.header_value),
+                    });
+                }
+            }
+        }
+
+        warn!(
+            "MCP SSE stream for {} returned HTTP {}: {}",
+            name, status, body
+        );
+        return Ok(HttpSseResult { sse_cancel: None, oauth_token: None });
+    }
+
+    // Handle the successful SSE stream
+    let sse_result = handle_sse_stream(response, name, pending_requests, tools, tools_version).await?;
+    Ok(HttpSseResult { sse_cancel: sse_result, oauth_token: None })
 }
 
 fn extract_sse_data(event: &str) -> Option<String> {
@@ -1539,7 +1836,7 @@ impl McpConnection {
         self.http_client = Some(client.clone());
         self.http_auth_header = auth_header.clone();
 
-        if let Some(response) = start_http_sse(
+        let sse_result = start_http_sse(
             url,
             &client,
             auth_header.as_deref(),
@@ -1553,10 +1850,17 @@ impl McpConnection {
             self.oauth_audience.as_deref(),
             self.oauth_extra_params.as_ref(),
         )
-        .await?
-        {
+        .await?;
+
+        // If OAuth token was obtained, update the auth header for subsequent requests
+        if let Some(token) = sse_result.oauth_token {
+            debug!("Using OAuth token for HTTP requests to {}", self.name);
+            self.http_auth_header = Some(token);
+        }
+
+        if let Some(cancel) = sse_result.sse_cancel {
             self.sse_enabled = true;
-            self.sse_cancel = Some(response);
+            self.sse_cancel = Some(cancel);
         } else {
             self.sse_enabled = false;
         }
@@ -1566,6 +1870,7 @@ impl McpConnection {
     }
 
     async fn initialize(&mut self) -> Result<()> {
+        info!("Initializing MCP server '{}' (sse_enabled={})...", self.name, self.sse_enabled);
         let init_request = McpRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(self.next_id()),
@@ -1589,7 +1894,9 @@ impl McpConnection {
             },
         };
 
+        info!("Sending initialize request to '{}'...", self.name);
         let response = self.send_request(init_request).await?;
+        info!("Received initialize response from '{}'", self.name);
 
         if response.error.is_some() {
             return Err(anyhow::anyhow!(
@@ -1598,6 +1905,7 @@ impl McpConnection {
             ));
         }
 
+        info!("MCP server '{}' initialized, sending notification...", self.name);
         // Send initialized notification
         let initialized = McpRequest {
             jsonrpc: "2.0".to_string(),
@@ -1615,7 +1923,7 @@ impl McpConnection {
     }
 
     async fn load_tools(&mut self) -> Result<()> {
-        debug!("Loading tools from MCP server '{}'...", self.name);
+        info!("Loading tools from MCP server '{}'...", self.name);
 
         let tools_request = McpRequest {
             jsonrpc: "2.0".to_string(),
@@ -1999,78 +2307,15 @@ impl McpConnection {
                 http_request = http_request.header("mcp-session-id", session_id);
             }
 
-            if self.sse_enabled {
-                // Create response channel for SSE responses
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                self.pending_requests.lock().await.insert(id.clone(), tx);
-
-                let response = match http_request.send().await {
-                    Ok(response) => response,
-                    Err(e) => {
-                        self.pending_requests.lock().await.remove(&id);
-                        return Err(e.into());
-                    }
-                };
-                if !response.status().is_success() {
-                    let status = response.status();
-                    let headers = response.headers().clone();
-                    let body = response.text().await.unwrap_or_default();
-                    let _ = maybe_handle_oauth_required(
-                        &self.name,
-                        status,
-                        &headers,
-                        &body,
-                        self.oauth_authorization_url.as_deref(),
-                        self.http_url.as_deref(),
-                        self.http_client.as_ref(),
-                        self.oauth_client_id.as_deref(),
-                        self.oauth_scope.as_deref(),
-                        self.oauth_audience.as_deref(),
-                        self.oauth_extra_params.as_ref(),
-                        None, // token_url - will be derived from server_url
-                    )
-                    .await;
-                    self.pending_requests.lock().await.remove(&id);
-                    return Err(anyhow::anyhow!(
-                        "MCP HTTP request failed for '{}' (HTTP {}): {}",
-                        self.name,
-                        status,
-                        body
-                    ));
-                }
-
-                // Extract session ID from response headers if present
-                if let Some(session_id) = response
-                    .headers()
-                    .get("mcp-session-id")
-                    .and_then(|v| v.to_str().ok())
-                {
-                    debug!("Received MCP session ID for '{}': {}", self.name, session_id);
-                    self.http_session_id = Some(session_id.to_string());
-                }
-
-                let response = tokio::time::timeout(std::time::Duration::from_secs(30), rx).await;
-                let response = match response {
-                    Ok(Ok(response)) => response,
-                    Ok(Err(_)) => {
-                        self.pending_requests.lock().await.remove(&id);
-                        return Err(anyhow::anyhow!(
-                            "MCP server '{}' response channel was dropped",
-                            self.name
-                        ));
-                    }
-                    Err(_) => {
-                        self.pending_requests.lock().await.remove(&id);
-                        return Err(anyhow::anyhow!(
-                            "MCP server '{}' timed out after 30 seconds",
-                            self.name
-                        ));
-                    }
-                };
-
-                return Ok(response);
-            } else {
+            // For Streamable HTTP (used by Notion and others), responses come in the POST
+            // response body, not through a separate SSE stream. Always read the response body.
+            {
+                info!("Sending HTTP POST to '{}' (non-SSE mode), url={}", self.name, http_url);
                 let response = http_request.send().await?;
+                info!("Received HTTP response from '{}': status={}, content-type={:?}",
+                    self.name,
+                    response.status(),
+                    response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()));
                 if !response.status().is_success() {
                     let status = response.status();
                     let headers = response.headers().clone();
@@ -2116,31 +2361,74 @@ impl McpConnection {
                     .unwrap_or("");
 
                 if content_type.contains("text/event-stream") {
-                    // Server returned SSE stream - read and parse events
-                    let response_text = response.text().await?;
-                    debug!(
-                        "MCP SSE response from '{}': {}",
-                        self.name,
-                        truncate_for_log(&response_text, 500)
-                    );
+                    // Server returned SSE stream - read incrementally until we find the response
+                    // Don't use .text().await as that waits for the stream to close (which may never happen)
+                    let mut stream = response.bytes_stream();
+                    let mut buffer = String::new();
+                    let timeout_duration = std::time::Duration::from_secs(30);
+                    let start = std::time::Instant::now();
 
-                    // Parse SSE events to find the JSON-RPC response
-                    for line in response_text.lines() {
-                        if let Some(data) = line.strip_prefix("data:") {
-                            let data = data.trim();
-                            if data.is_empty() || data == "[DONE]" {
-                                continue;
+                    while start.elapsed() < timeout_duration {
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            stream.next()
+                        ).await {
+                            Ok(Some(Ok(bytes))) => {
+                                let text = String::from_utf8_lossy(&bytes);
+                                buffer.push_str(&text);
+
+                                // Normalize line endings
+                                if buffer.contains("\r\n") {
+                                    buffer = buffer.replace("\r\n", "\n");
+                                }
+
+                                // Process complete SSE events (separated by double newline)
+                                while let Some(idx) = buffer.find("\n\n") {
+                                    let event = buffer[..idx].to_string();
+                                    buffer = buffer[idx + 2..].to_string();
+
+                                    // Extract data from SSE event
+                                    for line in event.lines() {
+                                        if let Some(data) = line.strip_prefix("data:") {
+                                            let data = data.trim();
+                                            if data.is_empty() || data == "[DONE]" {
+                                                continue;
+                                            }
+                                            debug!(
+                                                "MCP SSE data from '{}': {}",
+                                                self.name,
+                                                truncate_for_log(data, 500)
+                                            );
+                                            if let Ok(response) = serde_json::from_str::<McpResponse>(data) {
+                                                return Ok(response);
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            if let Ok(response) = serde_json::from_str::<McpResponse>(data) {
-                                return Ok(response);
+                            Ok(Some(Err(e))) => {
+                                return Err(anyhow::anyhow!(
+                                    "Error reading SSE stream from '{}': {}",
+                                    self.name,
+                                    e
+                                ));
+                            }
+                            Ok(None) => {
+                                // Stream closed without finding response
+                                break;
+                            }
+                            Err(_) => {
+                                // Timeout on chunk, continue if overall timeout not exceeded
+                                continue;
                             }
                         }
                     }
 
                     // If no valid response found in SSE, return error
                     return Err(anyhow::anyhow!(
-                        "MCP server '{}' returned SSE stream but no valid JSON-RPC response found",
-                        self.name
+                        "MCP server '{}' returned SSE stream but no valid JSON-RPC response found. Buffer: {}",
+                        self.name,
+                        truncate_for_log(&buffer, 200)
                     ));
                 } else {
                     // Regular JSON response
@@ -2589,12 +2877,13 @@ impl McpManager {
                     server_name,
                     authorization_url,
                     &token_url,
-                    &oauth.client_id,
+                    Some(&oauth.client_id),
                     oauth.client_secret.as_deref().unwrap_or(""),
                     oauth.client_auth,
                     oauth.scope.as_deref(),
                     oauth.audience.as_deref(),
                     oauth.extra_params.as_ref(),
+                    None, // registration_endpoint not needed when client_id is configured
                 )
                 .await
             }
