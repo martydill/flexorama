@@ -852,7 +852,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_clear_context() {
-        let mut handler = create_test_handler();
+        let handler = create_test_handler();
 
         let result = handler.handle_clear_context(None).await;
         assert!(result.is_ok());

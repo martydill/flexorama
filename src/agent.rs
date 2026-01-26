@@ -48,6 +48,7 @@ use crate::anthropic::{ContentBlock, Message, Usage};
 use crate::config::{Config, Provider};
 use crate::conversation::ConversationManager;
 use crate::database::{Conversation as StoredConversation, DatabaseManager};
+use crate::hooks::{HookAction, HookManager};
 use crate::llm::LlmClient;
 use crate::subagent;
 use crate::tools::{
@@ -118,6 +119,7 @@ pub struct Agent {
     available_models: Arc<RwLock<Vec<String>>>,
     // Suppress output (for ACP mode where stdout must be clean)
     suppress_output: bool,
+    hook_manager: Option<HookManager>,
 }
 
 impl Agent {
@@ -175,6 +177,14 @@ impl Agent {
             .collect();
         let available_models = Arc::new(RwLock::new(default_models));
 
+        let hook_manager = match HookManager::load() {
+            Ok(manager) => manager,
+            Err(err) => {
+                warn!("Failed to load Claude hooks: {}", err);
+                None
+            }
+        };
+
         Self {
             client,
             model,
@@ -198,6 +208,7 @@ impl Agent {
             todos_by_conversation,
             available_models,
             suppress_output: false,
+            hook_manager,
         }
     }
 
@@ -781,7 +792,28 @@ impl Agent {
         }
 
         // Clean message by removing @file syntax
-        let cleaned_message = self.clean_message(message);
+        let mut cleaned_message = self.clean_message(message);
+
+        if let Some(hook_manager) = &self.hook_manager {
+            let hook_decision = hook_manager
+                .run_pre_message(
+                    &cleaned_message,
+                    message,
+                    &context_files,
+                    self.conversation_manager.current_conversation_id.as_deref(),
+                    &self.model,
+                )
+                .await?;
+            if hook_decision.action == HookAction::Abort {
+                let reason = hook_decision
+                    .message
+                    .unwrap_or_else(|| "Hook aborted the request.".to_string());
+                return Err(anyhow!(reason));
+            }
+            if let Some(updated) = hook_decision.updated_message {
+                cleaned_message = updated;
+            }
+        }
 
         // If message is empty after cleaning (only contained @file references),
         // return early without making an API call
@@ -954,28 +986,60 @@ impl Agent {
                         return Err(anyhow::anyhow!("CANCELLED"));
                     }
 
-                    debug!("Executing tool: {} with ID: {}", call.name, call.id);
+                    let mut call_to_run = call.clone();
+
+                    if let Some(hook_manager) = &self.hook_manager {
+                        let hook_decision = hook_manager
+                            .run_pre_tool(
+                                &call.id,
+                                &call.name,
+                                &call_to_run.arguments,
+                                self.conversation_manager.current_conversation_id.as_deref(),
+                                &self.model,
+                            )
+                            .await?;
+                        if hook_decision.action == HookAction::Abort {
+                            let reason = hook_decision
+                                .message
+                                .unwrap_or_else(|| "Hook aborted tool execution.".to_string());
+                            return Err(anyhow!(reason));
+                        }
+                        if let Some(updated_arguments) = hook_decision.updated_arguments {
+                            call_to_run.arguments = updated_arguments;
+                        }
+                    }
+
+                    debug!(
+                        "Executing tool: {} with ID: {}",
+                        call_to_run.name, call_to_run.id
+                    );
 
                     if let (Some(db), Some(conversation_id)) = (
                         self.conversation_manager.database_manager.clone(),
                         self.conversation_manager.current_conversation_id.clone(),
                     ) {
-                        let args_str = serde_json::to_string(&call.arguments)
-                            .unwrap_or_else(|_| call.arguments.to_string());
+                        let args_str = serde_json::to_string(&call_to_run.arguments)
+                            .unwrap_or_else(|_| call_to_run.arguments.to_string());
                         if let Err(e) = db
-                            .add_tool_call(&conversation_id, None, &call.id, &call.name, &args_str)
+                            .add_tool_call(
+                                &conversation_id,
+                                None,
+                                &call_to_run.id,
+                                &call_to_run.name,
+                                &args_str,
+                            )
                             .await
                         {
-                            warn!("Failed to record tool call {}: {}", call.name, e);
+                            warn!("Failed to record tool call {}: {}", call_to_run.name, e);
                         }
                     }
 
                     if let Some(callback) = &on_tool_event {
                         callback(StreamToolEvent {
                             event: "tool_call".to_string(),
-                            tool_use_id: call.id.clone(),
-                            name: call.name.clone(),
-                            input: Some(call.arguments.clone()),
+                            tool_use_id: call_to_run.id.clone(),
+                            name: call_to_run.name.clone(),
+                            input: Some(call_to_run.arguments.clone()),
                             content: None,
                             is_error: None,
                         });
@@ -984,13 +1048,13 @@ impl Agent {
                     // Handle plan mode restrictions
                     if self.plan_mode {
                         let registry = self.tool_registry.read().await;
-                        if !registry.is_readonly(&call.name) {
+                        if !registry.is_readonly(&call_to_run.name) {
                             let error_content = format!(
                                 "Plan mode is read-only. Tool '{}' is disabled.",
-                                call.name
+                                call_to_run.name
                             );
                             results.push(ToolResult {
-                                tool_use_id: call.id.clone(),
+                                tool_use_id: call_to_run.id.clone(),
                                 content: error_content,
                                 is_error: true,
                             });
@@ -999,27 +1063,47 @@ impl Agent {
                     }
 
                     // Use the new display system and execute tool
-                    let result = self.execute_tool_with_display(call).await;
+                    let result = self.execute_tool_with_display(&call_to_run).await;
                     if let (Some(db), Some(_conversation_id)) = (
                         self.conversation_manager.database_manager.clone(),
                         self.conversation_manager.current_conversation_id.clone(),
                     ) {
                         if let Err(e) = db
-                            .complete_tool_call(&call.id, &result.content, result.is_error)
+                            .complete_tool_call(&call_to_run.id, &result.content, result.is_error)
                             .await
                         {
-                            warn!("Failed to record tool result {}: {}", call.name, e);
+                            warn!("Failed to record tool result {}: {}", call_to_run.name, e);
                         }
                     }
                     if let Some(callback) = &on_tool_event {
                         callback(StreamToolEvent {
                             event: "tool_result".to_string(),
-                            tool_use_id: call.id.clone(),
-                            name: call.name.clone(),
+                            tool_use_id: call_to_run.id.clone(),
+                            name: call_to_run.name.clone(),
                             input: None,
                             content: Some(result.content.clone()),
                             is_error: Some(result.is_error),
                         });
+                    }
+
+                    if let Some(hook_manager) = &self.hook_manager {
+                        let hook_decision = hook_manager
+                            .run_post_tool(
+                                &call_to_run.id,
+                                &call_to_run.name,
+                                &call_to_run.arguments,
+                                &result.content,
+                                result.is_error,
+                                self.conversation_manager.current_conversation_id.as_deref(),
+                                &self.model,
+                            )
+                            .await?;
+                        if hook_decision.action == HookAction::Abort {
+                            let reason = hook_decision.message.unwrap_or_else(|| {
+                                "Hook aborted after tool execution.".to_string()
+                            });
+                            return Err(anyhow!(reason));
+                        }
                     }
                     results.push(result);
                 }
@@ -1085,6 +1169,22 @@ impl Agent {
                 warn!("Failed to save final assistant message to database: {}", e);
             }
         }
+        if let Some(hook_manager) = &self.hook_manager {
+            let hook_decision = hook_manager
+                .run_post_message(
+                    &final_response,
+                    self.conversation_manager.current_conversation_id.as_deref(),
+                    &self.model,
+                )
+                .await?;
+            if hook_decision.action == HookAction::Abort {
+                let reason = hook_decision
+                    .message
+                    .unwrap_or_else(|| "Hook aborted after response.".to_string());
+                return Err(anyhow!(reason));
+            }
+        }
+
         debug!("Final response generated ({} chars)", final_response.len());
         Ok(final_response)
     }
@@ -2448,7 +2548,11 @@ mod tests {
         let base64_data = "fake_base64_data".to_string();
         let description = "Test image description".to_string();
 
-        agent.add_image(media_type.clone(), base64_data.clone(), Some(description.clone()));
+        agent.add_image(
+            media_type.clone(),
+            base64_data.clone(),
+            Some(description.clone()),
+        );
 
         assert_eq!(agent.conversation_manager.conversation.len(), 1);
         let message = &agent.conversation_manager.conversation[0];

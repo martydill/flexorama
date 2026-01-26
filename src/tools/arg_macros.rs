@@ -1,6 +1,5 @@
 /// Macros for extracting arguments from ToolCall arguments in a concise way.
 /// These macros reduce boilerplate and make tool implementations more readable.
-
 /// Extract a required string argument from a ToolCall
 ///
 /// # Example

@@ -16,6 +16,7 @@ pub mod database;
 pub mod formatter;
 pub mod gemini;
 pub mod help;
+pub mod hooks;
 pub mod image;
 pub mod input;
 pub mod interactive;

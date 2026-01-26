@@ -104,8 +104,6 @@ pub async fn run_acp_server(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_server_module_compiles() {
         // Basic compilation test

@@ -1558,8 +1558,6 @@ pub async fn handle_mcp_command(args: &[&str], mcp_manager: &McpManager) -> Resu
     Ok(())
 }
 
-/// Print MCP help information
-
 /// Print usage statistics
 pub fn print_usage_stats(agent: &Agent) {
     let usage = agent.get_token_usage();

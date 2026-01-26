@@ -317,10 +317,7 @@ fn resolve_oauth_token_url(server_url: &str, oauth: &McpOAuthConfig) -> Result<S
 }
 
 fn build_oauth_header_value(token_response: &OAuthTokenResponse) -> String {
-    let token_type = token_response
-        .token_type
-        .as_deref()
-        .unwrap_or("Bearer");
+    let token_type = token_response.token_type.as_deref().unwrap_or("Bearer");
     let normalized = if token_type.eq_ignore_ascii_case("bearer") {
         "Bearer"
     } else {
@@ -533,9 +530,9 @@ fn build_authorization_url(
 
 fn warn_if_missing_redirect(url: &str) {
     if let Ok(parsed) = Url::parse(url) {
-        let has_redirect = parsed.query_pairs().any(|(key, _)| {
-            key == "redirect_uri" || key == "redirect_url"
-        });
+        let has_redirect = parsed
+            .query_pairs()
+            .any(|(key, _)| key == "redirect_uri" || key == "redirect_url");
         if !has_redirect {
             warn!("OAuth authorization URL has no redirect_uri parameter.");
         }
@@ -543,7 +540,8 @@ fn warn_if_missing_redirect(url: &str) {
 }
 
 /// Start a local HTTP server to receive OAuth callback and return the authorization code
-async fn start_oauth_callback_server() -> Result<(u16, tokio::sync::oneshot::Receiver<(String, String)>)> {
+async fn start_oauth_callback_server(
+) -> Result<(u16, tokio::sync::oneshot::Receiver<(String, String)>)> {
     // Try to bind to a random available port
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
@@ -560,7 +558,10 @@ async fn start_oauth_callback_server() -> Result<(u16, tokio::sync::oneshot::Rec
 
                 // Parse the GET request to extract code and state
                 if let Some(path_line) = request.lines().next() {
-                    if let Some(path) = path_line.strip_prefix("GET ").and_then(|s| s.split(' ').next()) {
+                    if let Some(path) = path_line
+                        .strip_prefix("GET ")
+                        .and_then(|s| s.split(' ').next())
+                    {
                         if let Ok(url) = Url::parse(&format!("http://localhost{}", path)) {
                             let mut code = None;
                             let mut state = None;
@@ -583,7 +584,11 @@ async fn start_oauth_callback_server() -> Result<(u16, tokio::sync::oneshot::Rec
                                     <h1>✓ Authorization Complete</h1>\
                                     <p>You can close this window and return to Flexorama.</p>\
                                     </body></html>";
-                                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+                                let _ = tokio::io::AsyncWriteExt::write_all(
+                                    &mut stream,
+                                    response.as_bytes(),
+                                )
+                                .await;
 
                                 // Send code and state through channel
                                 if let Some(tx) = tx.lock().await.take() {
@@ -591,11 +596,13 @@ async fn start_oauth_callback_server() -> Result<(u16, tokio::sync::oneshot::Rec
                                 }
                             } else {
                                 // Check for error response
-                                let error = url.query_pairs()
+                                let error = url
+                                    .query_pairs()
                                     .find(|(k, _)| k == "error")
                                     .map(|(_, v)| v.to_string())
                                     .unwrap_or_else(|| "unknown_error".to_string());
-                                let error_desc = url.query_pairs()
+                                let error_desc = url
+                                    .query_pairs()
                                     .find(|(k, _)| k == "error_description")
                                     .map(|(_, v)| v.to_string())
                                     .unwrap_or_default();
@@ -611,7 +618,11 @@ async fn start_oauth_callback_server() -> Result<(u16, tokio::sync::oneshot::Rec
                                     </body></html>",
                                     error, error_desc
                                 );
-                                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+                                let _ = tokio::io::AsyncWriteExt::write_all(
+                                    &mut stream,
+                                    response.as_bytes(),
+                                )
+                                .await;
                             }
                         }
                     }
@@ -757,7 +768,10 @@ async fn perform_oauth_authorization_flow(
     )
     .await?;
 
-    info!("Successfully obtained access token for MCP server '{}'", name);
+    info!(
+        "Successfully obtained access token for MCP server '{}'",
+        name
+    );
 
     let header_value = build_oauth_header_value(&token_response);
     let expires_at = token_response
@@ -835,7 +849,11 @@ async fn maybe_handle_oauth_required(
         .or_else(|| extract_oauth_url_from_body(body))
         .or_else(|| fallback_url.map(|value| value.to_string()));
     let wants_discovery = www_auth
-        .map(|value| value.to_ascii_lowercase().contains("bearer realm=\"oauth\""))
+        .map(|value| {
+            value
+                .to_ascii_lowercase()
+                .contains("bearer realm=\"oauth\"")
+        })
         .unwrap_or(false);
     // Try OAuth discovery if we need the auth URL or want to get more metadata
     let mut discovered_token_url: Option<String> = None;
@@ -864,9 +882,8 @@ async fn maybe_handle_oauth_required(
                             if let Ok(value) = serde_json::from_str::<Value>(&body) {
                                 // Extract authorization endpoint
                                 if url.is_none() {
-                                    if let Some(endpoint) = value
-                                        .get("authorization_endpoint")
-                                        .and_then(|v| v.as_str())
+                                    if let Some(endpoint) =
+                                        value.get("authorization_endpoint").and_then(|v| v.as_str())
                                     {
                                         url = Some(endpoint.to_string());
                                     } else if let Some(endpoint) =
@@ -876,9 +893,8 @@ async fn maybe_handle_oauth_required(
                                     }
                                 }
                                 // Extract token endpoint
-                                if let Some(token_ep) = value
-                                    .get("token_endpoint")
-                                    .and_then(|v| v.as_str())
+                                if let Some(token_ep) =
+                                    value.get("token_endpoint").and_then(|v| v.as_str())
                                 {
                                     discovered_token_url = Some(token_ep.to_string());
                                     debug!(
@@ -952,7 +968,9 @@ async fn maybe_handle_oauth_required(
             });
 
         // If we have client_id and token_url, use the full PKCE flow
-        if let (Some(client_id), Some(token_url)) = (resolved_client_id.as_deref(), resolved_token_url) {
+        if let (Some(client_id), Some(token_url)) =
+            (resolved_client_id.as_deref(), resolved_token_url)
+        {
             info!(
                 "MCP server '{}' requires OAuth. Starting authorization flow...",
                 name
@@ -1002,10 +1020,7 @@ async fn maybe_handle_oauth_required(
                 name, url
             );
             warn_if_missing_redirect(&url);
-            warn!(
-                "MCP server '{}' requires OAuth authorization.",
-                name
-            );
+            warn!("MCP server '{}' requires OAuth authorization.", name);
             if resolved_client_id.is_none() {
                 warn!(
                     "Could not determine client_id. Please configure OAuth with client_id in your MCP server config."
@@ -1045,7 +1060,9 @@ async fn start_http_sse(
     oauth_audience: Option<&str>,
     oauth_extra_params: Option<&HashMap<String, String>>,
 ) -> Result<Option<tokio::sync::oneshot::Sender<()>>> {
-    let mut request = client.get(url).header("accept", "text/event-stream, application/json");
+    let mut request = client
+        .get(url)
+        .header("accept", "text/event-stream, application/json");
     if let Some(header_value) = auth_header {
         request = request.header("authorization", header_value);
     }
@@ -1512,7 +1529,11 @@ impl McpConnection {
         ))
     }
 
-    pub async fn connect_websocket(&mut self, url: &str, auth_header: Option<String>) -> Result<()> {
+    pub async fn connect_websocket(
+        &mut self,
+        url: &str,
+        auth_header: Option<String>,
+    ) -> Result<()> {
         debug!("Connecting to MCP server via WebSocket: {}", url);
 
         let mut request = url.into_client_request()?;
@@ -2045,7 +2066,10 @@ impl McpConnection {
                     .get("mcp-session-id")
                     .and_then(|v| v.to_str().ok())
                 {
-                    debug!("Received MCP session ID for '{}': {}", self.name, session_id);
+                    debug!(
+                        "Received MCP session ID for '{}': {}",
+                        self.name, session_id
+                    );
                     self.http_session_id = Some(session_id.to_string());
                 }
 
@@ -2104,7 +2128,10 @@ impl McpConnection {
                     .get("mcp-session-id")
                     .and_then(|v| v.to_str().ok())
                 {
-                    debug!("Received MCP session ID for '{}': {}", self.name, session_id);
+                    debug!(
+                        "Received MCP session ID for '{}': {}",
+                        self.name, session_id
+                    );
                     self.http_session_id = Some(session_id.to_string());
                 }
 
@@ -2156,13 +2183,15 @@ impl McpConnection {
                         self.name,
                         truncate_for_log(&response_json, 500)
                     );
-                    let response: McpResponse = serde_json::from_str(&response_json)
-                        .map_err(|e| anyhow::anyhow!(
-                            "Failed to parse MCP response from '{}': {}. Response: {}",
-                            self.name,
-                            e,
-                            truncate_for_log(&response_json, 200)
-                        ))?;
+                    let response: McpResponse =
+                        serde_json::from_str(&response_json).map_err(|e| {
+                            anyhow::anyhow!(
+                                "Failed to parse MCP response from '{}': {}. Response: {}",
+                                self.name,
+                                e,
+                                truncate_for_log(&response_json, 200)
+                            )
+                        })?;
                     return Ok(response);
                 }
             }
@@ -2547,7 +2576,10 @@ impl McpManager {
         };
 
         let server_url = server_config.url.as_deref().ok_or_else(|| {
-            anyhow::anyhow!("OAuth auth configured but server '{}' has no URL", server_name)
+            anyhow::anyhow!(
+                "OAuth auth configured but server '{}' has no URL",
+                server_name
+            )
         })?;
 
         {
@@ -2559,7 +2591,9 @@ impl McpManager {
             }
         }
 
-        let entry = self.fetch_oauth_token(server_name, server_url, oauth).await?;
+        let entry = self
+            .fetch_oauth_token(server_name, server_url, oauth)
+            .await?;
         let mut cache = self.oauth_tokens.lock().await;
         cache.insert(server_name.to_string(), entry.clone());
         Ok(Some(entry.header_value))
@@ -2935,7 +2969,10 @@ mod tests {
 
         // Check the structure
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-        println!("Keys: {:?}", value.as_object().unwrap().keys().collect::<Vec<_>>());
+        println!(
+            "Keys: {:?}",
+            value.as_object().unwrap().keys().collect::<Vec<_>>()
+        );
     }
 
     // Tests for McpRequest serialization
@@ -2968,11 +3005,9 @@ mod tests {
         assert_eq!(serialized["jsonrpc"], "2.0");
         assert_eq!(serialized["id"], "1");
         assert_eq!(serialized["method"], "initialize");
-        assert!(
-            serialized["params"]["capabilities"]["tools"]["listChanged"]
-                .as_bool()
-                .unwrap()
-        );
+        assert!(serialized["params"]["capabilities"]["tools"]["listChanged"]
+            .as_bool()
+            .unwrap());
         // Verify camelCase field names
         assert!(serialized["params"]["protocolVersion"].is_string());
         assert!(serialized["params"]["clientInfo"].is_object());
