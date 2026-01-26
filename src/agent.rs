@@ -180,7 +180,7 @@ impl Agent {
         let hook_manager = match HookManager::load() {
             Ok(manager) => manager,
             Err(err) => {
-                warn!("Failed to load Claude hooks: {}", err);
+                warn!("Failed to load Flexorama hooks: {}", err);
                 None
             }
         };

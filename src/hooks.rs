@@ -172,14 +172,14 @@ impl HookManager {
         let mut loaded = false;
 
         if let Some(home_dir) = dirs::home_dir() {
-            let home_claude = home_dir.join(".claude");
-            if manager.load_from_claude_dir(&home_claude, "home")? {
+            let home_flexorama = home_dir.join(".flexorama");
+            if manager.load_from_flexorama_dir(&home_flexorama, "home")? {
                 loaded = true;
             }
         }
 
-        let project_claude = project_root.join(".claude");
-        if manager.load_from_claude_dir(&project_claude, "project")? {
+        let project_flexorama = project_root.join(".flexorama");
+        if manager.load_from_flexorama_dir(&project_flexorama, "project")? {
             loaded = true;
         }
 
@@ -442,19 +442,19 @@ impl HookManager {
         }
     }
 
-    fn load_from_claude_dir(&mut self, claude_dir: &Path, source: &str) -> Result<bool> {
-        if !claude_dir.exists() {
+    fn load_from_flexorama_dir(&mut self, flexorama_dir: &Path, source: &str) -> Result<bool> {
+        if !flexorama_dir.exists() {
             return Ok(false);
         }
 
         let mut loaded = false;
 
         let config_files = [
-            claude_dir.join("hooks.json"),
-            claude_dir.join("hooks.yaml"),
-            claude_dir.join("hooks.yml"),
-            claude_dir.join("hooks.toml"),
-            claude_dir.join("hooks"),
+            flexorama_dir.join("hooks.json"),
+            flexorama_dir.join("hooks.yaml"),
+            flexorama_dir.join("hooks.yml"),
+            flexorama_dir.join("hooks.toml"),
+            flexorama_dir.join("hooks"),
         ];
 
         for config_path in config_files {
@@ -464,7 +464,7 @@ impl HookManager {
             }
         }
 
-        let hooks_dir = claude_dir.join("hooks");
+        let hooks_dir = flexorama_dir.join("hooks");
         if hooks_dir.exists() && hooks_dir.is_dir() {
             self.load_hook_directory(&hooks_dir, source)?;
             loaded = true;

@@ -1,21 +1,21 @@
-# Claude Code Hooks Support
+# Flexorama Hooks Support
 
-Flexorama now supports Claude Code style hooks via `.claude` configuration. Hook definitions can live in either:
+Flexorama now supports Claude Code style hooks via `.flexorama` configuration. Hook definitions can live in either:
 
-- `~/.claude` (global hooks)
-- `<project>/.claude` (project hooks)
+- `~/.flexorama` (global hooks)
+- `<project>/.flexorama` (project hooks)
 
 ## Configuration formats
 
 Flexorama loads hook definitions from the following files if present:
 
-- `.claude/hooks.json`
-- `.claude/hooks.yaml`
-- `.claude/hooks.yml`
-- `.claude/hooks.toml`
-- `.claude/hooks` (extensionless JSON/YAML/TOML)
+- `.flexorama/hooks.json`
+- `.flexorama/hooks.yaml`
+- `.flexorama/hooks.yml`
+- `.flexorama/hooks.toml`
+- `.flexorama/hooks` (extensionless JSON/YAML/TOML)
 
-You can also place executable hook scripts inside `.claude/hooks/`. Each filename (without extension) becomes the event name.
+You can also place executable hook scripts inside `.flexorama/hooks/`. Each filename (without extension) becomes the event name.
 
 Hook config files accept two formats:
 
