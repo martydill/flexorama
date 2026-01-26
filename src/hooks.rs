@@ -645,8 +645,20 @@ impl HookManager {
 
         let payload_string = serde_json::to_string(payload)?;
         let mut child = cmd.spawn().context("Failed to spawn hook command")?;
+
+        // Write to stdin and close it. Ignore broken pipe errors (child may exit quickly).
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(payload_string.as_bytes()).await?;
+            let write_result = stdin.write_all(payload_string.as_bytes()).await;
+            // Explicitly drop stdin to close the pipe
+            drop(stdin);
+
+            // Ignore broken pipe errors - if the child process exits before reading all input,
+            // that's okay (e.g., simple hooks that don't read stdin)
+            if let Err(e) = write_result {
+                if e.kind() != std::io::ErrorKind::BrokenPipe {
+                    return Err(e.into());
+                }
+            }
         }
 
         let output = if let Some(timeout) = command.timeout_ms {
