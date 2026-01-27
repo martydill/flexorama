@@ -28,7 +28,7 @@ pub enum HookEvent {
 }
 
 impl HookEvent {
-    fn primary_name(self) -> &'static str {
+    pub fn primary_name(self) -> &'static str {
         match self {
             HookEvent::UserPromptSubmit => "UserPromptSubmit",
             HookEvent::PreToolUse => "PreToolUse",
@@ -39,84 +39,6 @@ impl HookEvent {
             HookEvent::PreCompact => "PreCompact",
             HookEvent::Notification => "Notification",
             HookEvent::PermissionRequest => "PermissionRequest",
-        }
-    }
-
-    fn aliases(self) -> &'static [&'static str] {
-        match self {
-            HookEvent::UserPromptSubmit => &[
-                // Claude Code official name
-                "UserPromptSubmit",
-                // Flexorama legacy names
-                "pre_message",
-                "before_message",
-                "before_user_message",
-                "user_message",
-                "user-message",
-                "prompt_before",
-                "pre_prompt",
-                "before_prompt",
-            ],
-            HookEvent::PreToolUse => &[
-                // Claude Code official name
-                "PreToolUse",
-                // Flexorama legacy names
-                "pre_tool",
-                "before_tool",
-                "tool_call",
-                "tool-call",
-                "before_tool_call",
-                "tool_before",
-            ],
-            HookEvent::PostToolUse => &[
-                // Claude Code official name
-                "PostToolUse",
-                // Flexorama legacy names
-                "post_tool",
-                "after_tool",
-                "tool_result",
-                "tool-result",
-                "after_tool_call",
-                "tool_after",
-            ],
-            HookEvent::Stop => &[
-                // Claude Code official name
-                "Stop",
-                // Flexorama legacy names
-                "post_message",
-                "after_message",
-                "after_assistant_message",
-                "assistant_message",
-                "assistant-message",
-                "response",
-                "after_response",
-            ],
-            HookEvent::SubagentStop => &[
-                "SubagentStop",
-                "subagent_stop",
-                "after_subagent",
-            ],
-            HookEvent::SessionStart => &[
-                "SessionStart",
-                "session_start",
-                "on_start",
-                "init",
-            ],
-            HookEvent::PreCompact => &[
-                "PreCompact",
-                "pre_compact",
-                "before_compact",
-            ],
-            HookEvent::Notification => &[
-                "Notification",
-                "notification",
-                "on_notification",
-            ],
-            HookEvent::PermissionRequest => &[
-                "PermissionRequest",
-                "permission_request",
-                "on_permission",
-            ],
         }
     }
 
@@ -142,58 +64,24 @@ pub struct HookManager {
     project_root: PathBuf,
 }
 
+/// Claude Code settings.json format - with "hooks" wrapper
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum HookCommandDef {
-    String(String),
-    Detailed {
-        command: String,
-        #[serde(default)]
-        args: Vec<String>,
-        #[serde(default)]
-        env: HashMap<String, String>,
-        #[serde(default)]
-        working_dir: Option<String>,
-        #[serde(default)]
-        timeout_ms: Option<u64>,
-        #[serde(default)]
-        shell: Option<String>,
-        #[serde(default)]
-        continue_on_error: bool,
-    },
+struct ClaudeSettingsWrapper {
+    hooks: HashMap<String, Vec<ClaudeHookEntry>>,
 }
 
+/// Claude Code settings.json format - without wrapper (legacy)
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum HookCommandList {
-    Single(HookCommandDef),
-    Multiple(Vec<HookCommandDef>),
-}
-
-impl HookCommandList {
-    fn into_vec(self) -> Vec<HookCommandDef> {
-        match self {
-            HookCommandList::Single(command) => vec![command],
-            HookCommandList::Multiple(commands) => commands,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-struct HookConfigFile {
-    #[serde(default)]
-    hooks: HashMap<String, HookCommandList>,
-}
-
-/// Claude Code settings.json format
-#[derive(Debug, Clone, Deserialize)]
-struct ClaudeSettings {
+struct ClaudeSettingsFlat {
     #[serde(flatten)]
     hooks: HashMap<String, Vec<ClaudeHookEntry>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct ClaudeHookEntry {
+    /// Optional matcher to filter by tool name (e.g., "Bash", "Read")
+    #[serde(default)]
+    matcher: Option<String>,
     #[serde(default)]
     hooks: Vec<ClaudeHookDef>,
 }
@@ -225,10 +113,11 @@ struct HookCommand {
     env: HashMap<String, String>,
     working_dir: Option<PathBuf>,
     timeout_ms: Option<u64>,
-    shell: Option<String>,
     continue_on_error: bool,
     use_shell: bool,
     source: String,
+    /// Optional matcher to filter by tool name
+    matcher: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -239,6 +128,18 @@ pub struct HookDecision {
     pub updated_arguments: Option<Value>,
 }
 
+/// Information about a configured hook for display
+#[derive(Debug, Clone)]
+pub struct HookInfo {
+    pub event: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub source: String,
+    pub continue_on_error: bool,
+    pub timeout_ms: Option<u64>,
+    pub matcher: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookAction {
     Continue,
@@ -247,7 +148,6 @@ pub enum HookAction {
 
 #[derive(Debug, Deserialize)]
 struct HookResponse {
-    // Claude Code format
     #[serde(default)]
     decision: Option<String>, // "approve" or "block"
     #[serde(default)]
@@ -256,68 +156,27 @@ struct HookResponse {
     continue_: Option<bool>,
     #[serde(default, rename = "stopReason")]
     stop_reason: Option<String>,
-    #[serde(default, rename = "suppressOutput")]
-    suppress_output: Option<bool>,
-
-    // Flexorama legacy format
-    #[serde(default)]
-    action: Option<String>,
-    #[serde(default)]
-    abort: Option<bool>,
-    #[serde(default)]
-    message: Option<String>,
-    #[serde(default)]
-    user_message: Option<String>,
-    #[serde(default)]
-    tool_arguments: Option<Value>,
-    #[serde(default)]
-    arguments: Option<Value>,
 }
 
 impl HookResponse {
     /// Checks if this response indicates abortion/blocking
     fn is_abort(&self) -> bool {
-        // Claude Code format: decision == "block"
+        // decision == "block"
         if self.decision.as_deref() == Some("block") {
             return true;
         }
 
-        // Claude Code format: continue == false
+        // continue == false
         if self.continue_ == Some(false) {
-            return true;
-        }
-
-        // Flexorama format: abort == true
-        if self.abort == Some(true) {
-            return true;
-        }
-
-        // Flexorama format: action == "abort"
-        if self.action.as_deref().map(|a| a.eq_ignore_ascii_case("abort")).unwrap_or(false) {
             return true;
         }
 
         false
     }
 
-    /// Gets the reason/message for abortion or modification
+    /// Gets the reason/message for abortion
     fn get_message(&self) -> Option<String> {
-        self.reason.clone()
-            .or_else(|| self.stop_reason.clone())
-            .or_else(|| self.message.clone())
-            .or_else(|| self.user_message.clone())
-    }
-
-    /// Gets updated message content
-    fn get_updated_message(&self) -> Option<String> {
-        self.user_message.clone()
-            .or_else(|| self.message.clone())
-    }
-
-    /// Gets updated tool arguments
-    fn get_updated_arguments(&self) -> Option<Value> {
-        self.tool_arguments.clone()
-            .or_else(|| self.arguments.clone())
+        self.reason.clone().or_else(|| self.stop_reason.clone())
     }
 }
 
@@ -354,6 +213,55 @@ impl HookManager {
         &self.project_root
     }
 
+    /// Returns an iterator over all configured hooks with their event names
+    pub fn list_hooks(&self) -> Vec<HookInfo> {
+        let mut result = Vec::new();
+        for (event_name, commands) in &self.hooks {
+            for cmd in commands {
+                result.push(HookInfo {
+                    event: event_name.clone(),
+                    command: cmd.command.clone(),
+                    args: cmd.args.clone(),
+                    source: cmd.source.clone(),
+                    continue_on_error: cmd.continue_on_error,
+                    timeout_ms: cmd.timeout_ms,
+                    matcher: cmd.matcher.clone(),
+                });
+            }
+        }
+        result.sort_by(|a, b| a.event.cmp(&b.event));
+        result
+    }
+
+    /// Returns the paths where hooks can be configured
+    pub fn get_config_paths() -> Vec<(String, std::path::PathBuf, bool)> {
+        let mut paths = Vec::new();
+
+        // Global hooks
+        if let Some(home_dir) = dirs::home_dir() {
+            let home_flexorama = home_dir.join(".flexorama");
+            let settings_json = home_flexorama.join("settings.json");
+            paths.push((
+                "Global settings.json".to_string(),
+                settings_json.clone(),
+                settings_json.exists(),
+            ));
+        }
+
+        // Project hooks
+        if let Ok(project_root) = std::env::current_dir() {
+            let project_flexorama = project_root.join(".flexorama");
+            let settings_json = project_flexorama.join("settings.json");
+            paths.push((
+                "Project settings.json".to_string(),
+                settings_json.clone(),
+                settings_json.exists(),
+            ));
+        }
+
+        paths
+    }
+
     pub async fn run_pre_message(
         &self,
         cleaned_message: &str,
@@ -364,11 +272,9 @@ impl HookManager {
     ) -> Result<HookDecision> {
         let session_id = conversation_id.unwrap_or("unknown");
         let payload = serde_json::json!({
-            // Claude Code format
             "session_id": session_id,
             "prompt": original_message,
             "timestamp": Utc::now().to_rfc3339(),
-            // Flexorama extensions
             "event": HookEvent::UserPromptSubmit.primary_name(),
             "project_root": self.project_root.display().to_string(),
             "cwd": std::env::current_dir()?.display().to_string(),
@@ -387,10 +293,8 @@ impl HookManager {
     ) -> Result<HookDecision> {
         let session_id = conversation_id.unwrap_or("unknown");
         let payload = serde_json::json!({
-            // Claude Code format
             "session_id": session_id,
             "timestamp": Utc::now().to_rfc3339(),
-            // Flexorama extensions
             "event": HookEvent::Stop.primary_name(),
             "project_root": self.project_root.display().to_string(),
             "cwd": std::env::current_dir()?.display().to_string(),
@@ -410,19 +314,18 @@ impl HookManager {
     ) -> Result<HookDecision> {
         let session_id = conversation_id.unwrap_or("unknown");
         let payload = serde_json::json!({
-            // Claude Code format
             "session_id": session_id,
             "tool_name": tool_name,
             "tool_input": arguments,
-            "timestamp": Utc::now().to_rfc3339(),
-            // Flexorama extensions
-            "event": HookEvent::PreToolUse.primary_name(),
-            "project_root": self.project_root.display().to_string(),
-            "cwd": std::env::current_dir()?.display().to_string(),
-            "model": model,
             "tool_use_id": tool_use_id,
+            "hook_event_name": HookEvent::PreToolUse.primary_name(),
+            "cwd": std::env::current_dir()?.display().to_string(),
+            "project_root": self.project_root.display().to_string(),
+            "model": model,
+            "timestamp": Utc::now().to_rfc3339(),
         });
-        self.run_event(HookEvent::PreToolUse, payload).await
+        self.run_event_with_matcher(HookEvent::PreToolUse, payload, Some(tool_name))
+            .await
     }
 
     pub async fn run_post_tool(
@@ -437,21 +340,20 @@ impl HookManager {
     ) -> Result<HookDecision> {
         let session_id = conversation_id.unwrap_or("unknown");
         let payload = serde_json::json!({
-            // Claude Code format
             "session_id": session_id,
             "tool_name": tool_name,
             "tool_input": arguments,
-            "tool_output": result,
-            "timestamp": Utc::now().to_rfc3339(),
-            // Flexorama extensions
-            "event": HookEvent::PostToolUse.primary_name(),
-            "project_root": self.project_root.display().to_string(),
-            "cwd": std::env::current_dir()?.display().to_string(),
-            "model": model,
+            "tool_result": result,
             "tool_use_id": tool_use_id,
             "is_error": is_error,
+            "hook_event_name": HookEvent::PostToolUse.primary_name(),
+            "cwd": std::env::current_dir()?.display().to_string(),
+            "project_root": self.project_root.display().to_string(),
+            "model": model,
+            "timestamp": Utc::now().to_rfc3339(),
         });
-        self.run_event(HookEvent::PostToolUse, payload).await
+        self.run_event_with_matcher(HookEvent::PostToolUse, payload, Some(tool_name))
+            .await
     }
 
     /// Run session start hook
@@ -491,6 +393,15 @@ impl HookManager {
     }
 
     async fn run_event(&self, event: HookEvent, payload: Value) -> Result<HookDecision> {
+        self.run_event_with_matcher(event, payload, None).await
+    }
+
+    async fn run_event_with_matcher(
+        &self,
+        event: HookEvent,
+        payload: Value,
+        tool_name: Option<&str>,
+    ) -> Result<HookDecision> {
         let mut decision = HookDecision {
             action: HookAction::Continue,
             message: None,
@@ -498,30 +409,39 @@ impl HookManager {
             updated_arguments: None,
         };
 
-        // Collect unique commands (avoid executing duplicate hooks from aliases)
-        let mut seen_commands = std::collections::HashSet::new();
-        let mut commands = Vec::new();
-
-        for alias in event.aliases() {
-            if let Some(hooks) = self.hooks.get(*alias) {
-                for hook in hooks {
-                    // Create a unique key for this hook to prevent duplicates
-                    let key = format!("{}:{:?}:{}", hook.command, hook.args, hook.source);
-                    if seen_commands.insert(key) {
-                        commands.push(hook.clone());
-                    }
-                }
-            }
-        }
+        let event_name = event.primary_name();
+        let commands = match self.hooks.get(event_name) {
+            Some(cmds) => cmds.clone(),
+            None => return Ok(decision),
+        };
 
         if commands.is_empty() {
+            return Ok(decision);
+        }
+
+        // Filter commands by matcher if tool_name is provided
+        let filtered_commands: Vec<_> = commands
+            .into_iter()
+            .filter(|cmd| {
+                match (&cmd.matcher, tool_name) {
+                    // No matcher means run for all tools
+                    (None, _) => true,
+                    // Matcher specified but no tool name - skip
+                    (Some(_), None) => false,
+                    // Both specified - check if they match (case-insensitive)
+                    (Some(matcher), Some(name)) => matcher.eq_ignore_ascii_case(name),
+                }
+            })
+            .collect();
+
+        if filtered_commands.is_empty() {
             return Ok(decision);
         }
 
         // Overall timeout for all hooks (30 seconds)
         let overall_timeout = std::time::Duration::from_secs(30);
         let run_hooks_future = async {
-            for command in commands {
+            for command in filtered_commands {
                 let output = self.execute_hook_command(&command, event, &payload).await;
                 match output {
                     Ok(response) => {
@@ -532,22 +452,12 @@ impl HookManager {
                                 decision.message = response.get_message();
                                 break;
                             }
-
-                            // Update message if provided
-                            if let Some(message) = response.get_updated_message() {
-                                decision.updated_message = Some(message);
-                            }
-
-                            // Update arguments if provided
-                            if let Some(arguments) = response.get_updated_arguments() {
-                                decision.updated_arguments = Some(arguments);
-                            }
                         }
                     }
                     Err(err) => {
                         if command.continue_on_error {
                             warn!(
-                                "Hook '{}' failed but continue_on_error is set: {}",
+                                "Hook '{}' failed but continueOnError is set: {}",
                                 command.command, err
                             );
                         } else {
@@ -562,7 +472,10 @@ impl HookManager {
         // Apply overall timeout
         match tokio::time::timeout(overall_timeout, run_hooks_future).await {
             Ok(result) => result,
-            Err(_) => Err(anyhow!("Hook execution exceeded overall timeout of {:?}", overall_timeout)),
+            Err(_) => Err(anyhow!(
+                "Hook execution exceeded overall timeout of {:?}",
+                overall_timeout
+            )),
         }
     }
 
@@ -596,14 +509,15 @@ impl HookManager {
         payload: &Value,
     ) -> Result<Option<HookResponse>> {
         let mut cmd = if command.use_shell {
-            let shell = command.shell.clone().unwrap_or_else(|| {
-                Self::detect_shell()
-            });
+            let shell = Self::detect_shell();
             let mut cmd = Command::new(&shell);
 
             // Determine shell arguments based on detected shell
             if shell.contains("pwsh") || shell.contains("powershell") {
-                cmd.args(["-Command", &command.command]);
+                // -NoProfile: Don't load profile scripts (faster startup)
+                // -NonInteractive: Don't prompt for input (prevents "supply values for parameters" prompts)
+                // -Command: Execute the command
+                cmd.args(["-NoProfile", "-NonInteractive", "-Command", &command.command]);
             } else if shell.contains("cmd") {
                 cmd.args(["/C", &command.command]);
             } else {
@@ -631,17 +545,11 @@ impl HookManager {
 
         let event_name = event.primary_name();
         cmd.env("CLAUDE_CODE_HOOK_EVENT", event_name);
-        cmd.env("FLEXORAMA_HOOK_EVENT", event_name);
         cmd.env(
             "CLAUDE_CODE_PROJECT_ROOT",
             self.project_root.display().to_string(),
         );
-        cmd.env(
-            "FLEXORAMA_PROJECT_ROOT",
-            self.project_root.display().to_string(),
-        );
         cmd.env("CLAUDE_CODE_HOOK_SOURCE", &command.source);
-        cmd.env("FLEXORAMA_HOOK_SOURCE", &command.source);
 
         let payload_string = serde_json::to_string(payload)?;
         let mut child = cmd.spawn().context("Failed to spawn hook command")?;
@@ -704,140 +612,38 @@ impl HookManager {
             return Ok(false);
         }
 
-        let mut loaded = false;
-
-        // Try loading Claude Code style settings.json first
+        // Load Claude Code style settings.json
         let settings_json = flexorama_dir.join("settings.json");
         if settings_json.exists() && settings_json.is_file() {
-            if let Ok(()) = self.load_claude_settings_file(&settings_json, source) {
-                loaded = true;
-            }
+            self.load_settings_file(&settings_json, source)?;
+            return Ok(true);
         }
 
-        // Then try Flexorama hook config files
-        let config_files = [
-            flexorama_dir.join("hooks.json"),
-            flexorama_dir.join("hooks.yaml"),
-            flexorama_dir.join("hooks.yml"),
-            flexorama_dir.join("hooks.toml"),
-            flexorama_dir.join("hooks"),
-        ];
-
-        for config_path in config_files {
-            if config_path.exists() && config_path.is_file() {
-                self.load_hook_file(&config_path, source)?;
-                loaded = true;
-            }
-        }
-
-        // Load hook scripts from hooks/ directory
-        let hooks_dir = flexorama_dir.join("hooks");
-        if hooks_dir.exists() && hooks_dir.is_dir() {
-            self.load_hook_directory(&hooks_dir, source)?;
-            loaded = true;
-        }
-
-        Ok(loaded)
-    }
-
-    fn load_hook_directory(&mut self, hooks_dir: &Path, source: &str) -> Result<()> {
-        for entry in fs::read_dir(hooks_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            // Check if file is executable (Unix) or has valid extension (Windows)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let metadata = fs::metadata(&path)?;
-                let permissions = metadata.permissions();
-                if permissions.mode() & 0o111 == 0 {
-                    warn!(
-                        "Skipping non-executable hook file: {} (use chmod +x to make it executable)",
-                        path.display()
-                    );
-                    continue;
-                }
-            }
-
-            #[cfg(windows)]
-            {
-                // On Windows, check for common executable extensions
-                let is_executable = path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|ext| {
-                        matches!(
-                            ext.to_lowercase().as_str(),
-                            "exe" | "bat" | "cmd" | "ps1" | "py" | "rb" | "js" | "sh"
-                        )
-                    })
-                    .unwrap_or(false);
-
-                if !is_executable {
-                    warn!(
-                        "Skipping file with non-executable extension: {} (expected .exe, .bat, .cmd, .ps1, .py, .rb, .js, or .sh)",
-                        path.display()
-                    );
-                    continue;
-                }
-            }
-
-            let file_name = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(name) => name.to_string(),
-                None => continue,
-            };
-
-            let command = HookCommand {
-                command: path.display().to_string(),
-                args: Vec::new(),
-                env: HashMap::new(),
-                working_dir: None,
-                timeout_ms: None,
-                shell: None,
-                continue_on_error: false,
-                use_shell: false,
-                source: source.to_string(),
-            };
-            self.hooks.entry(file_name).or_default().push(command);
-        }
-
-        Ok(())
-    }
-
-    fn load_hook_file(&mut self, path: &Path, source: &str) -> Result<()> {
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read hook config {}", path.display()))?;
-        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-
-        let hook_map = parse_hook_config(&content, extension)
-            .with_context(|| format!("Failed to parse hook config {}", path.display()))?;
-
-        for (event, list) in hook_map {
-            for command in list.into_vec() {
-                let hook_command = self.build_command(command, source)?;
-                self.hooks
-                    .entry(event.clone())
-                    .or_default()
-                    .push(hook_command);
-            }
-        }
-        Ok(())
+        Ok(false)
     }
 
     /// Load Claude Code style settings.json
-    fn load_claude_settings_file(&mut self, path: &Path, source: &str) -> Result<()> {
+    fn load_settings_file(&mut self, path: &Path, source: &str) -> Result<()> {
         let content = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read Claude settings {}", path.display()))?;
+            .with_context(|| format!("Failed to read settings {}", path.display()))?;
 
-        let settings: ClaudeSettings = serde_json::from_str(&content)
-            .with_context(|| format!("Failed to parse Claude settings {}", path.display()))?;
+        // Try parsing with "hooks" wrapper first (standard Claude Code format)
+        let hooks_map = if let Ok(wrapper) = serde_json::from_str::<ClaudeSettingsWrapper>(&content)
+        {
+            wrapper.hooks
+        } else if let Ok(flat) = serde_json::from_str::<ClaudeSettingsFlat>(&content) {
+            // Fall back to flat format (events at root level)
+            flat.hooks
+        } else {
+            return Err(anyhow!(
+                "Failed to parse settings {}: invalid format",
+                path.display()
+            ));
+        };
 
-        for (event_name, entries) in settings.hooks {
+        for (event_name, entries) in hooks_map {
             for entry in entries {
+                let matcher = entry.matcher.clone();
                 for hook_def in entry.hooks {
                     match hook_def {
                         ClaudeHookDef::Command {
@@ -862,10 +668,10 @@ impl HookManager {
                                 env,
                                 working_dir: working_directory.map(PathBuf::from),
                                 timeout_ms,
-                                shell: None,
                                 continue_on_error,
                                 use_shell,
                                 source: source.to_string(),
+                                matcher: matcher.clone(),
                             };
 
                             self.hooks
@@ -880,237 +686,11 @@ impl HookManager {
 
         Ok(())
     }
-
-    fn build_command(&self, command: HookCommandDef, source: &str) -> Result<HookCommand> {
-        match command {
-            HookCommandDef::String(command) => Ok(HookCommand {
-                command,
-                args: Vec::new(),
-                env: HashMap::new(),
-                working_dir: None,
-                timeout_ms: None,
-                shell: None,
-                continue_on_error: false,
-                use_shell: true,
-                source: source.to_string(),
-            }),
-            HookCommandDef::Detailed {
-                command,
-                args,
-                env,
-                working_dir,
-                timeout_ms,
-                shell,
-                continue_on_error,
-            } => {
-                let use_shell = args.is_empty();
-                Ok(HookCommand {
-                    command,
-                    args,
-                    env,
-                    working_dir: working_dir.map(PathBuf::from),
-                    timeout_ms,
-                    shell,
-                    continue_on_error,
-                    use_shell,
-                    source: source.to_string(),
-                })
-            }
-        }
-    }
-}
-
-fn parse_hook_config(content: &str, extension: &str) -> Result<HashMap<String, HookCommandList>> {
-    // Try parsing with "hooks" wrapper key first
-    let parsed: Result<HashMap<String, HookCommandList>> = match extension {
-        "toml" => toml::from_str::<HookConfigFile>(content)
-            .map(|c| c.hooks)
-            .map_err(Into::into),
-        "yaml" | "yml" => serde_yaml::from_str::<HookConfigFile>(content)
-            .map(|c| c.hooks)
-            .map_err(Into::into),
-        "json" => serde_json::from_str::<HookConfigFile>(content)
-            .map(|c| c.hooks)
-            .map_err(Into::into),
-        _ => {
-            if let Ok(config) = toml::from_str::<HookConfigFile>(content) {
-                Ok(config.hooks)
-            } else if let Ok(config) = serde_yaml::from_str::<HookConfigFile>(content) {
-                Ok(config.hooks)
-            } else {
-                serde_json::from_str::<HookConfigFile>(content)
-                    .map(|c| c.hooks)
-                    .map_err(Into::into)
-            }
-        }
-    };
-
-    // If we successfully parsed and got hooks, return them
-    if let Ok(hooks) = parsed {
-        if !hooks.is_empty() {
-            return Ok(hooks);
-        }
-    }
-
-    let fallback: Result<HashMap<String, HookCommandList>> = match extension {
-        "toml" => toml::from_str::<HashMap<String, HookCommandList>>(content).map_err(Into::into),
-        "yaml" | "yml" => {
-            serde_yaml::from_str::<HashMap<String, HookCommandList>>(content).map_err(Into::into)
-        }
-        "json" => {
-            serde_json::from_str::<HashMap<String, HookCommandList>>(content).map_err(Into::into)
-        }
-        _ => {
-            if let Ok(config) = toml::from_str::<HashMap<String, HookCommandList>>(content) {
-                Ok(config)
-            } else if let Ok(config) =
-                serde_yaml::from_str::<HashMap<String, HookCommandList>>(content)
-            {
-                Ok(config)
-            } else {
-                serde_json::from_str::<HashMap<String, HookCommandList>>(content)
-                    .map_err(Into::into)
-            }
-        }
-    };
-
-    fallback.map_err(|err| anyhow!(err))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn run_pre_message_updates_message() {
-        let mut manager = HookManager {
-            hooks: HashMap::new(),
-            project_root: PathBuf::from("."),
-        };
-        manager.hooks.insert(
-            "pre_message".to_string(),
-            vec![HookCommand {
-                command: "printf '{\"user_message\":\"updated\"}'".to_string(),
-                args: Vec::new(),
-                env: HashMap::new(),
-                working_dir: None,
-                timeout_ms: None,
-                shell: None,
-                continue_on_error: false,
-                use_shell: true,
-                source: "test".to_string(),
-            }],
-        );
-
-        let decision = manager
-            .run_pre_message("clean", "orig", &[], None, "model")
-            .await
-            .expect("run hook");
-
-        assert_eq!(decision.action, HookAction::Continue);
-        assert_eq!(decision.updated_message.as_deref(), Some("updated"));
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn run_pre_tool_aborts_on_action() {
-        let mut manager = HookManager {
-            hooks: HashMap::new(),
-            project_root: PathBuf::from("."),
-        };
-        manager.hooks.insert(
-            "pre_tool".to_string(),
-            vec![HookCommand {
-                command: "printf '{\"action\":\"abort\",\"message\":\"nope\"}'".to_string(),
-                args: Vec::new(),
-                env: HashMap::new(),
-                working_dir: None,
-                timeout_ms: None,
-                shell: None,
-                continue_on_error: false,
-                use_shell: true,
-                source: "test".to_string(),
-            }],
-        );
-
-        let decision = manager
-            .run_pre_tool(
-                "tool-1",
-                "write_file",
-                &serde_json::json!({}),
-                None,
-                "model",
-            )
-            .await
-            .expect("run hook");
-
-        assert_eq!(decision.action, HookAction::Abort);
-        assert_eq!(decision.message.as_deref(), Some("nope"));
-    }
-
-    #[test]
-    fn parse_hook_config_with_hooks_key() {
-        let content = r#"
-        {
-          "hooks": {
-            "pre_tool": [
-              "echo hi",
-              {"command": "echo", "args": ["ok"], "continue_on_error": true}
-            ]
-          }
-        }
-        "#;
-        let hooks = parse_hook_config(content, "json").expect("parse hooks");
-        let commands = hooks.get("pre_tool").expect("pre_tool hook");
-        assert_eq!(commands.clone().into_vec().len(), 2);
-    }
-
-    #[test]
-    fn parse_hook_config_without_hooks_key() {
-        let content = r#"
-        pre_message:
-          - echo hi
-          - command: echo
-            args: ["ok"]
-        "#;
-        let hooks = parse_hook_config(content, "yaml").expect("parse hooks");
-        assert!(hooks.contains_key("pre_message"));
-        let commands = hooks.get("pre_message").expect("pre_message hook");
-        assert_eq!(commands.clone().into_vec().len(), 2);
-    }
-
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn claude_code_event_names_work() {
-        let mut manager = HookManager {
-            hooks: HashMap::new(),
-            project_root: PathBuf::from("."),
-        };
-        // Use Claude Code event name
-        manager.hooks.insert(
-            "UserPromptSubmit".to_string(),
-            vec![HookCommand {
-                command: "printf '{\"user_message\":\"modified\"}'".to_string(),
-                args: Vec::new(),
-                env: HashMap::new(),
-                working_dir: None,
-                timeout_ms: None,
-                shell: None,
-                continue_on_error: false,
-                use_shell: true,
-                source: "test".to_string(),
-            }],
-        );
-
-        let decision = manager
-            .run_pre_message("clean", "orig", &[], None, "model")
-            .await
-            .expect("run hook");
-
-        assert_eq!(decision.action, HookAction::Continue);
-        assert_eq!(decision.updated_message.as_deref(), Some("modified"));
-    }
 
     #[cfg(not(windows))]
     #[tokio::test]
@@ -1127,15 +707,15 @@ mod tests {
                 env: HashMap::new(),
                 working_dir: None,
                 timeout_ms: None,
-                shell: None,
                 continue_on_error: false,
                 use_shell: true,
                 source: "test".to_string(),
+                matcher: None,
             }],
         );
 
         let decision = manager
-            .run_pre_tool("tool-1", "bash", &serde_json::json!({}), None, "model")
+            .run_pre_tool("tool-1", "Bash", &serde_json::json!({}), None, "model")
             .await
             .expect("run hook");
 
@@ -1158,10 +738,10 @@ mod tests {
                 env: HashMap::new(),
                 working_dir: None,
                 timeout_ms: None,
-                shell: None,
                 continue_on_error: false,
                 use_shell: true,
                 source: "test".to_string(),
+                matcher: None,
             }],
         );
 
@@ -1174,42 +754,35 @@ mod tests {
         assert_eq!(decision.message.as_deref(), Some("Not done yet"));
     }
 
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn hook_alias_deduplication() {
-        let mut manager = HookManager {
-            hooks: HashMap::new(),
-            project_root: PathBuf::from("."),
-        };
+    #[test]
+    fn parse_claude_settings_with_hooks_wrapper() {
+        let content = r#"
+        {
+          "hooks": {
+            "PreToolUse": [
+              {
+                "matcher": "Bash",
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "echo test"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        "#;
 
-        let hook_cmd = HookCommand {
-            command: "printf '{\"user_message\":\"test\"}'".to_string(),
-            args: Vec::new(),
-            env: HashMap::new(),
-            working_dir: None,
-            timeout_ms: None,
-            shell: None,
-            continue_on_error: false,
-            use_shell: true,
-            source: "test".to_string(),
-        };
-
-        // Add same hook under both primary name and alias
-        manager.hooks.insert("UserPromptSubmit".to_string(), vec![hook_cmd.clone()]);
-        manager.hooks.insert("pre_message".to_string(), vec![hook_cmd.clone()]);
-
-        let decision = manager
-            .run_pre_message("clean", "orig", &[], None, "model")
-            .await
-            .expect("run hook");
-
-        // Should only execute once due to deduplication
-        assert_eq!(decision.action, HookAction::Continue);
-        assert_eq!(decision.updated_message.as_deref(), Some("test"));
+        let settings: ClaudeSettingsWrapper =
+            serde_json::from_str(content).expect("parse settings with wrapper");
+        assert!(settings.hooks.contains_key("PreToolUse"));
+        let entries = settings.hooks.get("PreToolUse").unwrap();
+        assert_eq!(entries[0].matcher, Some("Bash".to_string()));
     }
 
     #[test]
-    fn parse_claude_settings_format() {
+    fn parse_claude_settings_flat_format() {
         let content = r#"
         {
           "UserPromptSubmit": [
@@ -1238,7 +811,8 @@ mod tests {
         }
         "#;
 
-        let settings: ClaudeSettings = serde_json::from_str(content).expect("parse settings");
+        let settings: ClaudeSettingsFlat =
+            serde_json::from_str(content).expect("parse flat settings");
         assert!(settings.hooks.contains_key("UserPromptSubmit"));
         assert!(settings.hooks.contains_key("PreToolUse"));
     }
@@ -1272,21 +846,23 @@ mod tests {
             project_root: PathBuf::from("."),
         };
         manager.hooks.insert(
-            "pre_message".to_string(),
+            "UserPromptSubmit".to_string(),
             vec![HookCommand {
                 command: "sleep 2".to_string(),
                 args: Vec::new(),
                 env: HashMap::new(),
                 working_dir: None,
                 timeout_ms: Some(100), // 100ms timeout
-                shell: None,
                 continue_on_error: false,
                 use_shell: true,
                 source: "test".to_string(),
+                matcher: None,
             }],
         );
 
-        let result = manager.run_pre_message("clean", "orig", &[], None, "model").await;
+        let result = manager
+            .run_pre_message("clean", "orig", &[], None, "model")
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("timed out"));
     }
@@ -1299,7 +875,7 @@ mod tests {
             project_root: PathBuf::from("."),
         };
         manager.hooks.insert(
-            "pre_message".to_string(),
+            "UserPromptSubmit".to_string(),
             vec![
                 HookCommand {
                     command: "exit 1".to_string(),
@@ -1307,21 +883,21 @@ mod tests {
                     env: HashMap::new(),
                     working_dir: None,
                     timeout_ms: None,
-                    shell: None,
                     continue_on_error: true, // Allow failure
                     use_shell: true,
                     source: "test".to_string(),
+                    matcher: None,
                 },
                 HookCommand {
-                    command: "printf '{\"user_message\":\"still ran\"}'".to_string(),
+                    command: "printf '{\"decision\":\"approve\"}'".to_string(),
                     args: Vec::new(),
                     env: HashMap::new(),
                     working_dir: None,
                     timeout_ms: None,
-                    shell: None,
                     continue_on_error: false,
                     use_shell: true,
                     source: "test".to_string(),
+                    matcher: None,
                 },
             ],
         );
@@ -1331,7 +907,65 @@ mod tests {
             .await
             .expect("should succeed despite first hook failing");
 
-        assert_eq!(decision.updated_message.as_deref(), Some("still ran"));
+        assert_eq!(decision.action, HookAction::Continue);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn matcher_filters_hooks_by_tool_name() {
+        let mut manager = HookManager {
+            hooks: HashMap::new(),
+            project_root: PathBuf::from("."),
+        };
+        manager.hooks.insert(
+            "PreToolUse".to_string(),
+            vec![
+                HookCommand {
+                    command: "printf '{\"decision\":\"block\",\"reason\":\"Bash blocked\"}'".to_string(),
+                    args: Vec::new(),
+                    env: HashMap::new(),
+                    working_dir: None,
+                    timeout_ms: None,
+                    continue_on_error: false,
+                    use_shell: true,
+                    source: "test".to_string(),
+                    matcher: Some("Bash".to_string()),
+                },
+                HookCommand {
+                    command: "printf '{\"decision\":\"approve\"}'".to_string(),
+                    args: Vec::new(),
+                    env: HashMap::new(),
+                    working_dir: None,
+                    timeout_ms: None,
+                    continue_on_error: false,
+                    use_shell: true,
+                    source: "test".to_string(),
+                    matcher: Some("Read".to_string()),
+                },
+            ],
+        );
+
+        // Bash tool should be blocked
+        let decision = manager
+            .run_pre_tool("tool-1", "Bash", &serde_json::json!({}), None, "model")
+            .await
+            .expect("run hook");
+        assert_eq!(decision.action, HookAction::Abort);
+        assert_eq!(decision.message.as_deref(), Some("Bash blocked"));
+
+        // Read tool should pass (different matcher)
+        let decision = manager
+            .run_pre_tool("tool-2", "Read", &serde_json::json!({}), None, "model")
+            .await
+            .expect("run hook");
+        assert_eq!(decision.action, HookAction::Continue);
+
+        // Write tool should have no hooks (no matcher matches)
+        let decision = manager
+            .run_pre_tool("tool-3", "Write", &serde_json::json!({}), None, "model")
+            .await
+            .expect("run hook");
+        assert_eq!(decision.action, HookAction::Continue);
     }
 
     #[test]

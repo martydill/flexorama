@@ -240,7 +240,7 @@ pub fn create_bash_tool(
     yolo_mode: bool,
 ) -> Tool {
     Tool {
-        name: "bash".to_string(),
+        name: "Bash".to_string(),
         description: if yolo_mode {
             "Execute shell commands and return the output (YOLO MODE - no security checks)"
                 .to_string()
@@ -286,7 +286,7 @@ mod tests {
     fn make_call(command: serde_json::Value) -> ToolCall {
         ToolCall {
             id: "test-id".to_string(),
-            name: "bash".to_string(),
+            name: "Bash".to_string(),
             arguments: command,
         }
     }

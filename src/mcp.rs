@@ -3292,7 +3292,7 @@ mod tests {
             jsonrpc: "2.0".to_string(),
             id: Some("3".to_string()),
             method: McpMethod::CallTool {
-                name: "write_file".to_string(),
+                name: "Write".to_string(),
                 arguments: Some(arguments.clone()),
             },
         };
@@ -3301,7 +3301,7 @@ mod tests {
         assert_eq!(serialized["jsonrpc"], "2.0");
         assert_eq!(serialized["id"], "3");
         assert_eq!(serialized["method"], "tools/call");
-        assert_eq!(serialized["params"]["name"], "write_file");
+        assert_eq!(serialized["params"]["name"], "Write");
         assert_eq!(serialized["params"]["arguments"]["path"], "/test/path");
     }
 
@@ -3466,7 +3466,7 @@ mod tests {
     #[test]
     fn test_mcp_tool_deserialization_camel_case() {
         let json_str = r#"{
-            "name": "read_file",
+            "name": "Read",
             "description": "Read a file",
             "inputSchema": {
                 "type": "object",
@@ -3481,7 +3481,7 @@ mod tests {
         }"#;
 
         let tool: McpTool = serde_json::from_str(json_str).unwrap();
-        assert_eq!(tool.name, "read_file");
+        assert_eq!(tool.name, "Read");
         assert_eq!(tool.description.unwrap(), "Read a file");
         assert!(tool.input_schema.is_object());
     }
@@ -3489,7 +3489,7 @@ mod tests {
     #[test]
     fn test_mcp_tool_deserialization_snake_case() {
         let json_str = r#"{
-            "name": "write_file",
+            "name": "Write",
             "description": "Write a file",
             "input_schema": {
                 "type": "object",
@@ -3505,7 +3505,7 @@ mod tests {
         }"#;
 
         let tool: McpTool = serde_json::from_str(json_str).unwrap();
-        assert_eq!(tool.name, "write_file");
+        assert_eq!(tool.name, "Write");
         assert_eq!(tool.description.unwrap(), "Write a file");
         assert!(tool.input_schema.is_object());
     }

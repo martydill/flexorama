@@ -94,9 +94,9 @@ pub async fn check_file_security(
 /// Convert operation name to a display-friendly format
 fn get_operation_display_name(operation_name: &str) -> &str {
     match operation_name {
-        "write_file" => "write",
+        "Write" => "write",
         "delete_file" => "delete",
-        "edit_file" => "edit",
+        "Edit" => "edit",
         "create_directory" => "create",
         _ => operation_name,
     }

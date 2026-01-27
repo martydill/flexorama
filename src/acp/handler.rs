@@ -727,10 +727,10 @@ impl FlexoramaAcpHandler {
             .to_str()
             .ok_or_else(|| AcpError::InvalidPath(resolved_path.display().to_string()))?;
 
-        // Use edit_file tool
+        // Use Edit tool
         let call = crate::tools::ToolCall {
             id: "acp-edit".to_string(),
-            name: "edit_file".to_string(),
+            name: "Edit".to_string(),
             arguments: json!({
                 "file_path": path_str,
                 "old_string": old_string,

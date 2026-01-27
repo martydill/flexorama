@@ -24,7 +24,7 @@ pub async fn write_file(
         Err(error) => {
             return Ok(ToolResult {
                 tool_use_id,
-                content: format!("Invalid path for write_file: {}", error),
+                content: format!("Invalid path for Write: {}", error),
                 is_error: true,
             });
         }
@@ -32,7 +32,7 @@ pub async fn write_file(
 
     // Check file security permissions
     if let Some(result) = check_file_security(
-        "write_file",
+        "Write",
         &absolute_path,
         tool_use_id.clone(),
         file_security_manager,
@@ -86,7 +86,7 @@ pub fn create_write_file_tool(
     yolo_mode: bool,
 ) -> Tool {
     Tool {
-        name: "write_file".to_string(),
+        name: "Write".to_string(),
         description: if yolo_mode {
             "Write content to a file (YOLO MODE - no security checks)".to_string()
         } else {

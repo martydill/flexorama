@@ -7,17 +7,17 @@ mod tests {
     #[test]
     fn test_tool_registry() {
         let registry = ToolRegistry::with_builtin_tools();
-        
+
         // Test that built-in tools are registered
-        assert!(registry.has_tool("read_file"));
-        assert!(registry.has_tool("write_file"));
-        assert!(registry.has_tool("bash"));
-        
+        assert!(registry.has_tool("Read"));
+        assert!(registry.has_tool("Write"));
+        assert!(registry.has_tool("Bash"));
+
         // Test getting metadata
-        let metadata = registry.get_metadata("read_file").unwrap();
-        assert_eq!(metadata.name, "read_file");
+        let metadata = registry.get_metadata("Read").unwrap();
+        assert_eq!(metadata.name, "Read");
         assert_eq!(metadata.icon, "📖");
-        
+
         // Test default metadata for unknown tool
         let default_metadata = ToolRegistry::get_default_metadata("unknown_tool");
         assert_eq!(default_metadata.name, "unknown_tool");
@@ -27,22 +27,22 @@ mod tests {
     #[test]
     fn test_display_factory() {
         let registry = ToolRegistry::with_builtin_tools();
-        
+
         // Test creating displays
         let display = DisplayFactory::create_display(
-            "read_file",
+            "Read",
             &json!({"path": "/test/file.txt"}),
             &registry,
         );
-        
+
         // Test creating display with specific mode
         let json_display = DisplayFactory::create_display_with_mode(
-            "read_file",
+            "Read",
             &json!({"path": "/test/file.txt"}),
             &registry,
             OutputMode::Json,
         );
-        
+
         // Just ensure they don't panic
         drop(display);
         drop(json_display);

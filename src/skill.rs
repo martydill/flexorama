@@ -584,10 +584,10 @@ mod tests {
 name: test-skill
 description: A test skill
 allowed_tools:
-  - read_file
-  - write_file
+  - Read
+  - Write
 denied_tools:
-  - bash
+  - Bash
 model: claude-3-sonnet
 temperature: 0.7
 max_tokens: 2048
@@ -607,9 +607,9 @@ It can include multiple paragraphs and markdown formatting.
 
         assert_eq!(skill.name, "test-skill");
         assert_eq!(skill.description, "A test skill");
-        assert!(skill.allowed_tools.contains("read_file"));
-        assert!(skill.allowed_tools.contains("write_file"));
-        assert!(skill.denied_tools.contains("bash"));
+        assert!(skill.allowed_tools.contains("Read"));
+        assert!(skill.allowed_tools.contains("Write"));
+        assert!(skill.denied_tools.contains("Bash"));
         assert_eq!(skill.model, Some("claude-3-sonnet".to_string()));
         assert_eq!(skill.temperature, Some(0.7));
         assert_eq!(skill.max_tokens, Some(2048));
@@ -695,7 +695,7 @@ More content after dashes.
     #[test]
     fn test_skill_to_markdown() {
         let mut skill = create_test_skill("test");
-        skill.allowed_tools.insert("read_file".to_string());
+        skill.allowed_tools.insert("Read".to_string());
         skill.model = Some("claude-3-sonnet".to_string());
         skill.temperature = Some(0.5);
         skill.tags = vec!["test".to_string()];
@@ -705,7 +705,7 @@ More content after dashes.
         assert!(markdown.contains("---"));
         assert!(markdown.contains("name: test"));
         assert!(markdown.contains("description: Test skill"));
-        assert!(markdown.contains("read_file"));
+        assert!(markdown.contains("Read"));
         assert!(markdown.contains("claude-3-sonnet"));
         assert!(markdown.contains("This is test content"));
     }
@@ -1109,7 +1109,7 @@ Also check @references/api.md
             description: "Test description".to_string(),
             allowed_tools: {
                 let mut set = HashSet::new();
-                set.insert("read_file".to_string());
+                set.insert("Read".to_string());
                 set
             },
             denied_tools: HashSet::new(),
@@ -1124,7 +1124,7 @@ Also check @references/api.md
         let yaml = serde_yaml::to_string(&frontmatter).unwrap();
         assert!(yaml.contains("name: test"));
         assert!(yaml.contains("description: Test description"));
-        assert!(yaml.contains("read_file"));
+        assert!(yaml.contains("Read"));
 
         let deserialized: SkillFrontmatter = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(deserialized.name, "test");

@@ -167,11 +167,11 @@ mod tests {
         });
 
         let mcp_tool =
-            create_test_mcp_tool("read_file", Some("Read a file".to_string()), schema.clone());
+            create_test_mcp_tool("Read", Some("Read a file".to_string()), schema.clone());
 
         let tool = create_mcp_tool("test_server", mcp_tool, mcp_manager);
 
-        assert_eq!(tool.name, "mcp_test_server_read_file");
+        assert_eq!(tool.name, "mcp_test_server_Read");
         assert!(tool.description.contains("Read a file"));
         assert!(tool.description.contains("(MCP: test_server)"));
         assert_eq!(tool.input_schema, schema);

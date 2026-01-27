@@ -31,7 +31,7 @@ pub async fn edit_file(
     let new_text = extract_string_arg!(call, "new_text");
 
     debug!(
-        "TOOL CALL: edit_file('{}', {} -> {} bytes)",
+        "TOOL CALL: Edit('{}', {} -> {} bytes)",
         path,
         old_text.len(),
         new_text.len()
@@ -44,7 +44,7 @@ pub async fn edit_file(
         Err(error) => {
             return Ok(ToolResult {
                 tool_use_id,
-                content: format!("Invalid path for edit_file: {}", error),
+                content: format!("Invalid path for Edit: {}", error),
                 is_error: true,
             });
         }
@@ -52,7 +52,7 @@ pub async fn edit_file(
 
     // Check file security permissions
     if let Some(result) = check_file_security(
-        "edit_file",
+        "Edit",
         &absolute_path,
         tool_use_id.clone(),
         file_security_manager,
@@ -128,7 +128,7 @@ pub fn create_edit_file_tool(
     yolo_mode: bool,
 ) -> Tool {
     Tool {
-        name: "edit_file".to_string(),
+        name: "Edit".to_string(),
         description: if yolo_mode {
             "Edit a file (YOLO MODE - no security checks)".to_string()
         } else {
@@ -208,8 +208,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_file_replaces_with_windows_line_endings() {
-        let (_temp_dir, path) = temp_file_path("edit_file_windows");
+    async fn Edit_replaces_with_windows_line_endings() {
+        let (_temp_dir, path) = temp_file_path("Edit_windows");
         let original = "first\r\nsecond\r\nthird\r\n";
         tokio::fs::write(&path, original)
             .await
@@ -217,7 +217,7 @@ mod tests {
 
         let call = ToolCall {
             id: "test_edit".to_string(),
-            name: "edit_file".to_string(),
+            name: "Edit".to_string(),
             arguments: json!({
                 "path": path.to_string_lossy(),
                 "old_text": "second\nthird",
@@ -241,15 +241,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_file_reports_text_not_found() {
-        let (_temp_dir, path) = temp_file_path("edit_file_missing");
+    async fn Edit_reports_text_not_found() {
+        let (_temp_dir, path) = temp_file_path("Edit_missing");
         tokio::fs::write(&path, "alpha\r\nbeta\r\n")
             .await
             .expect("write temp file");
 
         let call = ToolCall {
             id: "test_missing".to_string(),
-            name: "edit_file".to_string(),
+            name: "Edit".to_string(),
             arguments: json!({
                 "path": path.to_string_lossy(),
                 "old_text": "missing",

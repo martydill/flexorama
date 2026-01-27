@@ -462,8 +462,8 @@ mod tests {
     fn test_from_markdown_parses_yaml_frontmatter() {
         let input = r#"---
 allowed-tools:
-  - read_file
-  - write_file
+  - Read
+  - Write
 argument-hint: [path]
 description: Read and write
 model: test-model
@@ -477,7 +477,7 @@ Do something with $1"#;
         assert_eq!(cmd.model.as_deref(), Some("test-model"));
         assert_eq!(
             cmd.allowed_tools,
-            vec!["read_file".to_string(), "write_file".to_string()]
+            vec!["Read".to_string(), "Write".to_string()]
         );
         assert_eq!(cmd.content, "Do something with $1");
     }

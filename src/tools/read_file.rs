@@ -59,7 +59,7 @@ pub fn read_file_sync(
 
 pub fn create_read_file_tool() -> Tool {
     Tool {
-        name: "read_file".to_string(),
+        name: "Read".to_string(),
         description: "Read the contents of a file".to_string(),
         input_schema: json!({
             "type": "object",

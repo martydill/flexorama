@@ -36,11 +36,11 @@ impl Tool {
     fn recreate_handler(&self) -> AsyncToolHandler {
         match self.name.as_str() {
             "list_directory" => Box::new(crate::tools::list_directory::list_directory_sync),
-            "read_file" => Box::new(crate::tools::read_file::read_file_sync),
+            "Read" => Box::new(crate::tools::read_file::read_file_sync),
             "search_in_files" => Box::new(crate::tools::search_in_files::search_in_files_sync),
             "glob" => Box::new(crate::tools::glob::glob_files_sync),
-            "write_file" => Box::new(crate::tools::write_file::write_file_sync),
-            "edit_file" => Box::new(crate::tools::edit_file::edit_file_sync),
+            "Write" => Box::new(crate::tools::write_file::write_file_sync),
+            "Edit" => Box::new(crate::tools::edit_file::edit_file_sync),
             "delete_file" => Box::new(crate::tools::delete_file::delete_file_sync),
             "create_directory" => Box::new(crate::tools::create_directory::create_directory_sync),
             "create_todo" | "complete_todo" | "list_todos" => {
@@ -55,13 +55,13 @@ impl Tool {
                     })
                 })
             }
-            "bash" => {
-                // For bash tool, we need to create a handler that will be updated later
+            "Bash" => {
+                // For Bash tool, we need to create a handler that will be updated later
                 // with the security manager. This is a limitation of the current architecture.
                 Box::new(|_call| {
                     Box::pin(async move {
                         // This should be handled by the Agent's tool execution logic
-                        // The Agent has special handling for bash commands with security
+                        // The Agent has special handling for Bash commands with security
                         Err(anyhow::anyhow!("Bash tool should be handled by Agent with security manager. Tool recreation failed."))
                     })
                 })

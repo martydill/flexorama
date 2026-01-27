@@ -86,7 +86,7 @@ pub fn get_builtin_tools() -> Vec<Tool> {
             metadata: None,
         },
         Tool {
-            name: "write_file".to_string(),
+            name: "Write".to_string(),
             description: "Write content to a file (creates file if it doesn't exist)".to_string(),
             input_schema: json!({
                 "type": "object",
@@ -106,7 +106,7 @@ pub fn get_builtin_tools() -> Vec<Tool> {
             metadata: None, // TODO: Add proper metadata
         },
         Tool {
-            name: "edit_file".to_string(),
+            name: "Edit".to_string(),
             description: "Replace specific text in a file with new text".to_string(),
             input_schema: json!({
                 "type": "object",
@@ -161,10 +161,10 @@ pub fn get_builtin_tools() -> Vec<Tool> {
             handler: Box::new(create_directory_sync),
             metadata: None, // TODO: Add proper metadata
         },
-        // Note: The bash tool is handled specially by the Agent with security
+        // Note: The Bash tool is handled specially by the Agent with security
         // We include a placeholder here that will be properly handled by the Agent
         Tool {
-            name: "bash".to_string(),
+            name: "Bash".to_string(),
             description: "Execute shell commands and return the output (with security)".to_string(),
             input_schema: json!({
                 "type": "object",

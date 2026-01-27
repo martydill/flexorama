@@ -548,21 +548,21 @@ impl Agent {
             create_edit_file_tool, create_write_file_tool,
         };
 
-        // Add bash tool
-        if !check_exists || !tools.contains_key("bash") {
+        // Add Bash tool
+        if !check_exists || !tools.contains_key("Bash") {
             let bash_tool = create_bash_tool(bash_security_manager, yolo_mode);
-            tools.insert("bash".to_string(), bash_tool);
+            tools.insert("Bash".to_string(), bash_tool);
         }
 
         // Add file operation tools
-        if !check_exists || !tools.contains_key("write_file") {
+        if !check_exists || !tools.contains_key("Write") {
             let write_file_tool = create_write_file_tool(file_security_manager.clone(), yolo_mode);
-            tools.insert("write_file".to_string(), write_file_tool);
+            tools.insert("Write".to_string(), write_file_tool);
         }
 
-        if !check_exists || !tools.contains_key("edit_file") {
+        if !check_exists || !tools.contains_key("Edit") {
             let edit_file_tool = create_edit_file_tool(file_security_manager.clone(), yolo_mode);
-            tools.insert("edit_file".to_string(), edit_file_tool);
+            tools.insert("Edit".to_string(), edit_file_tool);
         }
 
         if !check_exists || !tools.contains_key("delete_file") {
@@ -1697,8 +1697,8 @@ impl Agent {
                     is_error: true,
                 })
             }
-        } else if call.name == "bash" {
-            // Handle bash tool with security
+        } else if call.name == "Bash" {
+            // Handle Bash tool with security
             let security_manager = self.bash_security_manager.clone();
             let call_clone = call.clone();
 
@@ -1707,8 +1707,8 @@ impl Agent {
             let result = bash(&call_clone, &mut *manager, self.yolo_mode).await;
             drop(manager); // Explicitly drop the lock guard
             result
-        } else if call.name == "write_file" {
-            // Handle write_file tool with security
+        } else if call.name == "Write" {
+            // Handle Write tool with security
             let file_security_manager = self.file_security_manager.clone();
             let call_clone = call.clone();
 
@@ -1716,8 +1716,8 @@ impl Agent {
             let result = write_file(&call_clone, &mut *manager, self.yolo_mode).await;
             drop(manager); // Explicitly drop the lock guard
             result
-        } else if call.name == "edit_file" {
-            // Handle edit_file tool with security
+        } else if call.name == "Edit" {
+            // Handle Edit tool with security
             let file_security_manager = self.file_security_manager.clone();
             let call_clone = call.clone();
 
@@ -1821,12 +1821,12 @@ mod tests {
         let agent_with_bash =
             Agent::new_with_plan_mode(config.clone(), "test-model".to_string(), false, false).await;
         let tools_with_bash = agent_with_bash.tools.read().await;
-        assert!(tools_with_bash.contains_key("bash"));
+        assert!(tools_with_bash.contains_key("Bash"));
 
         let agent_without_bash =
             Agent::new_with_plan_mode(config, "test-model".to_string(), false, true).await;
         let tools_without_bash = agent_without_bash.tools.read().await;
-        assert!(!tools_without_bash.contains_key("bash"));
+        assert!(!tools_without_bash.contains_key("Bash"));
     }
 
     #[test]
@@ -2192,7 +2192,7 @@ mod tests {
             Agent::new_with_plan_mode(config, "test-model".to_string(), false, false).await;
 
         let tools_before = agent.tools.read().await;
-        let has_bash_before = tools_before.contains_key("bash");
+        let has_bash_before = tools_before.contains_key("Bash");
         drop(tools_before);
 
         assert!(has_bash_before);
@@ -2200,7 +2200,7 @@ mod tests {
         agent.set_plan_mode(true).await.unwrap();
 
         let tools_after = agent.tools.read().await;
-        let has_bash_after = tools_after.contains_key("bash");
+        let has_bash_after = tools_after.contains_key("Bash");
         drop(tools_after);
 
         assert!(!has_bash_after);
@@ -2214,7 +2214,7 @@ mod tests {
             Agent::new_with_plan_mode(config, "test-model".to_string(), false, true).await;
 
         let tools_before = agent.tools.read().await;
-        let has_bash_before = tools_before.contains_key("bash");
+        let has_bash_before = tools_before.contains_key("Bash");
         drop(tools_before);
 
         assert!(!has_bash_before);
@@ -2222,7 +2222,7 @@ mod tests {
         agent.set_plan_mode(false).await.unwrap();
 
         let tools_after = agent.tools.read().await;
-        let has_bash_after = tools_after.contains_key("bash");
+        let has_bash_after = tools_after.contains_key("Bash");
         drop(tools_after);
 
         assert!(has_bash_after);
@@ -2261,7 +2261,7 @@ mod tests {
             .collect();
 
         let mut denied = HashSet::new();
-        denied.insert("read_file".to_string());
+        denied.insert("Read".to_string());
 
         let subagent_config = subagent::SubagentConfig {
             name: "test-subagent".to_string(),
@@ -2277,7 +2277,7 @@ mod tests {
 
         agent.filter_tools_for_subagent(&mut tools, &subagent_config);
 
-        assert!(!tools.contains_key("read_file"));
+        assert!(!tools.contains_key("Read"));
     }
 
     #[tokio::test]
@@ -2292,7 +2292,7 @@ mod tests {
             .collect();
 
         let mut allowed = HashSet::new();
-        allowed.insert("read_file".to_string());
+        allowed.insert("Read".to_string());
         allowed.insert("list_directory".to_string());
 
         let subagent_config = subagent::SubagentConfig {
@@ -2310,7 +2310,7 @@ mod tests {
         agent.filter_tools_for_subagent(&mut tools, &subagent_config);
 
         assert_eq!(tools.len(), 2);
-        assert!(tools.contains_key("read_file"));
+        assert!(tools.contains_key("Read"));
         assert!(tools.contains_key("list_directory"));
     }
 
@@ -2494,7 +2494,7 @@ mod tests {
         let event = StreamToolEvent {
             event: "tool_call".to_string(),
             tool_use_id: "id-1".to_string(),
-            name: "read_file".to_string(),
+            name: "Read".to_string(),
             input: Some(json!({"file_path": "test.txt"})),
             content: None,
             is_error: None,
@@ -2502,7 +2502,7 @@ mod tests {
 
         let serialized = serde_json::to_string(&event).unwrap();
         assert!(serialized.contains("tool_call"));
-        assert!(serialized.contains("read_file"));
+        assert!(serialized.contains("Read"));
     }
 
     #[tokio::test]

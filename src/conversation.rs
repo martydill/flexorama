@@ -883,7 +883,7 @@ mod tests {
 
         let tool_calls = vec![ToolCallRecord {
             id: "tool1".to_string(),
-            tool_name: "read_file".to_string(),
+            tool_name: "Read".to_string(),
             tool_arguments: r#"{"path": "test.txt"}"#.to_string(),
             result_content: Some("File content".to_string()),
             is_error: false,
@@ -913,7 +913,7 @@ mod tests {
         );
         assert_eq!(
             manager.conversation[1].content[0].name,
-            Some("read_file".to_string())
+            Some("Read".to_string())
         );
 
         // Check tool_result block

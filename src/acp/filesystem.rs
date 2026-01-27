@@ -78,10 +78,10 @@ impl FileSystemHandler {
         // Validate path is within workspace
         self.validate_path(&resolved_path)?;
 
-        // Use read_file tool
+        // Use Read tool
         let call = ToolCall {
             id: "acp-read".to_string(),
-            name: "read_file".to_string(),
+            name: "Read".to_string(),
             arguments: json!({
                 "file_path": resolved_path.to_str().ok_or_else(|| {
                     AcpError::InvalidPath(resolved_path.display().to_string())
@@ -106,10 +106,10 @@ impl FileSystemHandler {
         // Validate path is within workspace
         self.validate_path(&resolved_path)?;
 
-        // Use write_file tool with security manager
+        // Use Write tool with security manager
         let call = ToolCall {
             id: "acp-write".to_string(),
-            name: "write_file".to_string(),
+            name: "Write".to_string(),
             arguments: json!({
                 "file_path": resolved_path.to_str().ok_or_else(|| {
                     AcpError::InvalidPath(resolved_path.display().to_string())

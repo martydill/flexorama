@@ -33,12 +33,12 @@ fn new_file_security_manager() -> FileSecurityManager {
 }
 
 #[tokio::test]
-async fn read_file_success_and_error() {
+async fn Read_success_and_error() {
     let temp = temp_dir();
     let file_path = temp.path().join("example.txt");
     tokio::fs::write(&file_path, "hello world").await.unwrap();
 
-    let call = make_call("read_file", json!({ "path": file_path.to_string_lossy() }));
+    let call = make_call("Read", json!({ "path": file_path.to_string_lossy() }));
     let result = read_file(&call).await.unwrap();
     assert!(!result.is_error);
     assert!(result.content.contains("File:"));
@@ -46,7 +46,7 @@ async fn read_file_success_and_error() {
 
     let missing_path = temp.path().join("missing.txt");
     let call = make_call(
-        "read_file",
+        "Read",
         json!({ "path": missing_path.to_string_lossy() }),
     );
     let result = read_file(&call).await.unwrap();
@@ -55,13 +55,13 @@ async fn read_file_success_and_error() {
 }
 
 #[tokio::test]
-async fn write_file_success_and_error() {
+async fn Write_success_and_error() {
     let temp = temp_dir();
     let file_path = temp.path().join("output.txt");
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": file_path.to_string_lossy(),
             "content": "file contents",
@@ -77,7 +77,7 @@ async fn write_file_success_and_error() {
 
     let mut file_security_manager = new_file_security_manager();
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": temp.path().to_string_lossy(),
             "content": "should fail",
@@ -94,7 +94,7 @@ async fn write_file_success_and_error() {
 async fn file_editing_commands_reject_out_of_project_paths() {
     let mut file_security_manager = new_file_security_manager();
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": "../outside.txt",
             "content": "blocked",
@@ -104,7 +104,7 @@ async fn file_editing_commands_reject_out_of_project_paths() {
         .await
         .unwrap();
     assert!(result.is_error);
-    assert!(result.content.contains("Invalid path for write_file"));
+    assert!(result.content.contains("Invalid path for Write"));
 
     let mut file_security_manager = new_file_security_manager();
     let call = make_call("create_directory", json!({ "path": "../outside-dir" }));
@@ -124,7 +124,7 @@ async fn file_editing_commands_reject_out_of_project_paths() {
 
     let mut file_security_manager = new_file_security_manager();
     let call = make_call(
-        "edit_file",
+        "Edit",
         json!({
             "path": "../outside-edit.txt",
             "old_text": "old",
@@ -135,7 +135,7 @@ async fn file_editing_commands_reject_out_of_project_paths() {
         .await
         .unwrap();
     assert!(result.is_error);
-    assert!(result.content.contains("Invalid path for edit_file"));
+    assert!(result.content.contains("Invalid path for Edit"));
 }
 
 #[tokio::test]
@@ -145,7 +145,7 @@ async fn file_editing_commands_reject_absolute_outside_paths() {
 
     let mut file_security_manager = new_file_security_manager();
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": outside_path.to_string_lossy(),
             "content": "blocked",
@@ -155,7 +155,7 @@ async fn file_editing_commands_reject_absolute_outside_paths() {
         .await
         .unwrap();
     assert!(result.is_error);
-    assert!(result.content.contains("Invalid path for write_file"));
+    assert!(result.content.contains("Invalid path for Write"));
 
     let mut file_security_manager = new_file_security_manager();
     let call = make_call(
@@ -181,7 +181,7 @@ async fn file_editing_commands_reject_absolute_outside_paths() {
 
     let mut file_security_manager = new_file_security_manager();
     let call = make_call(
-        "edit_file",
+        "Edit",
         json!({
             "path": outside_path.to_string_lossy(),
             "old_text": "old",
@@ -192,7 +192,7 @@ async fn file_editing_commands_reject_absolute_outside_paths() {
         .await
         .unwrap();
     assert!(result.is_error);
-    assert!(result.content.contains("Invalid path for edit_file"));
+    assert!(result.content.contains("Invalid path for Edit"));
 }
 
 #[tokio::test]
@@ -332,41 +332,41 @@ async fn glob_and_search_in_files_match_expected_entries() {
         .contains(gamma_path.to_string_lossy().as_ref()));
 }
 
-// ==================== Additional read_file tests ====================
+// ==================== Additional Read tests ====================
 
 #[tokio::test]
-async fn read_file_handles_binary_content() {
+async fn Read_handles_binary_content() {
     let temp = temp_dir();
     let file_path = temp.path().join("binary.dat");
     let binary_data = vec![0u8, 1, 2, 255, 128, 64];
     tokio::fs::write(&file_path, &binary_data).await.unwrap();
 
-    let call = make_call("read_file", json!({ "path": file_path.to_string_lossy() }));
+    let call = make_call("Read", json!({ "path": file_path.to_string_lossy() }));
     let result = read_file(&call).await.unwrap();
     assert!(!result.is_error);
     assert!(result.content.contains("File:"));
 }
 
 #[tokio::test]
-async fn read_file_handles_empty_file() {
+async fn Read_handles_empty_file() {
     let temp = temp_dir();
     let file_path = temp.path().join("empty.txt");
     tokio::fs::write(&file_path, "").await.unwrap();
 
-    let call = make_call("read_file", json!({ "path": file_path.to_string_lossy() }));
+    let call = make_call("Read", json!({ "path": file_path.to_string_lossy() }));
     let result = read_file(&call).await.unwrap();
     assert!(!result.is_error);
     assert!(result.content.contains("File:"));
 }
 
 #[tokio::test]
-async fn read_file_handles_large_file() {
+async fn Read_handles_large_file() {
     let temp = temp_dir();
     let file_path = temp.path().join("large.txt");
     let large_content = "x".repeat(100_000);
     tokio::fs::write(&file_path, &large_content).await.unwrap();
 
-    let call = make_call("read_file", json!({ "path": file_path.to_string_lossy() }));
+    let call = make_call("Read", json!({ "path": file_path.to_string_lossy() }));
     let result = read_file(&call).await.unwrap();
     assert!(!result.is_error);
     assert!(result.content.contains("File:"));
@@ -374,21 +374,21 @@ async fn read_file_handles_large_file() {
 }
 
 #[tokio::test]
-async fn read_file_handles_unicode_content() {
+async fn Read_handles_unicode_content() {
     let temp = temp_dir();
     let file_path = temp.path().join("unicode.txt");
     let unicode_content = "Hello 世界 🌍 Привет";
     tokio::fs::write(&file_path, unicode_content).await.unwrap();
 
-    let call = make_call("read_file", json!({ "path": file_path.to_string_lossy() }));
+    let call = make_call("Read", json!({ "path": file_path.to_string_lossy() }));
     let result = read_file(&call).await.unwrap();
     assert!(!result.is_error);
     assert!(result.content.contains(unicode_content));
 }
 
 #[tokio::test]
-async fn read_file_rejects_parent_traversal() {
-    let call = make_call("read_file", json!({ "path": "../outside.txt" }));
+async fn Read_rejects_parent_traversal() {
+    let call = make_call("Read", json!({ "path": "../outside.txt" }));
     let result = read_file(&call).await.unwrap();
     assert!(result.is_error);
     assert!(result.content.contains("Invalid path"));
@@ -396,10 +396,10 @@ async fn read_file_rejects_parent_traversal() {
 }
 
 #[tokio::test]
-async fn read_file_rejects_absolute_outside_project() {
+async fn Read_rejects_absolute_outside_project() {
     let outside_path = std::env::temp_dir().join("flexorama-outside.txt");
     let call = make_call(
-        "read_file",
+        "Read",
         json!({ "path": outside_path.to_string_lossy() }),
     );
     let result = read_file(&call).await.unwrap();
@@ -488,17 +488,17 @@ async fn list_directory_rejects_absolute_outside_project() {
     assert!(result.content.contains("Invalid path for list_directory"));
 }
 
-// ==================== Additional write_file tests ====================
+// ==================== Additional Write tests ====================
 
 #[tokio::test]
-async fn write_file_overwrites_existing_file() {
+async fn Write_overwrites_existing_file() {
     let temp = temp_dir();
     let file_path = temp.path().join("overwrite.txt");
     tokio::fs::write(&file_path, "original").await.unwrap();
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": file_path.to_string_lossy(),
             "content": "new content",
@@ -514,13 +514,13 @@ async fn write_file_overwrites_existing_file() {
 }
 
 #[tokio::test]
-async fn write_file_creates_parent_directories() {
+async fn Write_creates_parent_directories() {
     let temp = temp_dir();
     let nested_path = temp.path().join("a").join("b").join("c").join("file.txt");
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": nested_path.to_string_lossy(),
             "content": "nested content",
@@ -537,13 +537,13 @@ async fn write_file_creates_parent_directories() {
 }
 
 #[tokio::test]
-async fn write_file_handles_empty_content() {
+async fn Write_handles_empty_content() {
     let temp = temp_dir();
     let file_path = temp.path().join("empty.txt");
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": file_path.to_string_lossy(),
             "content": "",
@@ -559,14 +559,14 @@ async fn write_file_handles_empty_content() {
 }
 
 #[tokio::test]
-async fn write_file_handles_unicode_content() {
+async fn Write_handles_unicode_content() {
     let temp = temp_dir();
     let file_path = temp.path().join("unicode.txt");
     let unicode_content = "Hello 世界 🌍 Привет";
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "write_file",
+        "Write",
         json!({
             "path": file_path.to_string_lossy(),
             "content": unicode_content,
@@ -581,16 +581,16 @@ async fn write_file_handles_unicode_content() {
     assert_eq!(contents, unicode_content);
 }
 
-// ==================== Additional edit_file tests ====================
+// ==================== Additional Edit tests ====================
 
 #[tokio::test]
-async fn edit_file_handles_nonexistent_file() {
+async fn Edit_handles_nonexistent_file() {
     let temp = temp_dir();
     let missing_path = temp.path().join("missing.txt");
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "edit_file",
+        "Edit",
         json!({
             "path": missing_path.to_string_lossy(),
             "old_text": "foo",
@@ -605,7 +605,7 @@ async fn edit_file_handles_nonexistent_file() {
 }
 
 #[tokio::test]
-async fn edit_file_replaces_all_occurrences() {
+async fn Edit_replaces_all_occurrences() {
     let temp = temp_dir();
     let file_path = temp.path().join("multi.txt");
     tokio::fs::write(&file_path, "foo bar foo baz foo")
@@ -614,7 +614,7 @@ async fn edit_file_replaces_all_occurrences() {
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "edit_file",
+        "Edit",
         json!({
             "path": file_path.to_string_lossy(),
             "old_text": "foo bar foo baz foo",
@@ -631,14 +631,14 @@ async fn edit_file_replaces_all_occurrences() {
 }
 
 #[tokio::test]
-async fn edit_file_handles_empty_file() {
+async fn Edit_handles_empty_file() {
     let temp = temp_dir();
     let file_path = temp.path().join("empty.txt");
     tokio::fs::write(&file_path, "").await.unwrap();
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "edit_file",
+        "Edit",
         json!({
             "path": file_path.to_string_lossy(),
             "old_text": "nonexistent",
@@ -653,7 +653,7 @@ async fn edit_file_handles_empty_file() {
 }
 
 #[tokio::test]
-async fn edit_file_preserves_unix_line_endings() {
+async fn Edit_preserves_unix_line_endings() {
     let temp = temp_dir();
     let file_path = temp.path().join("unix.txt");
     tokio::fs::write(&file_path, "line1\nline2\nline3\n")
@@ -662,7 +662,7 @@ async fn edit_file_preserves_unix_line_endings() {
     let mut file_security_manager = new_file_security_manager();
 
     let call = make_call(
-        "edit_file",
+        "Edit",
         json!({
             "path": file_path.to_string_lossy(),
             "old_text": "line2",

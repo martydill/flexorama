@@ -103,6 +103,65 @@ pub fn print_file_permissions_help() {
     app_println!();
 }
 
+/// Print hooks help information
+pub fn print_hooks_help() {
+    app_println!("{}", "🪝 Hooks Commands".cyan().bold());
+    app_println!();
+    app_println!("{}", "View Hooks:".green().bold());
+    app_println!("  /hooks                       - List all configured hooks");
+    app_println!("  /hooks list                  - List all configured hooks");
+    app_println!("  /hooks path                  - Show hook configuration file paths");
+    app_println!("  /hooks events                - List all available hook events");
+    app_println!("  /hooks help                  - Show this help message");
+    app_println!();
+    app_println!("{}", "Hook Events:".green().bold());
+    app_println!("  UserPromptSubmit             - When user submits a prompt");
+    app_println!("  PreToolUse                   - Before tool execution");
+    app_println!("  PostToolUse                  - After tool completes");
+    app_println!("  Stop                         - When agent finishes responding");
+    app_println!("  SessionStart                 - At session initialization");
+    app_println!("  SubagentStop                 - When subagent completes");
+    app_println!("  PreCompact                   - Before context compaction");
+    app_println!("  Notification                 - On notifications");
+    app_println!("  PermissionRequest            - On permission requests");
+    app_println!();
+    app_println!("{}", "Configuration:".green().bold());
+    app_println!("  Hooks are configured in settings.json (Claude Code format):");
+    app_println!("  • ~/.flexorama/settings.json    (global)");
+    app_println!("  • .flexorama/settings.json      (project)");
+    app_println!();
+    app_println!("{}", "Example settings.json:".green().bold());
+    app_println!(r#"  {{"#);
+    app_println!(r#"    "UserPromptSubmit": [{{"#);
+    app_println!(r#"      "hooks": [{{"#);
+    app_println!(r#"        "type": "command","#);
+    app_println!(r#"        "command": "python .flexorama/hooks/log.py","#);
+    app_println!(r#"        "timeoutMs": 5000,"#);
+    app_println!(r#"        "continueOnError": true"#);
+    app_println!(r#"      }}]"#);
+    app_println!(r#"    }}]"#);
+    app_println!(r#"  }}"#);
+    app_println!();
+    app_println!("{}", "Hook Entry Options:".green().bold());
+    app_println!("  matcher           - Tool name filter (e.g., \"Bash\", \"Read\")");
+    app_println!("  hooks             - Array of hook commands");
+    app_println!();
+    app_println!("{}", "Hook Command Options:".green().bold());
+    app_println!("  type              - Must be \"command\"");
+    app_println!("  command           - Command to execute");
+    app_println!("  args              - Array of arguments (optional)");
+    app_println!("  env               - Environment variables (optional)");
+    app_println!("  workingDirectory  - Working directory (optional)");
+    app_println!("  timeoutMs         - Timeout in milliseconds (optional)");
+    app_println!("  continueOnError   - Continue if hook fails (optional)");
+    app_println!();
+    app_println!("{}", "Hook Response:".green().bold());
+    app_println!("  Hooks receive JSON on stdin and can return JSON on stdout:");
+    app_println!(r#"  {{"decision": "approve"}}     - Allow the action"#);
+    app_println!(r#"  {{"decision": "block", "reason": "..."}}  - Block with reason"#);
+    app_println!();
+}
+
 /// Print skill help information
 pub fn print_skill_help() {
     app_println!("{}", "📚 Skill Commands".cyan().bold());
@@ -188,6 +247,7 @@ pub fn print_help() {
     app_println!("  /reset-stats  - Reset token usage statistics");
     app_println!("  /permissions  - Manage bash command security permissions");
     app_println!("  /file-permissions  - Manage file operation security permissions");
+    app_println!("  /hooks        - View and manage hooks configuration");
     app_println!("  /mcp          - Manage MCP (Model Context Protocol) servers");
     app_println!("  /skill        - Manage skills (list, create, update, delete, deactivate)");
     app_println!("  /exit         - Exit the program");

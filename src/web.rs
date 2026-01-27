@@ -2813,7 +2813,7 @@ mod tests {
         };
         let tool_call = ToolCallRecord {
             id: "tool-1".to_string(),
-            tool_name: "read_file".to_string(),
+            tool_name: "Read".to_string(),
             tool_arguments: "{\"path\":\"/tmp/file.txt\"}".to_string(),
             result_content: Some("Not found".to_string()),
             is_error: true,
@@ -2823,7 +2823,7 @@ mod tests {
         let timeline = timeline_messages_to_dto(vec![message], vec![tool_call]);
         assert_eq!(timeline.len(), 3);
         assert_eq!(timeline[0].content, "Hello");
-        assert!(timeline[1].content.contains("Tool call: read_file"));
+        assert!(timeline[1].content.contains("Tool call: Read"));
         assert!(timeline[2].content.contains("(error) Not found"));
         assert_eq!(timeline[2].id, "tool-1-result");
     }
@@ -3060,7 +3060,7 @@ mod tests {
         let update = serde_json::json!({
             "description": "Updated description",
             "content": "## Instructions\n\nUpdated.\n",
-            "allowed_tools": ["read_file"],
+            "allowed_tools": ["Read"],
             "denied_tools": [],
             "model": "glm-4.6",
             "temperature": 0.5,
@@ -3085,7 +3085,7 @@ mod tests {
         let (status, body) = json_response(&router, request).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["description"], "Updated description");
-        assert_eq!(body["allowed_tools"][0], "read_file");
+        assert_eq!(body["allowed_tools"][0], "Read");
 
         let request = axum::http::Request::builder()
             .method("POST")
@@ -3795,7 +3795,7 @@ mod tests {
             .method("PUT")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(
-                r#"{"system_prompt":"Updated","allowed_tools":["read_file"],"denied_tools":[]}"#,
+                r#"{"system_prompt":"Updated","allowed_tools":["Read"],"denied_tools":[]}"#,
             ))
             .expect("build request");
         let (status, body) = json_response(&router, request).await;

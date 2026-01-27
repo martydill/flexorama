@@ -15,9 +15,10 @@ use crate::custom_commands;
 use crate::database::{Conversation as StoredConversation, Message as StoredMessage};
 use crate::formatter;
 use crate::help::{
-    print_agent_help, print_file_permissions_help, print_help, print_mcp_help,
+    print_agent_help, print_file_permissions_help, print_help, print_hooks_help, print_mcp_help,
     print_permissions_help, print_skill_help,
 };
+use crate::hooks::{HookEvent, HookManager};
 use crate::mcp::McpManager;
 use crate::processing::create_streaming_renderer;
 use crate::subagent;
@@ -290,10 +291,10 @@ pub async fn handle_shell_command(command: &str, _agent: &mut Agent) -> Result<(
 
     app_println!("{} Executing: {}", "🔧".blue(), shell_command);
 
-    // Create a tool call for the bash command
+    // Create a tool call for the Bash command
     let tool_call = tools::ToolCall {
         id: "shell_command".to_string(),
-        name: "bash".to_string(),
+        name: "Bash".to_string(),
         arguments: serde_json::json!({
             "command": shell_command
         }),
@@ -698,6 +699,108 @@ pub async fn handle_search_command(
     Ok(())
 }
 
+pub fn handle_hooks_command(args: &[&str]) -> Result<()> {
+    if args.is_empty() || args[0] == "list" {
+        // List all configured hooks
+        match HookManager::load() {
+            Ok(Some(manager)) => {
+                let hooks = manager.list_hooks();
+                if hooks.is_empty() {
+                    app_println!("{}", "No hooks configured.".yellow());
+                    app_println!();
+                    app_println!("Configure hooks in .flexorama/settings.json");
+                } else {
+                    app_println!("{}", "🪝 Configured Hooks".cyan().bold());
+                    app_println!();
+
+                    let mut current_event = String::new();
+                    for hook in hooks {
+                        if hook.event != current_event {
+                            if !current_event.is_empty() {
+                                app_println!();
+                            }
+                            app_println!("  {} {}", "Event:".green().bold(), hook.event.cyan());
+                            current_event = hook.event.clone();
+                        }
+
+                        let cmd_display = if hook.args.is_empty() {
+                            hook.command.clone()
+                        } else {
+                            format!("{} {}", hook.command, hook.args.join(" "))
+                        };
+
+                        app_println!("    • {}", cmd_display);
+                        if let Some(ref matcher) = hook.matcher {
+                            app_println!("      Matcher: {}", matcher.cyan());
+                        }
+                        app_println!("      Source: {}", hook.source.dimmed());
+                        if hook.continue_on_error {
+                            app_println!("      {}", "continueOnError: true".dimmed());
+                        }
+                        if let Some(timeout) = hook.timeout_ms {
+                            app_println!("      {}", format!("timeoutMs: {}ms", timeout).dimmed());
+                        }
+                    }
+                }
+                app_println!();
+            }
+            Ok(None) => {
+                app_println!("{}", "No hooks configured.".yellow());
+                app_println!();
+                app_println!("Configure hooks in .flexorama/settings.json");
+            }
+            Err(e) => {
+                app_eprintln!("{} Failed to load hooks: {}", "✗".red(), e);
+            }
+        }
+        return Ok(());
+    }
+
+    match args[0] {
+        "path" | "paths" => {
+            app_println!("{}", "🪝 Hook Configuration Paths".cyan().bold());
+            app_println!();
+
+            let paths = HookManager::get_config_paths();
+            for (label, path, exists) in paths {
+                let status = if exists {
+                    "✓".green().to_string()
+                } else {
+                    "–".dimmed().to_string()
+                };
+                app_println!("  {} {} {}", status, label, path.display().to_string().dimmed());
+            }
+            app_println!();
+            app_println!(
+                "{}",
+                "Legend: ✓ = exists, – = not found".dimmed()
+            );
+            app_println!();
+        }
+        "events" => {
+            app_println!("{}", "🪝 Available Hook Events".cyan().bold());
+            app_println!();
+
+            for event in HookEvent::all_events() {
+                app_println!("  • {}", event.primary_name().cyan());
+            }
+            app_println!();
+        }
+        "help" => {
+            print_hooks_help();
+        }
+        _ => {
+            app_println!(
+                "{} Unknown hooks command: {}. Use '/hooks help' for available commands.",
+                "⚠️".yellow(),
+                args[0]
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn handle_slash_command(
     command: &str,
     agent: &mut Agent,
@@ -848,6 +951,10 @@ pub async fn handle_slash_command(
         }
         "/file-permissions" => {
             handle_file_permissions_command(&parts[1..], agent).await?;
+            Ok(true) // Command was handled
+        }
+        "/hooks" => {
+            handle_hooks_command(&parts[1..])?;
             Ok(true) // Command was handled
         }
         "/plan" => {

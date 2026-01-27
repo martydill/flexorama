@@ -96,21 +96,21 @@ impl ToolRegistry {
         });
 
         registry.register_tool(ToolMetadata {
-            name: "read_file".to_string(),
+            name: "Read".to_string(),
             icon: "📖",
             display_format: DisplayFormat::File { show_size: false },
             readonly: true,
         });
 
         registry.register_tool(ToolMetadata {
-            name: "write_file".to_string(),
+            name: "Write".to_string(),
             icon: "✏️",
             display_format: DisplayFormat::File { show_size: true },
             readonly: false,
         });
 
         registry.register_tool(ToolMetadata {
-            name: "edit_file".to_string(),
+            name: "Edit".to_string(),
             icon: "🔄",
             display_format: DisplayFormat::File { show_size: true },
             readonly: false,
@@ -131,7 +131,7 @@ impl ToolRegistry {
         });
 
         registry.register_tool(ToolMetadata {
-            name: "bash".to_string(),
+            name: "Bash".to_string(),
             icon: "💻",
             display_format: DisplayFormat::Command,
             readonly: false,

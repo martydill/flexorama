@@ -64,6 +64,9 @@ pub async fn process_input(
                 if e.to_string().contains("CANCELLED") {
                     // Cancellation handled silently
                 } else {
+                    // Print newline first to ensure error appears on its own line
+                    // (streaming output may not end with a newline)
+                    app_println!();
                     app_eprintln!("{}: {}", "Error".red(), e);
                 }
                 app_println!();
