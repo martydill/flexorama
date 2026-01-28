@@ -22,8 +22,6 @@ pub enum HookEvent {
     SubagentStop,
     SessionStart,
     // System events
-    PreCompact,
-    Notification,
     PermissionRequest,
 }
 
@@ -36,8 +34,6 @@ impl HookEvent {
             HookEvent::Stop => "Stop",
             HookEvent::SubagentStop => "SubagentStop",
             HookEvent::SessionStart => "SessionStart",
-            HookEvent::PreCompact => "PreCompact",
-            HookEvent::Notification => "Notification",
             HookEvent::PermissionRequest => "PermissionRequest",
         }
     }
@@ -51,8 +47,6 @@ impl HookEvent {
             HookEvent::Stop,
             HookEvent::SubagentStop,
             HookEvent::SessionStart,
-            HookEvent::PreCompact,
-            HookEvent::Notification,
             HookEvent::PermissionRequest,
         ]
     }
@@ -64,15 +58,15 @@ pub struct HookManager {
     project_root: PathBuf,
 }
 
-/// Claude Code settings.json format - with "hooks" wrapper
+/// hooks.json format - with "hooks" wrapper
 #[derive(Debug, Clone, Deserialize)]
-struct ClaudeSettingsWrapper {
+struct HooksWrapper {
     hooks: HashMap<String, Vec<ClaudeHookEntry>>,
 }
 
-/// Claude Code settings.json format - without wrapper (legacy)
+/// hooks.json format - without wrapper (legacy)
 #[derive(Debug, Clone, Deserialize)]
-struct ClaudeSettingsFlat {
+struct HooksFlat {
     #[serde(flatten)]
     hooks: HashMap<String, Vec<ClaudeHookEntry>>,
 }
@@ -240,22 +234,22 @@ impl HookManager {
         // Global hooks
         if let Some(home_dir) = dirs::home_dir() {
             let home_flexorama = home_dir.join(".flexorama");
-            let settings_json = home_flexorama.join("settings.json");
+            let hooks_json = home_flexorama.join("hooks.json");
             paths.push((
-                "Global settings.json".to_string(),
-                settings_json.clone(),
-                settings_json.exists(),
+                "Global hooks.json".to_string(),
+                hooks_json.clone(),
+                hooks_json.exists(),
             ));
         }
 
         // Project hooks
         if let Ok(project_root) = std::env::current_dir() {
             let project_flexorama = project_root.join(".flexorama");
-            let settings_json = project_flexorama.join("settings.json");
+            let hooks_json = project_flexorama.join("hooks.json");
             paths.push((
-                "Project settings.json".to_string(),
-                settings_json.clone(),
-                settings_json.exists(),
+                "Project hooks.json".to_string(),
+                hooks_json.clone(),
+                hooks_json.exists(),
             ));
         }
 
@@ -612,26 +606,26 @@ impl HookManager {
             return Ok(false);
         }
 
-        // Load Claude Code style settings.json
-        let settings_json = flexorama_dir.join("settings.json");
-        if settings_json.exists() && settings_json.is_file() {
-            self.load_settings_file(&settings_json, source)?;
+        // Load hooks.json
+        let hooks_json = flexorama_dir.join("hooks.json");
+        if hooks_json.exists() && hooks_json.is_file() {
+            self.load_hooks_file(&hooks_json, source)?;
             return Ok(true);
         }
 
         Ok(false)
     }
 
-    /// Load Claude Code style settings.json
-    fn load_settings_file(&mut self, path: &Path, source: &str) -> Result<()> {
+    /// Load hooks.json file
+    fn load_hooks_file(&mut self, path: &Path, source: &str) -> Result<()> {
         let content = fs::read_to_string(path)
-            .with_context(|| format!("Failed to read settings {}", path.display()))?;
+            .with_context(|| format!("Failed to read hooks {}", path.display()))?;
 
         // Try parsing with "hooks" wrapper first (standard Claude Code format)
-        let hooks_map = if let Ok(wrapper) = serde_json::from_str::<ClaudeSettingsWrapper>(&content)
+        let hooks_map = if let Ok(wrapper) = serde_json::from_str::<HooksWrapper>(&content)
         {
             wrapper.hooks
-        } else if let Ok(flat) = serde_json::from_str::<ClaudeSettingsFlat>(&content) {
+        } else if let Ok(flat) = serde_json::from_str::<HooksFlat>(&content) {
             // Fall back to flat format (events at root level)
             flat.hooks
         } else {
@@ -774,7 +768,7 @@ mod tests {
         }
         "#;
 
-        let settings: ClaudeSettingsWrapper =
+        let settings: HooksWrapper =
             serde_json::from_str(content).expect("parse settings with wrapper");
         assert!(settings.hooks.contains_key("PreToolUse"));
         let entries = settings.hooks.get("PreToolUse").unwrap();
@@ -811,7 +805,7 @@ mod tests {
         }
         "#;
 
-        let settings: ClaudeSettingsFlat =
+        let settings: HooksFlat =
             serde_json::from_str(content).expect("parse flat settings");
         assert!(settings.hooks.contains_key("UserPromptSubmit"));
         assert!(settings.hooks.contains_key("PreToolUse"));
@@ -971,15 +965,13 @@ mod tests {
     #[test]
     fn hook_event_all_events_contains_all_variants() {
         let all_events = HookEvent::all_events();
-        assert_eq!(all_events.len(), 9);
+        assert_eq!(all_events.len(), 7);
         assert!(all_events.contains(&HookEvent::UserPromptSubmit));
         assert!(all_events.contains(&HookEvent::PreToolUse));
         assert!(all_events.contains(&HookEvent::PostToolUse));
         assert!(all_events.contains(&HookEvent::Stop));
         assert!(all_events.contains(&HookEvent::SubagentStop));
         assert!(all_events.contains(&HookEvent::SessionStart));
-        assert!(all_events.contains(&HookEvent::PreCompact));
-        assert!(all_events.contains(&HookEvent::Notification));
         assert!(all_events.contains(&HookEvent::PermissionRequest));
     }
 }

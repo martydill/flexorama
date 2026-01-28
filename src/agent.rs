@@ -1170,13 +1170,23 @@ impl Agent {
             }
         }
         if let Some(hook_manager) = &self.hook_manager {
-            let hook_decision = hook_manager
-                .run_post_message(
-                    &final_response,
-                    self.conversation_manager.current_conversation_id.as_deref(),
-                    &self.model,
-                )
-                .await?;
+            // Use SubagentStop when in subagent mode, Stop otherwise
+            let hook_decision = if self.conversation_manager.subagent.is_some() {
+                hook_manager
+                    .run_subagent_stop(
+                        self.conversation_manager.current_conversation_id.as_deref(),
+                        &self.model,
+                    )
+                    .await?
+            } else {
+                hook_manager
+                    .run_post_message(
+                        &final_response,
+                        self.conversation_manager.current_conversation_id.as_deref(),
+                        &self.model,
+                    )
+                    .await?
+            };
             if hook_decision.action == HookAction::Abort {
                 let reason = hook_decision
                     .message

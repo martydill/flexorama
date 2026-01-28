@@ -2,12 +2,12 @@
 
 Flexorama provides **Claude Code hooks compatibility**. Hook definitions live in:
 
-- `~/.flexorama/settings.json` (global hooks)
-- `<project>/.flexorama/settings.json` (project hooks)
+- `~/.flexorama/hooks.json` (global hooks)
+- `<project>/.flexorama/hooks.json` (project hooks)
 
 ## Configuration Format
 
-Flexorama uses the official Claude Code `settings.json` format with a top-level `"hooks"` wrapper:
+Flexorama uses the official Claude Code `hooks.json` format with a top-level `"hooks"` wrapper:
 
 ```json
 {
@@ -83,8 +83,6 @@ Without a `matcher`, hooks run for all tools.
 | `Stop` | Fires when agent finishes responding |
 | `SubagentStop` | Fires when subagent completes |
 | `SessionStart` | Fires at session initialization |
-| `PreCompact` | Fires before context compaction |
-| `Notification` | Fires on notifications |
 | `PermissionRequest` | Fires on permission requests |
 
 ## Hook Entry Options
@@ -240,7 +238,7 @@ Flexorama automatically detects the best available shell:
 
 ### 1. Log all user prompts
 
-**.flexorama/settings.json:**
+**.flexorama/hooks.json:**
 ```json
 {
   "UserPromptSubmit": [
@@ -276,7 +274,7 @@ print(json.dumps({"decision": "approve"}))
 
 ### 2. Block dangerous tool calls
 
-**.flexorama/settings.json:**
+**.flexorama/hooks.json:**
 ```json
 {
   "PreToolUse": [
@@ -319,7 +317,7 @@ print(json.dumps({"decision": "approve"}))
 
 ### 3. Enforce task completion
 
-**.flexorama/settings.json:**
+**.flexorama/hooks.json:**
 ```json
 {
   "Stop": [
@@ -359,7 +357,7 @@ else:
 
 ### Hooks not executing
 
-1. Verify settings.json syntax is valid JSON
+1. Verify hooks.json syntax is valid JSON
 2. Check that the command exists and is executable
 3. Check Flexorama logs for errors
 

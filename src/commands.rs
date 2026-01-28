@@ -708,7 +708,7 @@ pub fn handle_hooks_command(args: &[&str]) -> Result<()> {
                 if hooks.is_empty() {
                     app_println!("{}", "No hooks configured.".yellow());
                     app_println!();
-                    app_println!("Configure hooks in .flexorama/settings.json");
+                    app_println!("Configure hooks in .flexorama/hooks.json");
                 } else {
                     app_println!("{}", "🪝 Configured Hooks".cyan().bold());
                     app_println!();
@@ -747,7 +747,7 @@ pub fn handle_hooks_command(args: &[&str]) -> Result<()> {
             Ok(None) => {
                 app_println!("{}", "No hooks configured.".yellow());
                 app_println!();
-                app_println!("Configure hooks in .flexorama/settings.json");
+                app_println!("Configure hooks in .flexorama/hooks.json");
             }
             Err(e) => {
                 app_eprintln!("{} Failed to load hooks: {}", "✗".red(), e);

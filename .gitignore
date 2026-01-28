@@ -5,3 +5,4 @@ tests/e2e/node_modules/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
 tmpflexorama*
+.claude/settings.local.json
