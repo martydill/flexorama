@@ -275,6 +275,25 @@ impl Agent {
         agent
     }
 
+    /// Run the SessionStart hook (should be called once when the session begins)
+    pub async fn run_session_start_hook(&self) -> Result<()> {
+        if let Some(hook_manager) = &self.hook_manager {
+            let hook_decision = hook_manager
+                .run_session_start(
+                    self.conversation_manager.current_conversation_id.as_deref(),
+                    &self.model,
+                )
+                .await?;
+            if hook_decision.action == HookAction::Abort {
+                let reason = hook_decision
+                    .message
+                    .unwrap_or_else(|| "SessionStart hook aborted the session.".to_string());
+                return Err(anyhow!(reason));
+            }
+        }
+        Ok(())
+    }
+
     /// Apply plan mode filtering to tools (async version)
     async fn apply_plan_mode_filtering(&mut self) -> Result<()> {
         if self.plan_mode {

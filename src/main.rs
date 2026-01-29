@@ -301,6 +301,12 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Run SessionStart hook
+    if let Err(e) = agent.run_session_start_hook().await {
+        error!("SessionStart hook failed: {}", e);
+        return Err(e);
+    }
+
     // Run the appropriate mode
     if cli.acp {
         run_acp_mode(agent, config, model, cli.acp_debug).await?;
