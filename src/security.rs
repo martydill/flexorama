@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::hooks::{HookAction, HookManager};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BashSecurity {
     /// List of allowed command patterns (supports wildcards)
@@ -128,11 +130,17 @@ pub enum FilePermissionResult {
 pub struct BashSecurityManager {
     security: BashSecurity,
     permission_handler: Option<PermissionHandler>,
+    hook_manager: Option<Arc<HookManager>>,
+    conversation_id: Option<String>,
+    model: String,
 }
 
 pub struct FileSecurityManager {
     security: FileSecurity,
     permission_handler: Option<PermissionHandler>,
+    hook_manager: Option<Arc<HookManager>>,
+    conversation_id: Option<String>,
+    model: String,
 }
 
 #[derive(Debug, Clone)]
@@ -157,7 +165,27 @@ impl FileSecurityManager {
         Self {
             security,
             permission_handler: None,
+            hook_manager: None,
+            conversation_id: None,
+            model: String::new(),
         }
+    }
+
+    /// Set the hook manager for permission request hooks
+    pub fn set_hook_manager(
+        &mut self,
+        hook_manager: Arc<HookManager>,
+        conversation_id: Option<String>,
+        model: String,
+    ) {
+        self.hook_manager = Some(hook_manager);
+        self.conversation_id = conversation_id;
+        self.model = model;
+    }
+
+    /// Update the conversation ID (e.g., when switching conversations)
+    pub fn set_conversation_id(&mut self, conversation_id: Option<String>) {
+        self.conversation_id = conversation_id;
     }
 
     /// Check if a file operation is allowed
@@ -203,6 +231,43 @@ impl FileSecurityManager {
     ) -> Result<Option<bool>> {
         if !self.security.ask_for_permission {
             return Ok(Some(true));
+        }
+
+        // Check PermissionRequest hook first
+        if let Some(hook_manager) = &self.hook_manager {
+            let detail = format!("Operation: {}\nPath: {}", operation, path);
+            let hook_decision = hook_manager
+                .run_permission_request(
+                    "file",
+                    operation,
+                    &detail,
+                    self.conversation_id.as_deref(),
+                    &self.model,
+                )
+                .await?;
+
+            // Only act on explicit decisions from hooks
+            if hook_decision.explicit_decision {
+                match hook_decision.action {
+                    HookAction::Abort => {
+                        // Hook explicitly denied the permission
+                        info!(
+                            "PermissionRequest hook denied file operation: {} on {}",
+                            operation, path
+                        );
+                        return Ok(None);
+                    }
+                    HookAction::Continue => {
+                        // Hook explicitly approved the permission
+                        info!(
+                            "PermissionRequest hook approved file operation: {} on {}",
+                            operation, path
+                        );
+                        return Ok(Some(false)); // Allowed this time only
+                    }
+                }
+            }
+            // If no explicit decision, fall through to user prompt
         }
 
         let options = vec![
@@ -378,7 +443,27 @@ impl BashSecurityManager {
         Self {
             security,
             permission_handler: None,
+            hook_manager: None,
+            conversation_id: None,
+            model: String::new(),
         }
+    }
+
+    /// Set the hook manager for permission request hooks
+    pub fn set_hook_manager(
+        &mut self,
+        hook_manager: Arc<HookManager>,
+        conversation_id: Option<String>,
+        model: String,
+    ) {
+        self.hook_manager = Some(hook_manager);
+        self.conversation_id = conversation_id;
+        self.model = model;
+    }
+
+    /// Update the conversation ID (e.g., when switching conversations)
+    pub fn set_conversation_id(&mut self, conversation_id: Option<String>) {
+        self.conversation_id = conversation_id;
     }
 
     /// Check if a command is allowed to execute
@@ -437,6 +522,36 @@ impl BashSecurityManager {
     pub async fn ask_permission(&mut self, command: &str) -> Result<Option<bool>> {
         if !self.security.ask_for_permission {
             return Ok(None);
+        }
+
+        // Check PermissionRequest hook first
+        if let Some(hook_manager) = &self.hook_manager {
+            let hook_decision = hook_manager
+                .run_permission_request(
+                    "bash",
+                    "bash",
+                    command,
+                    self.conversation_id.as_deref(),
+                    &self.model,
+                )
+                .await?;
+
+            // Only act on explicit decisions from hooks
+            if hook_decision.explicit_decision {
+                match hook_decision.action {
+                    HookAction::Abort => {
+                        // Hook explicitly denied the permission
+                        info!("PermissionRequest hook denied bash command: {}", command);
+                        return Ok(None);
+                    }
+                    HookAction::Continue => {
+                        // Hook explicitly approved the permission
+                        info!("PermissionRequest hook approved bash command: {}", command);
+                        return Ok(Some(false)); // Allowed this time only
+                    }
+                }
+            }
+            // If no explicit decision, fall through to user prompt
         }
 
         let options = self.generate_permission_options(command);

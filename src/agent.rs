@@ -119,7 +119,7 @@ pub struct Agent {
     available_models: Arc<RwLock<Vec<String>>>,
     // Suppress output (for ACP mode where stdout must be clean)
     suppress_output: bool,
-    hook_manager: Option<HookManager>,
+    hook_manager: Option<Arc<HookManager>>,
 }
 
 impl Agent {
@@ -150,14 +150,10 @@ impl Agent {
             .collect();
 
         // Create bash security manager
-        let bash_security_manager = Arc::new(RwLock::new(BashSecurityManager::new(
-            config.bash_security.clone(),
-        )));
+        let mut bash_security_manager = BashSecurityManager::new(config.bash_security.clone());
 
         // Create file security manager
-        let file_security_manager = Arc::new(RwLock::new(FileSecurityManager::new(
-            config.file_security.clone(),
-        )));
+        let mut file_security_manager = FileSecurityManager::new(config.file_security.clone());
 
         // Create conversation manager
         let conversation_manager =
@@ -178,12 +174,22 @@ impl Agent {
         let available_models = Arc::new(RwLock::new(default_models));
 
         let hook_manager = match HookManager::load() {
-            Ok(manager) => manager,
+            Ok(manager) => manager.map(Arc::new),
             Err(err) => {
                 warn!("Failed to load Flexorama hooks: {}", err);
                 None
             }
         };
+
+        // Set hook manager on security managers if available
+        if let Some(ref hm) = hook_manager {
+            bash_security_manager.set_hook_manager(hm.clone(), None, model.clone());
+            file_security_manager.set_hook_manager(hm.clone(), None, model.clone());
+        }
+
+        // Now wrap in Arc<RwLock>
+        let bash_security_manager = Arc::new(RwLock::new(bash_security_manager));
+        let file_security_manager = Arc::new(RwLock::new(file_security_manager));
 
         Self {
             client,

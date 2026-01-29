@@ -31,6 +31,7 @@ The hybrid cli/web coding agent that works your way.
  - Todo checklists 
  - Interactive and non-interactive mode
  - [Agent Client Protocol (ACP)](https://agentclientprotocol.com/overview/introduction) support for editor integration
+ - Limited Claude Code-style [hook](https://code.claude.com/docs/en/hook) support (UserPromptSubmit, PreToolUse, PostToolUse, Stop, SubagentStop, SessionStart, PermissionRequest, with some restrictions)
 
 
 ## Web interface

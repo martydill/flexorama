@@ -120,6 +120,8 @@ pub struct HookDecision {
     pub message: Option<String>,
     pub updated_message: Option<String>,
     pub updated_arguments: Option<Value>,
+    /// Whether a hook explicitly made this decision (vs default behavior)
+    pub explicit_decision: bool,
 }
 
 /// Information about a configured hook for display
@@ -166,6 +168,11 @@ impl HookResponse {
         }
 
         false
+    }
+
+    /// Checks if this response indicates explicit approval
+    fn is_explicit_approve(&self) -> bool {
+        self.decision.as_deref() == Some("approve") || self.continue_ == Some(true)
     }
 
     /// Gets the reason/message for abortion
@@ -386,6 +393,32 @@ impl HookManager {
         self.run_event(HookEvent::SubagentStop, payload).await
     }
 
+    /// Run permission request hook
+    /// Returns a decision that can auto-approve, auto-deny, or let the user decide
+    pub async fn run_permission_request(
+        &self,
+        permission_type: &str,
+        tool_name: &str,
+        detail: &str,
+        conversation_id: Option<&str>,
+        model: &str,
+    ) -> Result<HookDecision> {
+        let session_id = conversation_id.unwrap_or("unknown");
+        let payload = serde_json::json!({
+            "session_id": session_id,
+            "timestamp": Utc::now().to_rfc3339(),
+            "event": HookEvent::PermissionRequest.primary_name(),
+            "project_root": self.project_root.display().to_string(),
+            "cwd": std::env::current_dir()?.display().to_string(),
+            "model": model,
+            "permission_type": permission_type,
+            "tool_name": tool_name,
+            "detail": detail,
+        });
+        self.run_event_with_matcher(HookEvent::PermissionRequest, payload, Some(tool_name))
+            .await
+    }
+
     async fn run_event(&self, event: HookEvent, payload: Value) -> Result<HookDecision> {
         self.run_event_with_matcher(event, payload, None).await
     }
@@ -401,6 +434,7 @@ impl HookManager {
             message: None,
             updated_message: None,
             updated_arguments: None,
+            explicit_decision: false,
         };
 
         let event_name = event.primary_name();
@@ -444,7 +478,12 @@ impl HookManager {
                             if response.is_abort() {
                                 decision.action = HookAction::Abort;
                                 decision.message = response.get_message();
+                                decision.explicit_decision = true;
                                 break;
+                            }
+                            // Check if hook explicitly approved
+                            if response.is_explicit_approve() {
+                                decision.explicit_decision = true;
                             }
                         }
                     }
