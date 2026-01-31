@@ -2,7 +2,7 @@
 
 The hybrid cli/web coding agent that works your way.
 
-<img width="1115" height="628" alt="image" src="https://github.com/user-attachments/assets/7be51786-f0d1-4724-99be-da3da15835c2" />
+<img width="1115" height="618" alt="image" src="https://github.com/user-attachments/assets/c39ad561-2021-4d83-88ae-12842338b9fb" />
 <img width="1290" height="719" alt="image" src="https://github.com/user-attachments/assets/fc96dd80-c8c6-43ce-b6a4-bb9bc8d27c97" />
 
 ## Features
