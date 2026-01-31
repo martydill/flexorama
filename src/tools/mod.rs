@@ -14,6 +14,7 @@ pub mod glob;
 pub mod list_directory;
 pub mod list_todos;
 pub mod mcp;
+pub mod multi_read_files;
 pub mod path;
 pub mod read_file;
 pub mod search_in_files;

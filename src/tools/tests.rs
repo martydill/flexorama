@@ -4,6 +4,7 @@ use crate::tools::delete_file::delete_file;
 use crate::tools::edit_file::edit_file;
 use crate::tools::glob::glob_files;
 use crate::tools::list_directory::list_directory;
+use crate::tools::multi_read_files::multi_read_files;
 use crate::tools::read_file::read_file;
 use crate::tools::search_in_files::search_in_files;
 use crate::tools::types::ToolCall;
@@ -52,6 +53,233 @@ async fn Read_success_and_error() {
     let result = read_file(&call).await.unwrap();
     assert!(result.is_error);
     assert!(result.content.contains("Error opening file"));
+}
+
+#[tokio::test]
+async fn MultiRead_reads_multiple_files_successfully() {
+    let temp = temp_dir();
+    let file1 = temp.path().join("file1.txt");
+    let file2 = temp.path().join("file2.txt");
+    let file3 = temp.path().join("file3.txt");
+
+    tokio::fs::write(&file1, "content of file 1")
+        .await
+        .unwrap();
+    tokio::fs::write(&file2, "content of file 2")
+        .await
+        .unwrap();
+    tokio::fs::write(&file3, "content of file 3")
+        .await
+        .unwrap();
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [
+                file1.to_string_lossy(),
+                file2.to_string_lossy(),
+                file3.to_string_lossy()
+            ]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error);
+    assert!(result.content.contains("Successfully read 3 file(s)"));
+    assert!(result.content.contains("content of file 1"));
+    assert!(result.content.contains("content of file 2"));
+    assert!(result.content.contains("content of file 3"));
+    assert!(result.content.contains("=== File:"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_single_file() {
+    let temp = temp_dir();
+    let file = temp.path().join("single.txt");
+    tokio::fs::write(&file, "single file content")
+        .await
+        .unwrap();
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [file.to_string_lossy()]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error);
+    assert!(result.content.contains("Successfully read 1 file(s)"));
+    assert!(result.content.contains("single file content"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_missing_files() {
+    let temp = temp_dir();
+    let missing1 = temp.path().join("missing1.txt");
+    let missing2 = temp.path().join("missing2.txt");
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [
+                missing1.to_string_lossy(),
+                missing2.to_string_lossy()
+            ]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("Errors (2)"));
+    assert!(result.content.contains("Error opening file"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_partial_success() {
+    let temp = temp_dir();
+    let existing_file = temp.path().join("exists.txt");
+    let missing_file = temp.path().join("missing.txt");
+
+    tokio::fs::write(&existing_file, "I exist!")
+        .await
+        .unwrap();
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [
+                existing_file.to_string_lossy(),
+                missing_file.to_string_lossy()
+            ]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error); // Not an error because at least one file was read
+    assert!(result.content.contains("Successfully read 1 file(s)"));
+    assert!(result.content.contains("I exist!"));
+    assert!(result.content.contains("Errors (1)"));
+    assert!(result.content.contains("Error opening file"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_empty_paths_array() {
+    let call = make_call("MultiRead", json!({ "paths": [] }));
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result.content.contains("No paths provided"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_invalid_paths_argument() {
+    let call = make_call("MultiRead", json!({ "paths": "not-an-array" }));
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(result.is_error);
+    assert!(result
+        .content
+        .contains("Invalid paths argument: expected an array of strings"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_unicode_content() {
+    let temp = temp_dir();
+    let file1 = temp.path().join("unicode1.txt");
+    let file2 = temp.path().join("unicode2.txt");
+
+    tokio::fs::write(&file1, "Hello 世界 🌍")
+        .await
+        .unwrap();
+    tokio::fs::write(&file2, "Привет мир 🚀")
+        .await
+        .unwrap();
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [
+                file1.to_string_lossy(),
+                file2.to_string_lossy()
+            ]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error);
+    assert!(result.content.contains("Hello 世界 🌍"));
+    assert!(result.content.contains("Привет мир 🚀"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_empty_files() {
+    let temp = temp_dir();
+    let empty1 = temp.path().join("empty1.txt");
+    let empty2 = temp.path().join("empty2.txt");
+
+    tokio::fs::write(&empty1, "").await.unwrap();
+    tokio::fs::write(&empty2, "").await.unwrap();
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [
+                empty1.to_string_lossy(),
+                empty2.to_string_lossy()
+            ]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error);
+    assert!(result.content.contains("Successfully read 2 file(s)"));
+}
+
+#[tokio::test]
+async fn MultiRead_handles_large_number_of_files() {
+    let temp = temp_dir();
+    let mut paths = Vec::new();
+
+    // Create 10 files
+    for i in 0..10 {
+        let file = temp.path().join(format!("file{}.txt", i));
+        tokio::fs::write(&file, format!("Content {}", i))
+            .await
+            .unwrap();
+        paths.push(file.to_string_lossy().to_string());
+    }
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": paths
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error);
+    assert!(result.content.contains("Successfully read 10 file(s)"));
+    for i in 0..10 {
+        assert!(result.content.contains(&format!("Content {}", i)));
+    }
+}
+
+#[tokio::test]
+async fn MultiRead_separates_files_with_clear_markers() {
+    let temp = temp_dir();
+    let file1 = temp.path().join("first.txt");
+    let file2 = temp.path().join("second.txt");
+
+    tokio::fs::write(&file1, "First file").await.unwrap();
+    tokio::fs::write(&file2, "Second file").await.unwrap();
+
+    let call = make_call(
+        "MultiRead",
+        json!({
+            "paths": [
+                file1.to_string_lossy(),
+                file2.to_string_lossy()
+            ]
+        }),
+    );
+    let result = multi_read_files(&call).await.unwrap();
+    assert!(!result.is_error);
+
+    // Check that files are separated with clear markers
+    let separator_count = result.content.matches("=== File:").count();
+    assert_eq!(separator_count, 2);
 }
 
 #[tokio::test]

@@ -93,3 +93,19 @@ macro_rules! extract_optional_bool_arg {
             .unwrap_or(false)
     };
 }
+
+/// Extract a required array argument from a ToolCall
+///
+/// # Example
+/// ```ignore
+/// let paths = extract_array_arg!(call, "paths")?;
+/// ```
+#[macro_export]
+macro_rules! extract_array_arg {
+    ($call:expr, $name:expr) => {
+        $call
+            .arguments
+            .get($name)
+            .ok_or_else(|| anyhow::anyhow!("Missing '{}' argument", $name))?
+    };
+}

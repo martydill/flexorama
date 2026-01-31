@@ -2,8 +2,8 @@ use crate::tools::types::{Tool, ToolResult};
 use crate::tools::{
     bash::bash_sync, create_directory::create_directory_sync, delete_file::delete_file_sync,
     edit_file::edit_file_sync, glob::create_glob_tool, list_directory::create_list_directory_tool,
-    read_file::create_read_file_tool, search_in_files::create_search_in_files_tool,
-    write_file::write_file_sync,
+    multi_read_files::create_multi_read_files_tool, read_file::create_read_file_tool,
+    search_in_files::create_search_in_files_tool, write_file::write_file_sync,
 };
 use serde_json::json;
 
@@ -11,6 +11,7 @@ pub fn get_builtin_tools() -> Vec<Tool> {
     vec![
         create_list_directory_tool(),
         create_read_file_tool(),
+        create_multi_read_files_tool(),
         create_search_in_files_tool(),
         create_glob_tool(),
         // Todo management tools

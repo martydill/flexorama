@@ -37,6 +37,7 @@ impl Tool {
         match self.name.as_str() {
             "list_directory" => Box::new(crate::tools::list_directory::list_directory_sync),
             "Read" => Box::new(crate::tools::read_file::read_file_sync),
+            "MultiRead" => Box::new(crate::tools::multi_read_files::multi_read_files_sync),
             "search_in_files" => Box::new(crate::tools::search_in_files::search_in_files_sync),
             "glob" => Box::new(crate::tools::glob::glob_files_sync),
             "Write" => Box::new(crate::tools::write_file::write_file_sync),

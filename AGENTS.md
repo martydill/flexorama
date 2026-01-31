@@ -22,6 +22,7 @@ The Flexorama supports the following features:
 ### Available Tools
 
 - **read_file**: Read the contents of a file
+- **multi_read_files**: Read the contents of multiple files at once (more efficient than reading one by one)
 - **write_file**: Write content to a file (creates if doesn't exist)
 - **edit_file**: Replace specific text in a file with new text
 - **list_directory**: List contents of a directory
