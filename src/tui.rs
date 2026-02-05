@@ -105,6 +105,13 @@ pub enum InputResult {
     Exit,
 }
 
+/// A selection prompt for choosing from a list of options
+#[derive(Debug, Clone)]
+pub struct SelectionPrompt {
+    pub title: String,
+    pub options: Vec<String>,
+}
+
 struct TuiOutputSink {
     state: Arc<Mutex<TuiState>>,
     screen: Arc<Mutex<TuiScreen>>,
@@ -343,6 +350,152 @@ impl Tui {
                 }
             }
         }
+    }
+
+    /// Select from a list of options with arrow key navigation.
+    /// Returns the selected index or None if cancelled.
+    pub fn select_option(&self, prompt: &SelectionPrompt) -> Option<usize> {
+        use crossterm::{cursor, execute, terminal as ct};
+        use std::io::Write;
+
+        let mut selected = 0usize;
+        let mut scroll_offset = 0usize;
+        let mut stdout = std::io::stdout();
+
+        // Get terminal size for calculating visible options
+        let term_height = ct::size().map(|(_, h)| h as usize).unwrap_or(24);
+        let max_visible = term_height.saturating_sub(6).max(3); // Reserve lines for title, footer, etc.
+
+        let result = 'outer: loop {
+            // Calculate visible range
+            let visible_end = (scroll_offset + max_visible).min(prompt.options.len());
+
+            // Move cursor to start and clear from there
+            let _ = execute!(stdout, cursor::MoveTo(0, 0), ct::Clear(ct::ClearType::FromCursorDown));
+
+            // Print title
+            println!("\x1b[1;36m{}\x1b[0m", prompt.title); // Bold cyan
+            println!();
+
+            // Print scroll indicator if needed
+            if scroll_offset > 0 {
+                println!("\x1b[90m  ↑ {} more above\x1b[0m", scroll_offset);
+            }
+
+            // Print visible options
+            for idx in scroll_offset..visible_end {
+                if let Some(option) = prompt.options.get(idx) {
+                    if idx == selected {
+                        println!("\x1b[7m> {}\x1b[0m", option); // Reversed
+                    } else {
+                        println!("  {}", option);
+                    }
+                }
+            }
+
+            // Print scroll indicator if needed
+            let remaining = prompt.options.len().saturating_sub(visible_end);
+            if remaining > 0 {
+                println!("\x1b[90m  ↓ {} more below\x1b[0m", remaining);
+            }
+
+            // Print footer
+            println!();
+            println!(
+                "\x1b[90m({}/{}) ↑/↓ navigate, Enter select, Esc cancel\x1b[0m",
+                selected + 1,
+                prompt.options.len()
+            );
+
+            let _ = stdout.flush();
+
+            // Wait for key event
+            loop {
+                if let Ok(evt) = event::read() {
+                    if let Event::Key(key_event) = evt {
+                        if !matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                            continue;
+                        }
+                        match key_event.code {
+                            KeyCode::Esc => {
+                                break 'outer None;
+                            }
+                            KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                break 'outer None;
+                            }
+                            KeyCode::Enter => {
+                                break 'outer Some(selected);
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if selected > 0 {
+                                    selected -= 1;
+                                    if selected < scroll_offset {
+                                        scroll_offset = selected;
+                                    }
+                                }
+                                break;
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if selected + 1 < prompt.options.len() {
+                                    selected += 1;
+                                    if selected >= scroll_offset + max_visible {
+                                        scroll_offset = selected.saturating_sub(max_visible - 1);
+                                    }
+                                }
+                                break;
+                            }
+                            KeyCode::PageUp => {
+                                selected = selected.saturating_sub(max_visible);
+                                scroll_offset = scroll_offset.saturating_sub(max_visible);
+                                break;
+                            }
+                            KeyCode::PageDown => {
+                                let max_idx = prompt.options.len().saturating_sub(1);
+                                selected = (selected + max_visible).min(max_idx);
+                                scroll_offset = (scroll_offset + max_visible).min(max_idx.saturating_sub(max_visible.saturating_sub(1)));
+                                break;
+                            }
+                            KeyCode::Home => {
+                                selected = 0;
+                                scroll_offset = 0;
+                                break;
+                            }
+                            KeyCode::End => {
+                                selected = prompt.options.len().saturating_sub(1);
+                                scroll_offset = prompt.options.len().saturating_sub(max_visible);
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        };
+
+        // Force a full TUI redraw to restore the screen
+        {
+            // Clear the screen first
+            let _ = execute!(stdout, ct::Clear(ct::ClearType::All), cursor::MoveTo(0, 0));
+
+            let mut guard = self.state.lock().expect("tui state lock");
+            guard.output_dirty = true;
+        }
+
+        // Also reset the terminal's internal buffer state
+        if let Ok(mut screen) = self.screen.lock() {
+            let _ = screen.terminal.clear();
+        }
+
+        let _ = self.render();
+
+        result
+    }
+
+    /// Get the current terminal height
+    pub fn terminal_height(&self) -> Option<u16> {
+        let screen = self.screen.lock().ok()?;
+        let size = screen.terminal.size().ok()?;
+        Some(size.height)
     }
 
     fn handle_paste(&self, pasted: &str) -> Result<()> {

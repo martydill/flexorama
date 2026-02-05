@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use colored::*;
+use crossterm::terminal;
 use dialoguer::Select;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, warn};
@@ -422,24 +423,8 @@ fn format_resume_option(conversation: &StoredConversation, preview: &str) -> Str
         .format("%Y-%m-%d %H:%M")
         .to_string();
 
-    let short_id: String = conversation.id.chars().take(8).collect();
-    let short_id = if conversation.id.len() > 8 {
-        format!("{}…", short_id)
-    } else {
-        short_id
-    };
-
-    let meta = format!(
-        "{} | Updated {} | Model {} | Requests {} | Tokens {}",
-        short_id,
-        updated_local,
-        conversation.model,
-        conversation.request_count,
-        conversation.total_tokens
-    );
-
-    // Put preview on its own line and add a trailing newline to create spacing between items
-    format!("{}\n  Preview: {}\n", meta, preview)
+    // Single line: date + preview
+    format!("{} · {}", updated_local, preview)
 }
 
 async fn build_conversation_previews(
@@ -473,7 +458,7 @@ async fn select_conversation_index(
     tui: Option<&tui::Tui>,
 ) -> Option<usize> {
     if let Some(tui) = tui {
-        return select_index_with_tui(tui, prompt, &options, cancel_message).await;
+        return select_index_with_tui(tui, prompt, &options, cancel_message);
     }
 
     let options_clone = options.clone();
@@ -514,51 +499,22 @@ async fn select_conversation_index(
     }
 }
 
-async fn select_index_with_tui(
+fn select_index_with_tui(
     tui: &tui::Tui,
     prompt: &str,
     options: &[String],
     cancel_message: &str,
 ) -> Option<usize> {
-    app_println!("{}", prompt.cyan().bold());
-    for (idx, option) in options.iter().enumerate() {
-        app_println!("  {}. {}", idx + 1, option);
-    }
-    app_println!(
-        "Enter a number (1-{}) and press Ctrl+Enter, or ESC to cancel.",
-        options.len()
-    );
+    let selection_prompt = tui::SelectionPrompt {
+        title: prompt.to_string(),
+        options: options.to_vec(),
+    };
 
-    loop {
-        match tui.read_input() {
-            Ok(tui::InputResult::Submitted(value)) => {
-                let trimmed = value.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                if let Ok(choice) = trimmed.parse::<usize>() {
-                    if choice >= 1 && choice <= options.len() {
-                        return Some(choice - 1);
-                    }
-                }
-                app_println!(
-                    "{} Invalid selection. Enter a number between 1 and {}.",
-                    "💡".yellow(),
-                    options.len()
-                );
-            }
-            Ok(tui::InputResult::Cancelled) => {
-                app_println!("{}", cancel_message.yellow());
-                return None;
-            }
-            Ok(tui::InputResult::Exit) => {
-                app_println!("{}", cancel_message.yellow());
-                return None;
-            }
-            Err(e) => {
-                app_eprintln!("{} Failed to read selection: {}", "?".red(), e);
-                return None;
-            }
+    match tui.select_option(&selection_prompt) {
+        Some(index) => Some(index),
+        None => {
+            app_println!("{}", cancel_message.yellow());
+            None
         }
     }
 }
@@ -574,12 +530,30 @@ pub async fn handle_resume_command(agent: &mut Agent, tui: Option<&tui::Tui>) ->
 
     let current_id = agent.current_conversation_id();
 
-    // Fetch more than 5 in case the current conversation is among the most recent
-    let recent = agent.list_recent_conversations(15, None).await?;
+    // Calculate how many conversations to show based on terminal height
+    // Each conversation takes 1 line, reserve ~8 lines for UI chrome (title, footer, etc.)
+    let max_conversations = if let Some(tui) = tui {
+        if let Some(height) = tui.terminal_height() {
+            (height as usize).saturating_sub(8).max(5).min(100)
+        } else {
+            30 // Default if we can't get terminal height
+        }
+    } else {
+        // Non-TUI mode: use crossterm to get terminal size
+        if let Ok((_, height)) = terminal::size() {
+            (height as usize).saturating_sub(8).max(5).min(100)
+        } else {
+            30 // Default
+        }
+    };
+
+    // Fetch extra in case the current conversation is among the most recent
+    let fetch_count = (max_conversations + 5) as i64;
+    let recent = agent.list_recent_conversations(fetch_count, None).await?;
     let available: Vec<StoredConversation> = recent
         .into_iter()
         .filter(|conv| Some(conv.id.as_str()) != current_id.as_deref())
-        .take(5)
+        .take(max_conversations)
         .collect();
 
     if available.is_empty() {
@@ -618,7 +592,7 @@ pub async fn handle_resume_command(agent: &mut Agent, tui: Option<&tui::Tui>) ->
             agent.resume_conversation(&conversation.id).await?;
             app_println!(
                 "{} Resumed conversation {} ({} messages loaded).",
-                "û".green(),
+                "✓".green(),
                 conversation.id,
                 agent.conversation_len()
             );
@@ -689,7 +663,7 @@ pub async fn handle_search_command(
             agent.resume_conversation(&conversation.id).await?;
             app_println!(
                 "{} Resumed conversation {} ({} messages loaded).",
-                "–".green(),
+                "✓".green(),
                 conversation.id,
                 agent.conversation_len()
             );
@@ -876,9 +850,7 @@ pub async fn handle_slash_command(
                             "Select a model",
                             &options,
                             "Model pick cancelled.",
-                        )
-                        .await
-                        {
+                        ) {
                             let new_model = options[index].clone();
                             agent.set_model(new_model.clone()).await?;
                             app_println!("{} Active model set to {}", "✅".green(), new_model);
@@ -2207,8 +2179,10 @@ mod tests {
         let preview = "Test preview";
         let result = format_resume_option(&conversation, preview);
 
-        assert!(result.contains("test-model"));
+        // Should contain date and preview, single line
         assert!(result.contains("Test preview"));
+        assert!(result.contains(" · ")); // separator
+        assert!(!result.contains('\n')); // single line
     }
 
     #[test]
@@ -2495,8 +2469,10 @@ mod tests {
         let preview = "Another preview";
         let result = format_resume_option(&conversation, preview);
 
-        assert!(result.contains("gpt-4"));
+        // Should contain date and preview, single line
         assert!(result.contains("Another preview"));
+        assert!(result.contains(" · ")); // separator
+        assert!(!result.contains('\n')); // single line
     }
 
     #[test]
