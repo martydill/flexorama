@@ -497,6 +497,7 @@ impl AnthropicClient {
         let mut current_content = String::new();
         let mut usage_info = None;
         let mut current_tool_block: Option<ContentBlock> = None;
+        let mut streamed_any_text = false; // Track if we've sent any text via callback
 
         let mut stream = response.bytes_stream();
 
@@ -510,7 +511,9 @@ impl AnthropicClient {
                 Ok(chunk) => {
                     if let Ok(chunk_str) = std::str::from_utf8(&chunk) {
                         debug!("Received chunk: {}", chunk_str);
-                        buffer.push_str(chunk_str);
+                        // Normalize CRLF to LF to handle different API line endings
+                        let normalized = chunk_str.replace("\r\n", "\n");
+                        buffer.push_str(&normalized);
 
                         // Process complete SSE events
                         while let Some(event_start) = buffer.find("data: ") {
@@ -524,7 +527,8 @@ impl AnthropicClient {
                                     break;
                                 }
 
-                                if let Ok(event) = serde_json::from_str::<StreamEvent>(event_data) {
+                                match serde_json::from_str::<StreamEvent>(event_data) {
+                                    Ok(event) => {
                                     debug!(
                                         "Received stream event: type={}, delta={:?}",
                                         event.event_type, event.delta
@@ -540,6 +544,14 @@ impl AnthropicClient {
                                                 match content_block.block_type.as_str() {
                                                     "text" => {
                                                         current_content.clear();
+                                                        // Some APIs include initial text in content_block_start
+                                                        if let Some(text) = &content_block.text {
+                                                            if !text.is_empty() {
+                                                                current_content.push_str(text);
+                                                                on_content(text.clone());
+                                                                streamed_any_text = true;
+                                                            }
+                                                        }
                                                     }
                                                     "tool_use" => {
                                                         debug!(
@@ -595,8 +607,10 @@ impl AnthropicClient {
                                                         debug!("Unexpected text in tool_use block");
                                                     } else {
                                                         // Regular text content
+                                                        debug!("Streaming text delta: {:?}", text);
                                                         current_content.push_str(&text);
                                                         on_content.as_ref()(text.clone());
+                                                        streamed_any_text = true;
                                                     }
                                                 } else if let Some(partial_json) =
                                                     delta.partial_json
@@ -630,6 +644,8 @@ impl AnthropicClient {
                                                                 Some(Value::String(partial_json));
                                                         }
                                                     }
+                                                } else {
+                                                    debug!("content_block_delta has no text or partial_json, delta: {:?}", delta);
                                                 }
                                             }
                                         }
@@ -660,6 +676,8 @@ impl AnthropicClient {
                                                 debug!("Finalized tool block: {:?}", tool_block);
                                                 content_blocks.push(tool_block);
                                             } else if !current_content.is_empty() {
+                                                debug!("content_block_stop: pushing text block ({} chars), streamed_any_text={}",
+                                                    current_content.len(), streamed_any_text);
                                                 content_blocks.push(ContentBlock::text(
                                                     current_content.clone(),
                                                 ));
@@ -669,13 +687,40 @@ impl AnthropicClient {
                                         "message_stop" => {
                                             debug!("Stream ended");
                                         }
+                                        "message_delta" => {
+                                            // Some APIs send text via message_delta events
+                                            if let Some(delta) = event.delta {
+                                                if let Some(text) = delta.text {
+                                                    if !text.is_empty() {
+                                                        current_content.push_str(&text);
+                                                        on_content(text.clone());
+                                                        streamed_any_text = true;
+                                                    }
+                                                }
+                                            }
+                                        }
                                         _ => {
                                             debug!("Unknown event type: {}", event.event_type);
+                                            // Try to extract text from delta for unknown event types
+                                            if let Some(delta) = event.delta {
+                                                if let Some(text) = delta.text {
+                                                    if !text.is_empty() && current_tool_block.is_none() {
+                                                        debug!("Extracting text from unknown event type: {}", text);
+                                                        current_content.push_str(&text);
+                                                        on_content(text.clone());
+                                                        streamed_any_text = true;
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
                                     if let Some(usage) = event.usage {
                                         usage_info = Some(usage);
+                                    }
+                                    }
+                                    Err(e) => {
+                                        debug!("Failed to parse SSE event JSON: {} - data: {}", e, event_data);
                                     }
                                 }
 
@@ -688,6 +733,41 @@ impl AnthropicClient {
                 }
                 Err(e) => {
                     return Err(anyhow::anyhow!("Stream error: {}", e));
+                }
+            }
+        }
+
+        // If no content was streamed but there's data in the buffer,
+        // the API might have returned a non-streaming JSON response.
+        // Try to parse it and emit the content through the callback.
+        if content_blocks.is_empty() && !buffer.trim().is_empty() {
+            debug!("No SSE events parsed from streaming response, attempting JSON fallback (buffer size: {} bytes)", buffer.len());
+            debug!("Buffer content: {}", buffer);
+            if let Ok(response) = serde_json::from_str::<AnthropicResponse>(&buffer) {
+                debug!("Successfully parsed non-SSE JSON response");
+                // Emit any text content through the streaming callback
+                for block in &response.content {
+                    if block.block_type == "text" {
+                        if let Some(text) = &block.text {
+                            on_content(text.clone());
+                        }
+                    }
+                }
+                return Ok(response);
+            }
+        }
+
+        // Check if there's text content in the blocks that wasn't streamed via callback.
+        // This can happen if the API uses a slightly different event format.
+        if !streamed_any_text {
+            for block in &content_blocks {
+                if block.block_type == "text" {
+                    if let Some(text) = &block.text {
+                        if !text.is_empty() {
+                            debug!("Streaming fallback: emitting unstreamed text content ({} chars)", text.len());
+                            on_content(text.clone());
+                        }
+                    }
                 }
             }
         }

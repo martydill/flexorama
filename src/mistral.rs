@@ -277,7 +277,9 @@ impl MistralClient {
             match chunk_result {
                 Ok(chunk) => {
                     if let Ok(chunk_str) = std::str::from_utf8(&chunk) {
-                        buffer.push_str(chunk_str);
+                        // Normalize CRLF to LF to handle different API line endings
+                        let normalized = chunk_str.replace("\r\n", "\n");
+                        buffer.push_str(&normalized);
 
                         while let Some(event_start) = buffer.find("data: ") {
                             if let Some(event_end) = buffer[event_start..].find("\n\n") {

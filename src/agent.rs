@@ -1002,6 +1002,16 @@ impl Agent {
                 break;
             }
 
+            // Flush any pending streamed text before tool execution starts.
+            // The streaming formatter buffers partial lines (text without a trailing
+            // newline). Emitting a newline here ensures the buffered text is displayed
+            // before tool output appears.
+            if let Some(ref on_content) = on_stream_content {
+                if !response_content.is_empty() {
+                    on_content("\n".to_string());
+                }
+            }
+
             // Execute tool calls using the new display system
             let tool_results: Vec<ToolResult> = {
                 let mut results = Vec::new();
