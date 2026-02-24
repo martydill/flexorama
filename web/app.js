@@ -12,45 +12,63 @@ const CHART_COLORS = {
 };
 
 function getChartDefaults() {
-  const isLight = state.theme === 'light';
+  const isLight = document.documentElement.classList.contains('light');
+  const textColor = isLight ? '#111827' : '#f4f4f5';
+  const mutedColor = isLight ? '#6b7280' : '#a1a1aa';
+  const gridColor = isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+
   return {
     responsive: true,
     maintainAspectRatio: true,
     plugins: {
       legend: {
         labels: {
-          color: isLight ? '#1a1a1a' : '#e6eaff',
+          color: textColor,
           font: {
             family: "'Chakra Petch', sans-serif",
-            size: 11,
+            size: 12,
+            weight: '500',
           },
         },
       },
       tooltip: {
-        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(11, 16, 26, 0.95)',
-        titleColor: isLight ? '#1a1a1a' : '#e6eaff',
-        bodyColor: isLight ? '#1a1a1a' : '#e6eaff',
-        borderColor: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.22)',
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(24, 24, 27, 0.98)',
+        titleColor: textColor,
+        bodyColor: textColor,
+        borderColor: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.3)',
         borderWidth: 1,
-        padding: 10,
+        padding: 12,
         titleFont: {
           family: "'Chakra Petch', sans-serif",
-          size: 12,
+          size: 13,
+          weight: '700',
         },
         bodyFont: {
           family: "'JetBrains Mono', monospace",
-          size: 11,
+          size: 12,
         },
       },
     },
     scales: {
       x: {
-        ticks: { color: isLight ? '#333333' : 'rgba(226, 232, 240, 0.68)' },
-        grid: { color: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.12)' },
+        ticks: { 
+          color: mutedColor, 
+          font: { 
+            family: "'Chakra Petch', sans-serif",
+            size: 11 
+          } 
+        },
+        grid: { color: gridColor },
       },
       y: {
-        ticks: { color: isLight ? '#333333' : 'rgba(226, 232, 240, 0.68)' },
-        grid: { color: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(148, 163, 184, 0.12)' },
+        ticks: { 
+          color: mutedColor, 
+          font: { 
+            family: "'Chakra Petch', sans-serif",
+            size: 11 
+          } 
+        },
+        grid: { color: gridColor },
       },
     },
   };
@@ -110,7 +128,7 @@ const state = {
   conversationSearchLastSent: "",
   conversationPagination: {
     offset: 0,
-    limit: 10,
+    limit: 25,
     hasMore: true,
     isLoadingMore: false,
   },
@@ -142,7 +160,7 @@ function applyTheme(theme) {
   }
   const btn = document.getElementById("mode-toggle");
   if (btn) {
-    btn.textContent = theme === "light" ? "☾" : "☀";
+    btn.textContent = theme === "light" ? "☀" : "☾";
     btn.title = theme === "light" ? "Switch to dark mode" : "Switch to light mode";
     btn.setAttribute("aria-label", btn.title);
   }
@@ -314,6 +332,32 @@ function renderConversationList() {
       spinner.style.opacity = "0.6";
     }
     list.appendChild(spinner);
+  }
+
+  // After rendering, check if we need to load more because the list doesn't fill the container
+  if (!query && state.conversationPagination.hasMore && !state.conversationPagination.isLoadingMore) {
+    // Use a small timeout to let the DOM settle and layout finish
+    setTimeout(checkLoadMoreConversations, 100);
+  }
+}
+
+function checkLoadMoreConversations() {
+  const list = document.getElementById("conversation-list");
+  if (!list) return;
+
+  const query = getConversationSearchTerm();
+  if (query) return;
+
+  if (state.conversationPagination.hasMore && !state.conversationPagination.isLoadingMore) {
+    // If the scrollHeight is less than or equal to the clientHeight (with a small buffer),
+    // it means there's no scrollbar and the container isn't full.
+    // Or if the user is already scrolled to the very bottom, trigger a load.
+    const isNearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
+    const isNotFull = list.scrollHeight <= list.clientHeight + 10;
+
+    if (isNotFull || isNearBottom) {
+      loadMoreConversations();
+    }
   }
 }
 
@@ -1003,7 +1047,7 @@ async function loadConversations() {
   // Reset pagination state when loading conversations
   state.conversationPagination = {
     offset: 0,
-    limit: 10,
+    limit: 25,
     hasMore: true,
     isLoadingMore: false,
   };
@@ -2305,7 +2349,7 @@ function initTabs() {
 }
 
 function initTheme() {
-  const stored = localStorage.getItem("flexorama-theme");
+  const stored = localStorage.getItem("flexorama-theme") || localStorage.getItem("theme-preference");
   const initial = stored === "light" || stored === "dark" ? stored : "dark";
   applyTheme(initial);
   const toggle = document.getElementById("mode-toggle");
@@ -2909,6 +2953,7 @@ function createConversationsChart(ctx, data) {
 
 function createModelsChart(ctx, data) {
   if (!data || data.length === 0) return null;
+  const isLight = document.documentElement.classList.contains('light');
   const colors = Object.values(CHART_COLORS);
   return new Chart(ctx, {
     type: 'pie',
@@ -2917,7 +2962,7 @@ function createModelsChart(ctx, data) {
       datasets: [{
         data: data.map(d => d.total_tokens),
         backgroundColor: data.map((_, i) => colors[i % colors.length]),
-        borderColor: '#0b101a',
+        borderColor: isLight ? '#ffffff' : '#18181b',
         borderWidth: 2,
       }],
     },
@@ -2930,6 +2975,7 @@ function createModelsChart(ctx, data) {
 
 function createProvidersChart(ctx, data) {
   if (!data || data.length === 0) return null;
+  const isLight = document.documentElement.classList.contains('light');
   const colors = Object.values(CHART_COLORS);
   return new Chart(ctx, {
     type: 'doughnut',
@@ -2938,7 +2984,7 @@ function createProvidersChart(ctx, data) {
       datasets: [{
         data: data.map(d => d.total_tokens),
         backgroundColor: data.map((_, i) => colors[i % colors.length]),
-        borderColor: '#0b101a',
+        borderColor: isLight ? '#ffffff' : '#18181b',
         borderWidth: 2,
       }],
     },
