@@ -3,7 +3,7 @@
 The hybrid cli/web coding agent that works your way.
 
 <img width="1115" height="618" alt="image" src="https://github.com/user-attachments/assets/c39ad561-2021-4d83-88ae-12842338b9fb" />
-<img width="1290" height="719" alt="image" src="https://github.com/user-attachments/assets/fc96dd80-c8c6-43ce-b6a4-bb9bc8d27c97" />
+<img width="1217" height="786" alt="image" src="https://github.com/user-attachments/assets/a6aca727-c29b-4275-980c-d6bffd37aad1" />
 
 ## Features
  - Built-in file editing, bash, code search, and glob tools
