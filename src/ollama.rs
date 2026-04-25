@@ -20,6 +20,8 @@ struct OllamaRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
 }
 
@@ -35,6 +37,8 @@ struct OllamaOptions {
 struct OllamaMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<OllamaToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,6 +87,35 @@ struct OllamaResponse {
     eval_count: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+struct OllamaStreamResponse {
+    #[serde(default)]
+    message: Option<OllamaMessage>,
+    #[serde(default)]
+    delta: Option<OllamaDelta>,
+    #[serde(default)]
+    done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_eval_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    eval_count: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct OllamaDelta {
+    #[serde(default)]
+    #[allow(dead_code)]
+    role: Option<String>,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    thinking: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<OllamaToolCall>>,
+}
+
 #[derive(Default)]
 struct ToolCallBuilder {
     id: Option<String>,
@@ -104,6 +137,16 @@ struct OllamaModelInfo {
     #[serde(default)]
     #[allow(dead_code)]
     size: Option<i64>,
+}
+
+#[derive(Debug)]
+struct ParsedOllamaStreamChunk {
+    content: String,
+    reasoning: Option<String>,
+    tool_calls: Option<Vec<OllamaToolCall>>,
+    done: bool,
+    prompt_eval_count: Option<u32>,
+    eval_count: Option<u32>,
 }
 
 pub struct OllamaClient {
@@ -349,7 +392,9 @@ impl OllamaClient {
                     "Received {} empty chunks in a row. Breaking stream to prevent infinite loop.",
                     empty_chunk_count
                 );
-                warn!("This likely means the model doesn't support tool calling or encountered an error.");
+                warn!(
+                    "This likely means the model is sending unsupported stream frames or encountered an error."
+                );
                 break;
             }
 
@@ -367,12 +412,17 @@ impl OllamaClient {
                                 continue;
                             }
 
-                            if let Ok(response) = serde_json::from_str::<OllamaResponse>(&line) {
+                            if let Ok(response) = parse_stream_chunk(&line) {
                                 chunk_count += 1;
 
                                 // Track empty chunks to detect infinite loops
-                                let is_empty_chunk = response.message.content.is_empty()
-                                    && response.message.tool_calls.is_none()
+                                let has_reasoning = response
+                                    .reasoning
+                                    .as_ref()
+                                    .is_some_and(|reasoning| !reasoning.is_empty());
+                                let is_empty_chunk = response.content.is_empty()
+                                    && response.tool_calls.is_none()
+                                    && !has_reasoning
                                     && !response.done;
 
                                 if is_empty_chunk {
@@ -384,20 +434,27 @@ impl OllamaClient {
                                 // Only log every 10th chunk or important ones to reduce spam
                                 if chunk_count % 10 == 0
                                     || response.done
-                                    || response.message.tool_calls.is_some()
+                                    || response.tool_calls.is_some()
+                                    || has_reasoning
                                 {
-                                    debug!("Streaming chunk #{}: done={}, content_len={}, has_tools={}, empty_streak={}",
-                                           chunk_count, response.done, response.message.content.len(),
-                                           response.message.tool_calls.is_some(), empty_chunk_count);
+                                    debug!(
+                                        "Streaming chunk #{}: done={}, content_len={}, has_reasoning={}, has_tools={}, empty_streak={}",
+                                        chunk_count,
+                                        response.done,
+                                        response.content.len(),
+                                        has_reasoning,
+                                        response.tool_calls.is_some(),
+                                        empty_chunk_count
+                                    );
                                 }
 
-                                let text = &response.message.content;
+                                let text = &response.content;
                                 if !text.is_empty() {
                                     content.push_str(text);
                                     on_content(text.clone());
                                 }
 
-                                if let Some(calls) = response.message.tool_calls {
+                                if let Some(calls) = response.tool_calls {
                                     debug!("Received tool calls in stream: {} calls", calls.len());
                                     for (idx, call) in calls.into_iter().enumerate() {
                                         debug!("Tool call {}: {:?}", idx, call);
@@ -428,6 +485,7 @@ impl OllamaClient {
                                 }
                             } else {
                                 debug!("Failed to parse streaming line: {}", line);
+                                empty_chunk_count = 0;
                             }
                         }
                     }
@@ -521,6 +579,7 @@ impl OllamaClient {
             messages: ollama_messages,
             tools: None,
             stream: Some(stream),
+            think: Some(false),
             options: Some(OllamaOptions {
                 temperature: Some(temperature),
                 num_predict: Some(max_tokens),
@@ -585,6 +644,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
         ollama_messages.push(OllamaMessage {
             role: "system".to_string(),
             content: prompt.clone(),
+            thinking: None,
             tool_calls: None,
             images: None,
         });
@@ -622,6 +682,7 @@ fn map_messages(messages: Vec<Message>, system_prompt: Option<&String>) -> Vec<O
             ollama_messages.push(OllamaMessage {
                 role: message.role.clone(),
                 content: text,
+                thinking: None,
                 tool_calls: None,
                 images: if image_data.is_empty() {
                     None
@@ -642,6 +703,38 @@ fn parse_arguments(arguments: &str) -> Value {
     }
 
     serde_json::from_str::<Value>(trimmed).unwrap_or_else(|_| Value::String(arguments.to_string()))
+}
+
+fn parse_stream_chunk(line: &str) -> Result<ParsedOllamaStreamChunk, serde_json::Error> {
+    let response: OllamaStreamResponse = serde_json::from_str(line)?;
+
+    let (content, reasoning, tool_calls) = if let Some(message) = response.message {
+        (
+            message.content,
+            message.thinking.filter(|thinking| !thinking.is_empty()),
+            message.tool_calls,
+        )
+    } else if let Some(delta) = response.delta {
+        (
+            delta.content,
+            delta
+                .thinking
+                .or(delta.reasoning)
+                .filter(|thinking| !thinking.is_empty()),
+            delta.tool_calls,
+        )
+    } else {
+        (String::new(), None, None)
+    };
+
+    Ok(ParsedOllamaStreamChunk {
+        content,
+        reasoning,
+        tool_calls,
+        done: response.done,
+        prompt_eval_count: response.prompt_eval_count,
+        eval_count: response.eval_count,
+    })
 }
 
 #[cfg(test)]
@@ -799,6 +892,7 @@ mod tests {
         let message = OllamaMessage {
             role: "user".to_string(),
             content: "Hello".to_string(),
+            thinking: None,
             tool_calls: None,
             images: None,
         };
@@ -882,11 +976,13 @@ mod tests {
             messages: vec![OllamaMessage {
                 role: "user".to_string(),
                 content: "Hello".to_string(),
+                thinking: None,
                 tool_calls: None,
                 images: None,
             }],
             tools: None,
             stream: Some(false),
+            think: Some(false),
             options: Some(OllamaOptions {
                 temperature: Some(0.7),
                 num_predict: Some(1000),
@@ -932,6 +1028,40 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_stream_chunk_with_delta_reasoning() {
+        let json = r#"{"delta":{"role":"assistant","content":"","reasoning":"The user wants to..."},"done":false}"#;
+        let chunk = parse_stream_chunk(json).unwrap();
+
+        assert_eq!(chunk.content, "");
+        assert_eq!(chunk.reasoning.as_deref(), Some("The user wants to..."));
+        assert!(chunk.tool_calls.is_none());
+        assert!(!chunk.done);
+    }
+
+    #[test]
+    fn test_parse_stream_chunk_with_message_thinking() {
+        let json =
+            r#"{"message":{"role":"assistant","content":"","thinking":"step by step","tool_calls":null},"done":false}"#;
+        let chunk = parse_stream_chunk(json).unwrap();
+
+        assert_eq!(chunk.content, "");
+        assert_eq!(chunk.reasoning.as_deref(), Some("step by step"));
+        assert!(chunk.tool_calls.is_none());
+        assert!(!chunk.done);
+    }
+
+    #[test]
+    fn test_parse_stream_chunk_with_message_shape() {
+        let json = r#"{"message":{"role":"assistant","content":"hello","tool_calls":null},"done":false}"#;
+        let chunk = parse_stream_chunk(json).unwrap();
+
+        assert_eq!(chunk.content, "hello");
+        assert!(chunk.reasoning.is_none());
+        assert!(chunk.tool_calls.is_none());
+        assert!(!chunk.done);
+    }
+
+    #[test]
     fn test_tool_call_builder_default() {
         let builder = ToolCallBuilder::default();
         assert!(builder.id.is_none());
@@ -946,6 +1076,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "Hello user".to_string(),
+                thinking: None,
                 tool_calls: None,
                 images: None,
             },
@@ -975,6 +1106,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "".to_string(),
+                thinking: None,
                 tool_calls: Some(vec![OllamaToolCall {
                     id: Some("call_1".to_string()),
                     call_type: Some("function".to_string()),
@@ -1016,6 +1148,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "Let me help".to_string(),
+                thinking: None,
                 tool_calls: Some(vec![OllamaToolCall {
                     id: None,
                     call_type: None,
@@ -1045,6 +1178,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "".to_string(),
+                thinking: None,
                 tool_calls: None,
                 images: None,
             },
@@ -1065,6 +1199,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "".to_string(),
+                thinking: None,
                 tool_calls: Some(vec![OllamaToolCall {
                     id: None,
                     call_type: None,
@@ -1104,6 +1239,7 @@ mod tests {
         assert_eq!(request.messages[0].content, "Hi");
         assert!(request.tools.is_none());
         assert_eq!(request.stream, Some(false));
+        assert_eq!(request.think, Some(false));
         assert_eq!(request.options.as_ref().unwrap().temperature, Some(0.7));
         assert_eq!(request.options.as_ref().unwrap().num_predict, Some(1000));
     }
@@ -1123,6 +1259,7 @@ mod tests {
         assert_eq!(request.messages[0].content, "You are helpful");
         assert_eq!(request.messages[1].role, "user");
         assert_eq!(request.stream, Some(true));
+        assert_eq!(request.think, Some(false));
     }
 
     #[test]
