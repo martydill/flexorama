@@ -150,6 +150,9 @@ test.describe('Conversations', () => {
   });
 
   test('should lazy load conversations with pagination', async ({ page }) => {
+    // Remove the default conversations mock to prevent interference
+    await page.unroute({ url: '/api/conversations*' });
+
     // Create 25 mock conversations to test pagination (default limit is 10)
     const mockConvsPage1 = Array.from({ length: 10 }, (_, i) => ({
       id: `${i + 1}`,
@@ -241,6 +244,9 @@ test.describe('Conversations', () => {
   });
 
   test('should show loading spinner while loading more conversations', async ({ page }) => {
+    // Remove the default conversations mock to prevent interference
+    await page.unroute({ url: '/api/conversations*' });
+
     const mockConvsPage1 = Array.from({ length: 10 }, (_, i) => ({
       id: `${i + 1}`,
       updated_at: new Date(Date.now() - i * 1000).toISOString(),
