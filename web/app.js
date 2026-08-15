@@ -311,7 +311,7 @@ function renderConversationList() {
     const isActive = String(conv.id) === String(state.activeConversationId);
     const isStreaming = conversationStreams.has(String(conv.id)) && conversationStreams.get(String(conv.id)).isStreaming;
     item.className = "list-item" + (isActive ? " active" : "");
-    const streamingIndicator = isStreaming ? '<span style="color: var(--accent-neon); margin-left: 6px;" title="Streaming">●</span>' : '';
+    const streamingIndicator = isStreaming ? '<span style="color: var(--accent); margin-left: 6px;" title="Streaming">●</span>' : '';
     item.innerHTML = `
       <div style="font-weight:600;">${conv.last_message ? conv.last_message.slice(0, 50) : "new chat"}${streamingIndicator}</div>
       <small>${new Date(conv.updated_at).toLocaleString()} • ${conv.model}</small>
