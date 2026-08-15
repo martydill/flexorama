@@ -29,6 +29,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let is_interactive = cli.message.is_none() && !cli.non_interactive && !cli.web && !cli.acp;
+    let is_resuming_session = cli.continue_session || cli.resume_conversation.is_some();
     let stream = !cli.no_stream;
 
     // Create code formatter early so TUI can render input/output immediately
@@ -291,14 +292,80 @@ async fn main() -> Result<()> {
     // Add context files (silent in ACP mode to avoid stdout pollution)
     add_context_files(&mut agent, &cli.context_files, cli.acp).await?;
 
-    // Create initial conversation in database
-    match agent.start_new_conversation().await {
-        Ok(conversation_id) => {
-            info!("Started initial conversation: {}", conversation_id);
+    // Handle session resume or create initial conversation
+    let should_proceed = if cli.continue_session {
+        // Automatically load the most recent conversation
+        match agent.list_recent_conversations(1, None).await {
+            Ok(conversations) => {
+                if let Some(most_recent) = conversations.first() {
+                    match agent.resume_conversation(&most_recent.id).await {
+                        Ok(()) => {
+                            app_println!(
+                                "{} Resumed most recent conversation: {}",
+                                "✓".green(),
+                                most_recent.id
+                            );
+                            true
+                        }
+                        Err(e) => {
+                            app_eprintln!("Failed to resume conversation: {}", e);
+                            false
+                        }
+                    }
+                } else {
+                    app_eprintln!("{}", "No recent conversations found.".dimmed());
+                    app_println!("Start a new conversation with: {}", "flexorama".green());
+                    false
+                }
+            }
+            Err(e) => {
+                app_eprintln!("Failed to list conversations: {}", e);
+                false
+            }
         }
-        Err(e) => {
-            warn!("Failed to create initial conversation: {}", e);
+    } else if let Some(ref conversation_id) = cli.resume_conversation {
+        // Resume specific conversation by ID
+        match agent.resume_conversation(conversation_id).await {
+            Ok(()) => {
+                app_println!(
+                    "{} Resumed conversation: {}",
+                    "✓".green(),
+                    conversation_id
+                );
+                true
+            }
+            Err(e) => {
+                app_eprintln!("Failed to resume conversation {}: {}", conversation_id, e);
+                false
+            }
         }
+    } else {
+        // Create initial conversation in database
+        match agent.start_new_conversation().await {
+            Ok(conversation_id) => {
+                info!("Started initial conversation: {}", conversation_id);
+                true
+            }
+            Err(e) => {
+                warn!("Failed to create initial conversation: {}", e);
+                true // Continue anyway
+            }
+        }
+    };
+
+    // Exit if resume failed or was cancelled
+    if !should_proceed {
+        if is_resuming_session && !cli.continue_session {
+            // Explicit --resume failed, exit with error
+            std::process::exit(1);
+        }
+        // User cancelled from --continue, just exit cleanly
+        return Ok(());
+    }
+
+    // Display conversation context if we resumed a session
+    if is_resuming_session && !cli.acp {
+        agent.display_context();
     }
 
     // Run SessionStart hook
@@ -695,6 +762,35 @@ mod tests {
         let cli = Cli::try_parse_from(args).unwrap();
         let stream = !cli.no_stream;
         assert!(!stream);
+    }
+
+    #[test]
+    fn test_cli_parsing_continue() {
+        let args = vec!["flexorama", "--continue"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(cli.continue_session);
+        assert!(cli.resume_conversation.is_none());
+    }
+
+    #[test]
+    fn test_cli_parsing_resume() {
+        let args = vec!["flexorama", "--resume", "conv-abc123"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.resume_conversation, Some("conv-abc123".to_string()));
+        assert!(!cli.continue_session);
+    }
+
+    #[test]
+    fn test_is_resuming_session_detection() {
+        let cli_continue = Cli::try_parse_from(vec!["flexorama", "--continue"]).unwrap();
+        assert!(cli_continue.continue_session);
+
+        let cli_resume = Cli::try_parse_from(vec!["flexorama", "--resume", "id"]).unwrap();
+        assert!(cli_resume.resume_conversation.is_some());
+
+        let cli_normal = Cli::try_parse_from(vec!["flexorama"]).unwrap();
+        assert!(!cli_normal.continue_session);
+        assert!(cli_normal.resume_conversation.is_none());
     }
 
     // Test that modules are accessible
