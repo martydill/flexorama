@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, NaiveDate, Utc};
 use log::{debug, info};
 use serde::Serialize;
-use sqlx::{Row, SqlitePool};
+use sqlx::{Row, SqlitePool, AssertSqlSafe};
 use std::path::PathBuf;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -542,7 +542,7 @@ impl DatabaseManager {
             query.push_str(" LIMIT ?");
         }
 
-        let mut sql = sqlx::query(&query);
+        let mut sql = sqlx::query(AssertSqlSafe(query.as_str()));
         if let Some(limit) = limit {
             sql = sql.bind(limit);
         }
@@ -785,7 +785,7 @@ impl DatabaseManager {
             "#,
         );
 
-        let mut sql = sqlx::query(&query);
+        let mut sql = sqlx::query(AssertSqlSafe(query.as_str()));
 
         if let Some(filter) = search_filter {
             let pattern = format!("%{}%", filter);

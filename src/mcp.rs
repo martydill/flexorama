@@ -2,7 +2,7 @@ use anyhow::Result;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
-use rand::RngCore;
+use rand::Rng;
 use reqwest::{header::HeaderMap, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
