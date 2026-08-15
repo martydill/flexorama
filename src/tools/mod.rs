@@ -9,6 +9,7 @@ pub mod complete_todo;
 pub mod create_directory;
 pub mod create_todo;
 pub mod delete_file;
+pub mod diff;
 pub mod edit_file;
 pub mod glob;
 pub mod list_directory;

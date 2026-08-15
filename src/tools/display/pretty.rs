@@ -131,7 +131,10 @@ impl super::ToolDisplay for PrettyDisplay {
             format!("{:.2}s", duration.as_secs_f64()).dimmed()
         );
 
-        let _ = result;
+        // Print the result content (includes diff for Edit/Write tools)
+        if !result.is_empty() {
+            app_println!("{}", result);
+        }
 
         app_println!(
             "{}",
