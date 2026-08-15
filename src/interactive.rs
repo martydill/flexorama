@@ -46,7 +46,6 @@ pub async fn run_tui_interactive(
         .await;
 
     logo::display_logo();
-    app_println!("{}", "💻 Flexorama - Interactive Mode".green().bold());
     if plan_mode {
         app_println!(
             "{}",
@@ -55,7 +54,6 @@ pub async fn run_tui_interactive(
                 .bold()
         );
     }
-    app_println!("{}", "Type '/help' for commands.".dimmed());
     app_println!();
 
     let queued_inputs = Arc::new(Mutex::new(VecDeque::new()));

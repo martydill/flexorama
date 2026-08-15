@@ -4,6 +4,7 @@ use colored::*;
 use log::{debug, error, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, RwLock};
@@ -41,7 +42,8 @@ async fn main() -> Result<()> {
     };
 
     // Initialize logger - in ACP mode, all logs go to stderr to keep stdout clean for JSON-RPC
-    output::init_logger(log::LevelFilter::Info, cli.acp);
+    // Default to Warn level (quiet startup), use Debug if verbose is enabled
+    output::init_logger(log::LevelFilter::Warn, cli.acp, cli.verbose);
     debug!("Starting Flexorama");
 
     // Display large red warning if yolo mode is enabled
@@ -79,18 +81,26 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| config.default_model.clone());
 
-    // In ACP mode, all logging must go to stderr, never stdout
+    // Show a single-line status banner (unless in ACP mode)
     if !cli.acp {
-        app_println!("Using configuration:");
-        app_println!("  Provider: {}", config.provider);
-        app_println!("  Base URL: {}", config.base_url);
-        app_println!("  Model: {}", model);
-
-        // Show yolo mode status
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let cwd_display = cwd
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_else(|| cwd.to_str().unwrap_or("."));
         if cli.yolo {
             app_println!(
-                "  {} YOLO MODE ENABLED - All permission checks bypassed!",
-                "🔥".red().bold()
+                "{} {} via {} 🔥",
+                cwd_display.dimmed(),
+                model,
+                config.provider
+            );
+        } else {
+            app_println!(
+                "{} {} via {}",
+                cwd_display.dimmed(),
+                model,
+                config.provider
             );
         }
     }
@@ -119,8 +129,8 @@ async fn main() -> Result<()> {
             env_hint
         );
         std::process::exit(1);
-    } else if !cli.acp {
-        // Only print API key info when not in ACP mode (stdout must be clean)
+    } else if cli.verbose && !cli.acp {
+        // Only print API key info in verbose mode when not in ACP mode (stdout must be clean)
         app_println!(
             "  API Key: {}",
             if config.api_key.len() > 10 {
@@ -260,7 +270,7 @@ async fn main() -> Result<()> {
     match &cli.system_prompt {
         Some(system_prompt) => {
             agent.set_system_prompt(system_prompt.clone());
-            if !cli.acp {
+            if cli.verbose && !cli.acp {
                 app_println!(
                     "{} Using custom system prompt: {}",
                     "✓".green(),
@@ -272,7 +282,7 @@ async fn main() -> Result<()> {
             // Use config's default system prompt if available
             if let Some(default_prompt) = &config.default_system_prompt {
                 agent.set_system_prompt(default_prompt.clone());
-                if !cli.acp {
+                if cli.verbose && !cli.acp {
                     app_println!("{} Using default system prompt from config", "✓".green());
                 }
             }
@@ -281,7 +291,7 @@ async fn main() -> Result<()> {
 
     if cli.plan_mode {
         agent.apply_plan_mode_prompt();
-        if !cli.acp {
+        if cli.verbose && !cli.acp {
             app_println!(
                 "{} Plan mode enabled: generating read-only plans and saving them to the database.",
                 "✓".green()
@@ -289,8 +299,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Add context files (silent in ACP mode to avoid stdout pollution)
-    add_context_files(&mut agent, &cli.context_files, cli.acp).await?;
+    // Add context files (silent in ACP mode or when not verbose)
+    add_context_files(&mut agent, &cli.context_files, cli.acp || !cli.verbose).await?;
 
     // Handle session resume or create initial conversation
     let should_proceed = if cli.continue_session {

@@ -93,7 +93,7 @@ impl log::Log for OutputLogger {
     }
 }
 
-pub fn init_logger(default_level: LevelFilter, stderr_only: bool) {
+pub fn init_logger(default_level: LevelFilter, stderr_only: bool, verbose: bool) {
     let level = std::env::var("RUST_LOG")
         .ok()
         .and_then(|value| {
@@ -111,7 +111,14 @@ pub fn init_logger(default_level: LevelFilter, stderr_only: bool) {
                 }
             })
         })
-        .unwrap_or(default_level);
+        .unwrap_or_else(|| {
+            // If verbose mode is enabled, use Debug level; otherwise use default
+            if verbose {
+                LevelFilter::Debug
+            } else {
+                default_level
+            }
+        });
 
     let logger = OutputLogger::new(level, stderr_only);
     let _ = log::set_boxed_logger(Box::new(logger));

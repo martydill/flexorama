@@ -72,6 +72,10 @@ pub struct Cli {
     /// Resume a specific conversation by ID
     #[arg(long = "resume", value_name = "ID", conflicts_with = "continue_session")]
     pub resume_conversation: Option<String>,
+
+    /// Enable verbose logging (shows info/debug messages during startup)
+    #[arg(short, long)]
+    pub verbose: bool,
 }
 
 #[cfg(test)]
