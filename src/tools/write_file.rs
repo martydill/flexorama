@@ -1,4 +1,5 @@
 use crate::security::FileSecurityManager;
+use crate::tools::diff::format_write_diff;
 use crate::tools::path::resolve_project_path;
 use crate::tools::security_utils::check_file_security;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
@@ -54,10 +55,13 @@ pub async fn write_file(
         }
     }
 
+    // Generate formatted diff output for the write operation
+    let diff_output = format_write_diff(&absolute_path.display().to_string(), content);
+
     match fs::write(&absolute_path, content).await {
         Ok(_) => Ok(ToolResult {
             tool_use_id,
-            content: format!("Successfully wrote to file: {}", absolute_path.display()),
+            content: format!("Successfully wrote to file: {}\n\n{}", absolute_path.display(), diff_output),
             is_error: false,
         }),
         Err(e) => Ok(ToolResult {
