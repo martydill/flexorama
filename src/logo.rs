@@ -52,21 +52,6 @@ pub fn display_logo() {
             }
             app_println!("{}", colored_line);
         }
-        let subtitle = "✨ Your Supercharged AI Coding Agent";
-        let mut colored_subtitle = String::new();
-        let chars: Vec<char> = subtitle.chars().collect();
-        for (i, ch) in chars.iter().enumerate() {
-            let progress = i as f32 / chars.len().max(1) as f32;
-            let (r, g, b) = if progress < 0.5 {
-                let t = progress / 0.5;
-                (255, (0.0 * (1.0 - t) + 165.0 * t) as u8, 0)
-            } else {
-                let t = (progress - 0.5) / 0.5;
-                (255, (165.0 * (1.0 - t) + 255.0 * t) as u8, 0)
-            };
-            colored_subtitle.push_str(&format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, ch));
-        }
-        app_println!("{}", colored_subtitle);
         app_println!();
         return;
     }
@@ -117,29 +102,7 @@ pub fn display_logo() {
         }
     }
 
-    // Add a subtitle with fire gradient effect
-    let subtitle = "🔥 Your Supercharged AI Coding Agent";
-    for (i, ch) in subtitle.chars().enumerate() {
-        let progress = i as f32 / subtitle.len() as f32;
-        let (r, g, b) = if progress < 0.5 {
-            // Red to orange
-            let t = progress / 0.5;
-            (255, (0.0 * (1.0 - t) + 165.0 * t) as u8, 0)
-        } else {
-            // Orange to yellow
-            let t = (progress - 0.5) / 0.5;
-            (255, (165.0 * (1.0 - t) + 255.0 * t) as u8, 0)
-        };
-
-        queue!(
-            stdout,
-            SetForegroundColor(Color::Rgb { r, g, b }),
-            Print(ch)
-        )
-        .ok();
-    }
-
-    queue!(stdout, ResetColor, Print("\n\n")).ok();
+    queue!(stdout, ResetColor, Print("\n")).ok();
     stdout.flush().ok();
 }
 

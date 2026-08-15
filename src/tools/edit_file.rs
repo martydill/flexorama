@@ -1,4 +1,5 @@
 use crate::security::FileSecurityManager;
+use crate::tools::diff::format_diff;
 use crate::tools::path::resolve_project_path;
 use crate::tools::security_utils::check_file_security;
 use crate::tools::types::{Tool, ToolCall, ToolResult};
@@ -87,12 +88,18 @@ pub async fn edit_file(
             // Normalize new_text to use the file's line endings
             let normalized_new_text = normalize_line_endings(new_text, file_line_ending);
 
+            // Capture old content for diff
+            let old_content = content.clone();
+
             content = content.replace(&normalized_old_text, &normalized_new_text);
+
+            // Generate diff showing the change
+            let diff_output = format_diff(&absolute_path.display().to_string(), &old_content, &content);
 
             match fs::write(&absolute_path, content).await {
                 Ok(_) => Ok(ToolResult {
                     tool_use_id,
-                    content: format!("Successfully edited file: {}", absolute_path.display()),
+                    content: format!("Successfully edited file: {}\n\n{}", absolute_path.display(), diff_output),
                     is_error: false,
                 }),
                 Err(e) => Ok(ToolResult {

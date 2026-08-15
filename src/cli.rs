@@ -76,6 +76,10 @@ pub struct Cli {
     /// Run the interactive setup wizard
     #[arg(long)]
     pub setup: bool,
+
+    /// Enable verbose logging (shows info/debug messages during startup)
+    #[arg(short, long)]
+    pub verbose: bool,
 }
 
 #[cfg(test)]
@@ -97,6 +101,7 @@ mod tests {
         assert_eq!(cli.system_prompt, None);
         assert!(!cli.no_stream);
         assert!(!cli.setup);
+        assert!(!cli.verbose);
         assert!(!cli.yolo);
         assert!(!cli.plan_mode);
         assert!(!cli.web);
