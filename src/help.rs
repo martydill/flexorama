@@ -241,6 +241,7 @@ pub fn print_help() {
     app_println!("  /model        - Show or set the active model");
     app_println!("  /search <q>   - Search previous conversations");
     app_println!("  /resume       - Resume a previous conversation");
+    app_println!("  /export       - Export current conversation to Markdown and open in editor");
     app_println!("  /clear        - Clear all conversation context (keeps AGENTS.md if it exists)");
     app_println!("  /reset-stats  - Reset token usage statistics");
     app_println!("  /permissions  - Manage bash command security permissions");

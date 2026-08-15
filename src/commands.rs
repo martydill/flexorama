@@ -1,12 +1,12 @@
 use anyhow::{anyhow, Result};
-use chrono::Local;
+use chrono::{Local, Utc};
 use colored::*;
 use crossterm::terminal;
 use dialoguer::Select;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, warn};
 use serde_json;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::fs as async_fs;
@@ -25,6 +25,200 @@ use crate::processing::create_streaming_renderer;
 use crate::subagent;
 use crate::tools;
 use crate::tui;
+
+/// Export the current conversation to a Markdown file and open it in the default editor
+pub async fn handle_export_command(agent: &mut Agent) -> Result<()> {
+    let db = agent.database_manager().ok_or_else(|| {
+        anyhow!("Database is not configured. Cannot export conversation without database.")
+    })?;
+
+    let conversation_id = agent
+        .current_conversation_id()
+        .ok_or_else(|| anyhow!("No active conversation to export. Start a conversation first."))?
+        .to_string();
+
+    // Get conversation metadata
+    let conversation = db
+        .get_conversation(&conversation_id)
+        .await?
+        .ok_or_else(|| anyhow!("Conversation not found in database"))?;
+
+    // Get messages and tool calls
+    let messages = db.get_conversation_messages(&conversation_id).await?;
+    let tool_calls = db.get_conversation_tool_calls(&conversation_id).await?;
+
+    // Create timeline for proper ordering
+    #[derive(Debug, Clone)]
+    enum TimelineEntry {
+        Message(StoredMessage),
+        ToolCall(crate::database::ToolCallRecord),
+        ToolResult(crate::database::ToolCallRecord),
+    }
+
+    let mut timeline: Vec<(chrono::DateTime<chrono::Utc>, i32, TimelineEntry)> = Vec::new();
+
+    for message in &messages {
+        timeline.push((
+            message.created_at,
+            0,
+            TimelineEntry::Message(message.clone()),
+        ));
+    }
+
+    for tool_call in &tool_calls {
+        timeline.push((
+            tool_call.created_at,
+            1,
+            TimelineEntry::ToolCall(tool_call.clone()),
+        ));
+        if tool_call.result_content.is_some() {
+            timeline.push((
+                tool_call.created_at + chrono::Duration::milliseconds(1),
+                2,
+                TimelineEntry::ToolResult(tool_call.clone()),
+            ));
+        }
+    }
+
+    timeline.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+    // Build markdown content
+    let mut markdown = String::new();
+
+    // Header with metadata
+    markdown.push_str("# Conversation Export\n\n");
+    markdown.push_str(&format!("**Exported:** {}\\n", Utc::now().to_rfc3339()));
+    markdown.push_str(&format!(
+        "**Created:** {}\\n",
+        conversation.created_at.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S")
+    ));
+    markdown.push_str(&format!(
+        "**Updated:** {}\\n",
+        conversation.updated_at.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S")
+    ));
+    markdown.push_str(&format!("**Model:** {}\\n", conversation.model));
+    if let Some(ref subagent) = conversation.subagent {
+        markdown.push_str(&format!("**Subagent:** {}\\n", subagent));
+    }
+    markdown.push_str(&format!("**ID:** `{}`\\n", conversation.id));
+    markdown.push_str("\\n---\\n\\n");
+
+    // System prompt if exists
+    if let Some(ref system_prompt) = conversation.system_prompt {
+        markdown.push_str("## System Prompt\\n\\n");
+        markdown.push_str(&format!("{}\\n\\n", system_prompt));
+        markdown.push_str("---\\n\\n");
+    }
+
+    // Process timeline
+    for (_ts, _order, entry) in timeline {
+        match entry {
+            TimelineEntry::Message(msg) => {
+                let role_header = match msg.role.as_str() {
+                    "user" => "👤 User",
+                    "assistant" => "🤖 Assistant",
+                    _ => &msg.role,
+                };
+                markdown.push_str(&format!("### {}\\n\\n", role_header));
+                markdown.push_str(&msg.content);
+                markdown.push_str("\\n\\n");
+            }
+            TimelineEntry::ToolCall(tc) => {
+                markdown.push_str(&format!("#### 🔧 Tool: {}\\n\\n", tc.tool_name));
+                // Try to format the JSON nicely
+                match serde_json::from_str::<serde_json::Value>(&tc.tool_arguments) {
+                    Ok(json) => {
+                        markdown.push_str("```json\\n");
+                        markdown.push_str(&serde_json::to_string_pretty(&json).unwrap_or_else(|_| tc.tool_arguments.clone()));
+                        markdown.push_str("\\n```\\n\\n");
+                    }
+                    Err(_) => {
+                        markdown.push_str(&format!("```\\n{}\\n```\\n\\n", tc.tool_arguments));
+                    }
+                }
+            }
+            TimelineEntry::ToolResult(tc) => {
+                let result_header = if tc.is_error { "❌ Error" } else { "✅ Result" };
+                markdown.push_str(&format!("#### {}\\n\\n", result_header));
+                if let Some(ref content) = tc.result_content {
+                    markdown.push_str("```\\n");
+                    // Escape backticks in content to avoid breaking markdown
+                    let escaped = content.replace('`', "\\`");
+                    markdown.push_str(&escaped);
+                    markdown.push_str("\\n```\\n\\n");
+                }
+            }
+        }
+    }
+
+    // Create export directory if it doesn't exist
+    let export_dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".flexorama")
+        .join("exports");
+
+    async_fs::create_dir_all(&export_dir).await?;
+
+    // Generate filename with timestamp
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("conversation_{}.md", timestamp);
+    let file_path = export_dir.join(&filename);
+
+    // Write the markdown file
+    async_fs::write(&file_path, markdown).await?;
+
+    app_println!(
+        "{} Exported conversation to: {}",
+        "✓".green(),
+        file_path.display().to_string().cyan()
+    );
+
+    // Open in default editor
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| {
+        #[cfg(target_os = "windows")]
+        {
+            "notepad".to_string()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            "vi".to_string()
+        }
+    });
+
+    app_println!(
+        "{} Opening in editor: {}",
+        "→".blue(),
+        editor.cyan()
+    );
+
+    let editor_result = tokio::process::Command::new(&editor)
+        .arg(&file_path)
+        .spawn();
+
+    match editor_result {
+        Ok(_child) => {
+            app_println!(
+                "{} File opened in {}",
+                "✓".green(),
+                editor
+            );
+        }
+        Err(e) => {
+            app_eprintln!(
+                "{} Failed to open editor {}: {}",
+                "✗".red(),
+                editor,
+                e
+            );
+            app_println!(
+                "{} Try setting the EDITOR environment variable",
+                "💡".yellow()
+            );
+        }
+    }
+
+    Ok(())
+}
 
 pub async fn handle_agent_command(
     args: &[&str],
@@ -902,6 +1096,10 @@ pub async fn handle_slash_command(
                     app_eprintln!("{} Failed to clear context: {}", "✗".red(), e);
                 }
             }
+            Ok(true) // Command was handled
+        }
+        "/export" => {
+            handle_export_command(agent).await?;
             Ok(true) // Command was handled
         }
         "/reset-stats" => {
