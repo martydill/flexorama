@@ -80,6 +80,7 @@ struct OllamaFunctionDefinition {
 struct OllamaResponse {
     message: OllamaMessage,
     #[serde(default)]
+    #[allow(dead_code)]
     done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     prompt_eval_count: Option<u32>,
