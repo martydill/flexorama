@@ -384,4 +384,9 @@ impl Config {
         self.default_model = provider_default_model(provider);
         self.api_key = provider_default_api_key(provider);
     }
+
+    /// Get the config file path for display purposes
+    pub fn path(&self) -> PathBuf {
+        Self::default_config_path()
+    }
 }

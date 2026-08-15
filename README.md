@@ -48,27 +48,45 @@ The optional web UI provides a ChatGPT-style browser-based interface for chats, 
  - Sandboxing 
 
 
-## Usage
-### Provider: 
-Specify a provider on the command line with --provider. 
+## First Run Setup
 
-Supported providers: 
- - openapi
+On first run, Flexorama launches an interactive setup wizard that guides you through:
+
+1. **Provider Selection** - Choose from Anthropic (Claude), Google (Gemini), OpenAI (GPT), Mistral AI, Z.ai (GLM), or Ollama (local)
+2. **API Key Instructions** - Shows how to set your API key via environment variables or command line
+3. **Model Selection** - Choose your default model from provider options
+
+To re-run setup at any time:
+```bash
+flexorama --setup
+```
+
+## Usage
+### Provider:
+Specify a provider on the command line with --provider, or select during setup.
+
+Supported providers:
+ - openai
  - gemini
  - mistral
  - z.ai
  - anthropic
  - ollama
 
-### API token: 
-Specify api token on the command line with --api-key, OR set an env var for your provider
+### API token:
+Set API key via environment variable or command line:
 
-Supported env vars: 
+Supported env vars:
 - OPENAI_API_KEY
 - ZAI_API_KEY
-- GEMINI_API_KEY
+- GEMINI_API_KEY (or GOOGLE_API_KEY)
 - MISTRAL_API_KEY
 - ANTHROPIC_AUTH_TOKEN
+
+Or use command line flag:
+```bash
+flexorama -k your-api-key -m "your message"
+```
 
 ### CLI version
 ```cargo run -- --provider <provider>```

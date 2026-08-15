@@ -73,6 +73,10 @@ pub struct Cli {
     #[arg(long = "resume", value_name = "ID", conflicts_with = "continue_session")]
     pub resume_conversation: Option<String>,
 
+    /// Run the interactive setup wizard
+    #[arg(long)]
+    pub setup: bool,
+
     /// Enable verbose logging (shows info/debug messages during startup)
     #[arg(short, long)]
     pub verbose: bool,
@@ -96,6 +100,8 @@ mod tests {
         assert!(cli.context_files.is_empty());
         assert_eq!(cli.system_prompt, None);
         assert!(!cli.no_stream);
+        assert!(!cli.setup);
+        assert!(!cli.verbose);
         assert!(!cli.yolo);
         assert!(!cli.plan_mode);
         assert!(!cli.web);
@@ -194,6 +200,23 @@ mod tests {
     fn test_cli_continue_conflicts_with_message() {
         let cli = Cli::try_parse_from(vec!["flexorama", "--continue", "-m", "test"]);
         assert!(cli.is_err(), "Should conflict with message");
+    }
+
+    #[test]
+    fn test_cli_with_setup() {
+        let cli = Cli::try_parse_from(vec!["flexorama", "--setup"]).unwrap();
+        assert!(cli.setup);
+        assert_eq!(cli.message, None);
+        assert_eq!(cli.api_key, None);
+    }
+
+    #[test]
+    fn test_cli_setup_with_message() {
+        let cli = Cli::try_parse_from(vec!["flexorama", "--setup", "-m", "test"]);
+        assert!(cli.is_ok(), "Setup and message can coexist");
+        let cli = cli.unwrap();
+        assert!(cli.setup);
+        assert_eq!(cli.message, Some("test".to_string()));
     }
 
     #[test]

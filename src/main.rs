@@ -22,6 +22,7 @@ use help::{display_mcp_yolo_warning, display_yolo_warning};
 use interactive::{add_context_files, run_tui_interactive};
 use mcp::McpManager;
 use processing::create_streaming_renderer;
+use setup::{is_first_run, run_setup_wizard};
 use subagent::SubagentManager;
 use utils::{create_spinner, print_usage_stats};
 
@@ -33,6 +34,21 @@ async fn main() -> Result<()> {
     let is_resuming_session = cli.continue_session || cli.resume_conversation.is_some();
     let stream = !cli.no_stream;
 
+    // Initialize logger - in ACP mode, all logs go to stderr to keep stdout clean for JSON-RPC
+    // Default to Warn level (quiet startup), use Debug if verbose is enabled
+    output::init_logger(log::LevelFilter::Warn, cli.acp, cli.verbose);
+    debug!("Starting Flexorama");
+
+    // Check if we should run setup wizard BEFORE initializing TUI
+    let should_run_setup = cli.setup || (is_first_run() && !cli.api_key.is_some());
+
+    // Run setup wizard if needed (before TUI initialization)
+    let mut config = if should_run_setup {
+        run_setup_wizard().await?
+    } else {
+        Config::load(cli.config.as_deref()).await?
+    };
+
     // Create code formatter early so TUI can render input/output immediately
     let formatter = create_code_formatter()?;
     let _tui_guard = if is_interactive {
@@ -41,18 +57,10 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Initialize logger - in ACP mode, all logs go to stderr to keep stdout clean for JSON-RPC
-    // Default to Warn level (quiet startup), use Debug if verbose is enabled
-    output::init_logger(log::LevelFilter::Warn, cli.acp, cli.verbose);
-    debug!("Starting Flexorama");
-
     // Display large red warning if yolo mode is enabled
     if cli.yolo {
         display_yolo_warning();
     }
-
-    // Load configuration
-    let mut config = Config::load(cli.config.as_deref()).await?;
 
     // If provider is specified on command line, always apply its defaults
     if let Some(provider) = cli.provider {
@@ -72,7 +80,7 @@ async fn main() -> Result<()> {
     if let Some(api_key) = cli.api_key.clone() {
         config.api_key = api_key;
     } else if config.api_key.is_empty() {
-        // If no API key from config, try environment variable for the selected provider
+        // Use environment variable for the selected provider
         config.api_key = config::provider_default_api_key(config.provider);
     }
 
