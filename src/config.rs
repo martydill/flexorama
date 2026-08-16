@@ -7,6 +7,19 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::fs;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    Anthropic,
+    Gemini,
+    Mistral,
+    OpenAI,
+    #[serde(rename = "z.ai")]
+    Zai,
+    Ollama,
+    OpenRouter,
+}
+
 /// Effort level for AI reasoning/thinking
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -44,6 +57,15 @@ impl std::fmt::Display for EffortLevel {
 }
 
 impl EffortLevel {
+    /// Returns the reasoning budget token count for Anthropic models
+    pub fn anthropic_reasoning_budget(&self) -> Option<u32> {
+        match self {
+            EffortLevel::Low => None, // No extended thinking
+            EffortLevel::Medium => Some(10_000),
+            EffortLevel::High => Some(50_000),
+        }
+    }
+
     /// Returns the reasoning effort string for OpenAI o1/o3 models
     pub fn openai_reasoning_effort(&self) -> &str {
         match self {
@@ -57,19 +79,6 @@ impl EffortLevel {
     pub fn ollama_think(&self) -> bool {
         matches!(self, EffortLevel::Medium | EffortLevel::High)
     }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Provider {
-    Anthropic,
-    Gemini,
-    Mistral,
-    OpenAI,
-    #[serde(rename = "z.ai")]
-    Zai,
-    Ollama,
-    OpenRouter,
 }
 
 impl Default for Provider {
@@ -225,6 +234,8 @@ pub struct Config {
     pub mcp: McpConfig,
     #[serde(default)]
     pub skills: SkillConfig,
+    #[serde(default)]
+    pub effort: EffortLevel,
 }
 const DEFAULT_SYSTEM_PROMPT: &str = r#"
 You are an expert in software development. Your job is to help the user build awesome software.
@@ -419,6 +430,7 @@ impl Default for Config {
             file_security: FileSecurity::default(),
             mcp: McpConfig::default(),
             skills: SkillConfig::default(),
+            effort: EffortLevel::default(),
         }
     }
 }

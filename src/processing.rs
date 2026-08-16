@@ -2,31 +2,66 @@ use crate::agent::{self, Agent};
 use crate::formatter;
 use crate::utils::create_spinner;
 use colored::*;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Create a streaming renderer
+/// Create a streaming renderer with optional thinking spinner
 pub fn create_streaming_renderer(
     formatter: &formatter::CodeFormatter,
+    tui: Option<&Arc<crate::tui::Tui>>,
 ) -> (
     Arc<Mutex<formatter::StreamingResponseFormatter>>,
     Arc<dyn Fn(String) + Send + Sync>,
+    Option<indicatif::ProgressBar>,
 ) {
     let state = Arc::new(Mutex::new(formatter::StreamingResponseFormatter::new(
         formatter.clone(),
     )));
+
+    // Create thinking spinner for streaming mode (shows until first chunk arrives)
+    let spinner = if !crate::output::is_tui_active() {
+        let spinner = create_spinner();
+        Some(spinner)
+    } else {
+        None
+    };
+
+    // Start thinking indicator on TUI if active
+    if let Some(tui) = tui {
+        tui.start_thinking();
+    }
+
     let callback_state = Arc::clone(&state);
+    let spinner_for_callback = spinner.clone();
+    let spinner_started = Arc::new(AtomicBool::new(false));
+    let tui_for_callback = tui.map(Arc::clone);
+
     let callback: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |content: String| {
         if content.is_empty() {
             return;
         }
+
+        // Clear spinner on first chunk
+        if let Some(ref spinner) = spinner_for_callback {
+            if spinner_started.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                spinner.finish_and_clear();
+            }
+        }
+
+        // Stop thinking indicator on TUI on first chunk
+        if let Some(ref tui) = tui_for_callback {
+            if spinner_started.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                tui.stop_thinking();
+            }
+        }
+
         if let Ok(mut renderer) = callback_state.lock() {
             if let Err(e) = renderer.handle_chunk(&content) {
                 app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);
             }
         }
     });
-    (state, callback)
+    (state, callback, spinner)
 }
 
 /// Process input and handle streaming/non-streaming response
@@ -37,10 +72,11 @@ pub async fn process_input(
     stream: bool,
     cancellation_flag: Arc<AtomicBool>,
     on_tool_event: Option<Arc<dyn Fn(agent::StreamToolEvent) + Send + Sync>>,
+    tui: Option<&Arc<crate::tui::Tui>>,
 ) {
-    // Show spinner while processing (only for non-streaming)
+    // Show spinner while processing (for both streaming and non-streaming)
     if stream {
-        let (streaming_state, stream_callback) = create_streaming_renderer(formatter);
+        let (streaming_state, stream_callback, spinner) = create_streaming_renderer(formatter, tui);
         let result = agent
             .process_message_with_stream(
                 &input,
@@ -49,6 +85,16 @@ pub async fn process_input(
                 cancellation_flag.clone(),
             )
             .await;
+
+        // Clear spinner if it's still showing (in case no chunks arrived)
+        if let Some(spinner) = spinner {
+            spinner.finish_and_clear();
+        }
+
+        // Stop thinking indicator on TUI if it's still showing
+        if let Some(tui) = tui {
+            tui.stop_thinking();
+        }
 
         if let Ok(mut renderer) = streaming_state.lock() {
             if let Err(e) = renderer.finish() {
@@ -109,7 +155,7 @@ mod tests {
     #[test]
     fn test_create_streaming_renderer() {
         let formatter = CodeFormatter::new().unwrap();
-        let (_state, callback) = create_streaming_renderer(&formatter);
+        let (_state, callback, _spinner) = create_streaming_renderer(&formatter, None);
 
         // Test that callback can be called without panicking
         callback("test content".to_string());
@@ -119,7 +165,7 @@ mod tests {
     #[test]
     fn test_create_streaming_renderer_with_multiple_chunks() {
         let formatter = CodeFormatter::new().unwrap();
-        let (state, callback) = create_streaming_renderer(&formatter);
+        let (state, callback, _spinner) = create_streaming_renderer(&formatter, None);
 
         // Send multiple chunks
         callback("Hello ".to_string());
@@ -133,7 +179,7 @@ mod tests {
     #[test]
     fn test_streaming_renderer_handles_empty_content() {
         let formatter = CodeFormatter::new().unwrap();
-        let (_state, callback) = create_streaming_renderer(&formatter);
+        let (_state, callback, _spinner) = create_streaming_renderer(&formatter, None);
 
         // Should not panic with empty content
         callback("".to_string());
@@ -142,10 +188,20 @@ mod tests {
     #[test]
     fn test_streaming_renderer_state_is_accessible() {
         let formatter = CodeFormatter::new().unwrap();
-        let (state, _callback) = create_streaming_renderer(&formatter);
+        let (state, _callback, _spinner) = create_streaming_renderer(&formatter, None);
 
         // Verify we can lock the state
         let lock_result = state.lock();
         assert!(lock_result.is_ok());
+    }
+
+    #[test]
+    fn test_streaming_renderer_spinner_is_optional() {
+        let formatter = CodeFormatter::new().unwrap();
+        let (_state, _callback, spinner) = create_streaming_renderer(&formatter, None);
+
+        // Spinner should be created when not in TUI mode
+        // In tests, TUI is not active, so spinner should be Some
+        assert!(spinner.is_some());
     }
 }

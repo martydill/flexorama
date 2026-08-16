@@ -89,6 +89,9 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| config.default_model.clone());
 
+    // Apply effort level from CLI if specified, otherwise use config default
+    let effort = cli.effort.unwrap_or(config.effort);
+
     // Show a single-line status banner (unless in ACP mode)
     if !cli.acp {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -157,6 +160,9 @@ async fn main() -> Result<()> {
     // Create and run agent using the new async constructor
     let mut agent =
         Agent::new_with_plan_mode(config.clone(), model.clone(), cli.yolo, cli.plan_mode).await;
+
+    // Set effort level from CLI
+    agent.set_effort(effort).await?;
 
     // Initialize MCP manager
     let mcp_manager = Arc::new(McpManager::new());
@@ -500,7 +506,7 @@ async fn run_message_with_formatting(
     let cancellation_flag = Arc::new(AtomicBool::new(false));
 
     if stream {
-        let (streaming_state, stream_callback) = create_streaming_renderer(formatter);
+        let (streaming_state, stream_callback, spinner) = create_streaming_renderer(formatter, None);
         let response = agent
             .process_message_with_stream(
                 message,
@@ -509,6 +515,10 @@ async fn run_message_with_formatting(
                 cancellation_flag,
             )
             .await;
+        // Clear spinner if it's still showing (in case no chunks arrived)
+        if let Some(spinner) = spinner {
+            spinner.finish_and_clear();
+        }
         if let Ok(mut renderer) = streaming_state.lock() {
             if let Err(e) = renderer.finish() {
                 app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);

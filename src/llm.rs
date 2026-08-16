@@ -482,6 +482,7 @@ mod tests {
                     16,
                     0.0,
                     None,
+                    EffortLevel::default(),
                     cancellation_flag.clone(),
                 )
                 .await
@@ -495,6 +496,7 @@ mod tests {
                     16,
                     0.0,
                     None,
+                    EffortLevel::default(),
                     Arc::new(|_chunk| {}),
                     cancellation_flag.clone(),
                 )
@@ -533,6 +535,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 cancellation_flag.clone(),
             )
             .await
@@ -546,6 +549,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 Arc::new(|_chunk| {}),
                 cancellation_flag,
             )
@@ -582,6 +586,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 cancellation_flag.clone(),
             )
             .await
@@ -595,6 +600,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 Arc::new(|_chunk| {}),
                 cancellation_flag,
             )
@@ -631,6 +637,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 cancellation_flag.clone(),
             )
             .await
@@ -644,6 +651,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 Arc::new(|_chunk| {}),
                 cancellation_flag,
             )

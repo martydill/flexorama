@@ -409,6 +409,13 @@ impl OpenAIClient {
             )
         };
 
+        // Only include reasoning_effort for o1/o3 models, not for standard models
+        let reasoning_effort = if model.starts_with("o1") || model.starts_with("o3") {
+            Some(effort.openai_reasoning_effort().to_string())
+        } else {
+            None
+        };
+
         OpenAIRequest {
             model: model.to_string(),
             messages: openai_messages,

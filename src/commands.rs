@@ -1201,6 +1201,32 @@ pub async fn handle_slash_command(
             handle_hooks_command(&parts[1..])?;
             Ok(true) // Command was handled
         }
+        "/effort" => {
+            if parts.len() == 1 {
+                app_println!("{}", "Reasoning Effort Level".cyan().bold());
+                app_println!("  Current: {}", agent.effort());
+                app_println!("  Usage: /effort <level>");
+                app_println!("  Levels: low, medium, high");
+                return Ok(true);
+            }
+
+            let level_str = parts[1];
+            let effort_level = level_str.parse::<crate::config::EffortLevel>();
+            match effort_level {
+                Ok(level) => {
+                    agent.set_effort(level).await?;
+                    app_println!(
+                        "{} Reasoning effort set to {}",
+                        "✅".green(),
+                        level
+                    );
+                }
+                Err(e) => {
+                    app_eprintln!("{} Invalid effort level: {}", "✗".red(), e);
+                }
+            }
+            Ok(true) // Command was handled
+        }
         "/plan" => {
             // Parse subcommand with splitn to preserve plan IDs containing whitespace
             let mut plan_parts = command.splitn(3, ' ');
@@ -1237,8 +1263,8 @@ pub async fn handle_slash_command(
                     );
                     let cancellation_flag = Arc::new(AtomicBool::new(false));
                     if stream {
-                        let (streaming_state, stream_callback) =
-                            create_streaming_renderer(formatter);
+                        let (streaming_state, stream_callback, spinner) =
+                            create_streaming_renderer(formatter, None);
                         let response = agent
                             .process_message_with_stream(
                                 &message,
@@ -1247,6 +1273,10 @@ pub async fn handle_slash_command(
                                 cancellation_flag,
                             )
                             .await;
+                        // Clear spinner if it's still showing (in case no chunks arrived)
+                        if let Some(spinner) = spinner {
+                            spinner.finish_and_clear();
+                        }
                         if let Ok(mut renderer) = streaming_state.lock() {
                             if let Err(e) = renderer.finish() {
                                 app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);
@@ -1291,8 +1321,8 @@ pub async fn handle_slash_command(
                     }
                     let cancellation_flag = Arc::new(AtomicBool::new(false));
                     if stream {
-                        let (streaming_state, stream_callback) =
-                            create_streaming_renderer(formatter);
+                        let (streaming_state, stream_callback, spinner) =
+                            create_streaming_renderer(formatter, None);
                         let response = agent
                             .process_message_with_stream(
                                 &rendered.message,
@@ -1301,6 +1331,10 @@ pub async fn handle_slash_command(
                                 cancellation_flag,
                             )
                             .await;
+                        // Clear spinner if it's still showing (in case no chunks arrived)
+                        if let Some(spinner) = spinner {
+                            spinner.finish_and_clear();
+                        }
                         if let Ok(mut renderer) = streaming_state.lock() {
                             if let Err(e) = renderer.finish() {
                                 app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);

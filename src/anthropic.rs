@@ -127,6 +127,8 @@ struct AnthropicRequest {
     tools: Option<Vec<ToolDefinition>>,
     stream: Option<bool>,
     system: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_budget: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -204,7 +206,7 @@ impl AnthropicClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
-        _effort: EffortLevel,
+        effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         // Try the standard endpoint first, then fall back to alternatives if needed
@@ -220,6 +222,7 @@ impl AnthropicClient {
                     max_tokens,
                     temperature,
                     system_prompt,
+                    effort,
                     cancellation_flag.clone(),
                 )
                 .await
@@ -245,6 +248,7 @@ impl AnthropicClient {
                 max_tokens,
                 temperature,
                 system_prompt,
+                effort,
                 cancellation_flag.clone(),
             )
             .await;
@@ -258,7 +262,7 @@ impl AnthropicClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
-        _effort: EffortLevel,
+        effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
@@ -275,6 +279,7 @@ impl AnthropicClient {
                     max_tokens,
                     temperature,
                     system_prompt,
+                    effort,
                     on_content.clone(),
                     cancellation_flag.clone(),
                 )
@@ -301,6 +306,7 @@ impl AnthropicClient {
                 max_tokens,
                 temperature,
                 system_prompt,
+                effort,
                 on_content.clone(),
                 cancellation_flag.clone(),
             )
@@ -316,6 +322,7 @@ impl AnthropicClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         let tool_definitions = if tools.is_empty() {
@@ -341,6 +348,7 @@ impl AnthropicClient {
             tools: tool_definitions,
             stream: Some(false),
             system: system_prompt.cloned(),
+            reasoning_budget: effort.anthropic_reasoning_budget(),
         };
 
         // Log outgoing request (debug level only)
@@ -432,6 +440,7 @@ impl AnthropicClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
@@ -458,6 +467,7 @@ impl AnthropicClient {
             tools: tool_definitions,
             stream: Some(true),
             system: system_prompt.cloned(),
+            reasoning_budget: effort.anthropic_reasoning_budget(),
         };
 
         // Log outgoing streaming request (debug level only)

@@ -52,6 +52,9 @@ struct TuiState {
     selection_active: bool,
     // Todo tracking
     todos: Vec<crate::tools::create_todo::TodoItem>,
+    // Thinking state (shows spinner while waiting for LLM)
+    thinking: bool,
+    thinking_frame: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +100,8 @@ pub struct TuiSnapshot {
     output_scroll: usize,
     selection_range: Option<(TextPosition, TextPosition)>,
     todos: Vec<crate::tools::create_todo::TodoItem>,
+    thinking: bool,
+    thinking_frame: usize,
 }
 
 pub enum InputResult {
@@ -181,6 +186,8 @@ impl Tui {
             selection_end: None,
             selection_active: false,
             todos: Vec::new(),
+            thinking: false,
+            thinking_frame: 0,
         }));
 
         let screen = Arc::new(Mutex::new(TuiScreen { terminal }));
@@ -213,6 +220,16 @@ impl Tui {
         } else {
             self.render_input_only(&snapshot)
         }
+    }
+
+    /// Force a full render (useful for thinking indicator updates)
+    pub fn force_render(&self) -> Result<()> {
+        let snapshot = {
+            let guard = self.state.lock().expect("tui state lock");
+            let formatter = self.formatter.lock().expect("tui formatter lock");
+            guard.snapshot(&formatter)
+        };
+        self.render_snapshot(&snapshot)
     }
 
     fn render_snapshot(&self, snapshot: &TuiSnapshot) -> Result<()> {
@@ -496,6 +513,40 @@ impl Tui {
         let screen = self.screen.lock().ok()?;
         let size = screen.terminal.size().ok()?;
         Some(size.height)
+    }
+
+    /// Start the thinking indicator (shows while waiting for LLM response)
+    pub fn start_thinking(&self) {
+        let mut guard = self.state.lock().expect("tui state lock");
+        guard.thinking = true;
+        guard.thinking_frame = 0;
+        guard.output_dirty = true;
+        drop(guard);
+        // Trigger a full render to show the thinking indicator immediately
+        let _ = self.force_render();
+    }
+
+    /// Stop the thinking indicator
+    pub fn stop_thinking(&self) {
+        let mut guard = self.state.lock().expect("tui state lock");
+        guard.thinking = false;
+        guard.thinking_frame = 0;
+        guard.output_dirty = true;
+        drop(guard);
+        // Trigger a full render to hide the thinking indicator
+        let _ = self.force_render();
+    }
+
+    /// Update the thinking frame (called periodically for animation)
+    pub fn update_thinking_frame(&self) {
+        let mut guard = self.state.lock().expect("tui state lock");
+        if guard.thinking {
+            guard.thinking_frame = (guard.thinking_frame + 1) % 12;
+            guard.output_dirty = true;
+            drop(guard);
+            // Trigger a full render to show the updated animation frame
+            let _ = self.force_render();
+        }
     }
 
     fn handle_paste(&self, pasted: &str) -> Result<()> {
@@ -936,6 +987,8 @@ impl TuiState {
             output_scroll: self.output_scroll,
             selection_range,
             todos: self.todos.clone(),
+            thinking: self.thinking,
+            thinking_frame: self.thinking_frame,
         }
     }
 }
@@ -1047,7 +1100,19 @@ impl TuiScreen {
 
             let (input_text, cursor_row_offset, cursor_col) =
                 build_input_text_with_layout(input_rect, &input_layout);
-            let input_block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
+
+            // Build title with thinking indicator
+            let title = if snapshot.thinking {
+                let spinner_chars = ["▁", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃"];
+                let spinner = spinner_chars[snapshot.thinking_frame];
+                format!("{} Thinking...", spinner)
+            } else {
+                String::new()
+            };
+
+            let input_block = Block::default()
+                .borders(Borders::TOP | Borders::BOTTOM)
+                .title(title.clone());
             let input_para = Paragraph::new(input_text).block(input_block);
             frame.render_widget(input_para, input_rect);
 
@@ -1162,7 +1227,19 @@ impl TuiScreen {
 
             let (input_text, cursor_row_offset, cursor_col) =
                 build_input_text_with_layout(input_rect, &input_layout);
-            let input_block = Block::default().borders(Borders::TOP | Borders::BOTTOM);
+
+            // Build title with thinking indicator
+            let title = if snapshot.thinking {
+                let spinner_chars = ["▁", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃"];
+                let spinner = spinner_chars[snapshot.thinking_frame];
+                format!("{} Thinking...", spinner)
+            } else {
+                String::new()
+            };
+
+            let input_block = Block::default()
+                .borders(Borders::TOP | Borders::BOTTOM)
+                .title(title.clone());
             let input_para = Paragraph::new(input_text).block(input_block);
             frame.render_widget(input_para, input_rect);
 
@@ -2646,6 +2723,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.lines.len(), 1);
@@ -2665,6 +2744,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.lines.len(), 1);
@@ -2684,6 +2765,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.lines.len(), 2);
@@ -2702,6 +2785,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.cursor_row, 0);
@@ -2719,6 +2804,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.cursor_row, 0);
@@ -2736,6 +2823,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 40);
         // Should have multiple lines due to wrapping
@@ -2987,6 +3076,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert_eq!(layout.cursor_col, 6); // 2 for "> " + 4 for "Test"
@@ -3004,6 +3095,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert!(layout.lines.len() >= 1);
@@ -3146,6 +3239,8 @@ mod tests {
             output_scroll: 0,
             selection_range: None,
             todos: vec![],
+            thinking: false,
+            thinking_frame: 0,
         };
         let layout = build_input_layout(&snapshot, 80);
         assert!(layout.lines.len() > 1);

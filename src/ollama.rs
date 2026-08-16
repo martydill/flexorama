@@ -271,6 +271,7 @@ impl OllamaClient {
             system_prompt,
             effort,
             false,
+            effort,
         );
         let endpoint = format!("{}/api/chat", self.base_url);
 
@@ -344,6 +345,7 @@ impl OllamaClient {
             system_prompt,
             effort,
             true,
+            effort,
         );
         let endpoint = format!("{}/api/chat", self.base_url);
 
@@ -561,6 +563,7 @@ impl OllamaClient {
         system_prompt: Option<&String>,
         effort: EffortLevel,
         stream: bool,
+        effort: EffortLevel,
     ) -> OllamaRequest {
         debug!("=== Building Ollama Request ===");
         debug!("Model: {}", model);
@@ -1239,14 +1242,14 @@ mod tests {
             role: "user".to_string(),
             content: vec![ContentBlock::text("Hi".to_string())],
         }];
-        let request = client.build_request("llama2", messages, &[], 1000, 0.7, None, false);
+        let request = client.build_request("llama2", messages, &[], 1000, 0.7, None, false, crate::config::EffortLevel::default());
 
         assert_eq!(request.model, "llama2");
         assert_eq!(request.messages.len(), 1);
         assert_eq!(request.messages[0].content, "Hi");
         assert!(request.tools.is_none());
         assert_eq!(request.stream, Some(false));
-        assert_eq!(request.think, Some(false));
+        assert_eq!(request.think, Some(true)); // Medium effort enables think mode
         assert_eq!(request.options.as_ref().unwrap().temperature, Some(0.7));
         assert_eq!(request.options.as_ref().unwrap().num_predict, Some(1000));
     }
@@ -1259,14 +1262,14 @@ mod tests {
             content: vec![ContentBlock::text("Hi".to_string())],
         }];
         let system = "You are helpful".to_string();
-        let request = client.build_request("llama2", messages, &[], 1000, 0.5, Some(&system), true);
+        let request = client.build_request("llama2", messages, &[], 1000, 0.5, Some(&system), true, crate::config::EffortLevel::default());
 
         assert_eq!(request.messages.len(), 2);
         assert_eq!(request.messages[0].role, "system");
         assert_eq!(request.messages[0].content, "You are helpful");
         assert_eq!(request.messages[1].role, "user");
         assert_eq!(request.stream, Some(true));
-        assert_eq!(request.think, Some(false));
+        assert_eq!(request.think, Some(true)); // Medium effort enables think mode
     }
 
     #[test]
@@ -1288,6 +1291,7 @@ mod tests {
             0.7,
             None,
             false,
+            crate::config::EffortLevel::default(),
         );
 
         // Ollama provider always sets tools to None

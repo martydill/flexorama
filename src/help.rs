@@ -251,6 +251,7 @@ pub fn print_help() {
     app_println!("  /file-permissions  - Manage file operation security permissions");
     app_println!("  /hooks        - View and manage hooks configuration");
     app_println!("  /mcp          - Manage MCP (Model Context Protocol) servers");
+    app_println!("  /effort       - Set reasoning effort level (low, medium, high)");
     app_println!("  /skill        - Manage skills (list, create, update, delete, deactivate)");
     app_println!("  /exit         - Exit the program");
     app_println!("  /quit         - Exit the program");
