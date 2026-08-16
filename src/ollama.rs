@@ -271,7 +271,6 @@ impl OllamaClient {
             system_prompt,
             effort,
             false,
-            effort,
         );
         let endpoint = format!("{}/api/chat", self.base_url);
 
@@ -345,7 +344,6 @@ impl OllamaClient {
             system_prompt,
             effort,
             true,
-            effort,
         );
         let endpoint = format!("{}/api/chat", self.base_url);
 
@@ -563,7 +561,6 @@ impl OllamaClient {
         system_prompt: Option<&String>,
         effort: EffortLevel,
         stream: bool,
-        effort: EffortLevel,
     ) -> OllamaRequest {
         debug!("=== Building Ollama Request ===");
         debug!("Model: {}", model);
