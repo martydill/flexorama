@@ -237,14 +237,23 @@ pub async fn run_tui_interactive(
                 stream,
                 cancellation_flag_for_processing.clone(),
                 Some(Arc::clone(&on_tool_event)),
+                Some(&tui),
             );
             tokio::pin!(processing_fut);
             let mut clear_todos = false;
             let mut processing_done = false;
+
+            // Create a ticker for updating the thinking spinner animation
+            let mut ticker = tokio::time::interval(std::time::Duration::from_millis(100));
+
             while !processing_done {
                 tokio::select! {
                     _ = &mut processing_fut => {
                         processing_done = true;
+                    }
+                    _ = ticker.tick() => {
+                        // Update thinking spinner animation
+                        tui.update_thinking_frame();
                     }
                     event = input_rx.recv() => {
                         match event {

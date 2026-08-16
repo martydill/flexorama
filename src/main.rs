@@ -491,7 +491,7 @@ async fn run_message_with_formatting(
     let cancellation_flag = Arc::new(AtomicBool::new(false));
 
     if stream {
-        let (streaming_state, stream_callback) = create_streaming_renderer(formatter);
+        let (streaming_state, stream_callback, spinner) = create_streaming_renderer(formatter, None);
         let response = agent
             .process_message_with_stream(
                 message,
@@ -500,6 +500,10 @@ async fn run_message_with_formatting(
                 cancellation_flag,
             )
             .await;
+        // Clear spinner if it's still showing (in case no chunks arrived)
+        if let Some(spinner) = spinner {
+            spinner.finish_and_clear();
+        }
         if let Ok(mut renderer) = streaming_state.lock() {
             if let Err(e) = renderer.finish() {
                 app_eprintln!("{} Streaming formatter error: {}", "Error".red(), e);
