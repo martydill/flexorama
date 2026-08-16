@@ -1,3 +1,4 @@
+use crate::openrouter::OpenRouterClient;
 use crate::security::{BashSecurity, FileSecurity};
 use anyhow::Result;
 use log::info;
@@ -16,6 +17,7 @@ pub enum Provider {
     #[serde(rename = "z.ai")]
     Zai,
     Ollama,
+    OpenRouter,
 }
 
 impl Default for Provider {
@@ -35,6 +37,7 @@ impl std::str::FromStr for Provider {
             "openai" => Ok(Provider::OpenAI),
             "z.ai" | "zai" => Ok(Provider::Zai),
             "ollama" => Ok(Provider::Ollama),
+            "openrouter" => Ok(Provider::OpenRouter),
             other => Err(format!("Unsupported provider '{}'", other)),
         }
     }
@@ -49,6 +52,7 @@ impl std::fmt::Display for Provider {
             Provider::OpenAI => write!(f, "openai"),
             Provider::Zai => write!(f, "z.ai"),
             Provider::Ollama => write!(f, "ollama"),
+            Provider::OpenRouter => write!(f, "openrouter"),
         }
     }
 }
@@ -196,6 +200,7 @@ pub fn provider_default_api_key(provider: Provider) -> String {
         Provider::OpenAI => std::env::var("OPENAI_API_KEY").unwrap_or_default(),
         Provider::Zai => std::env::var("ZAI_API_KEY").unwrap_or_default(),
         Provider::Ollama => std::env::var("OLLAMA_API_KEY").unwrap_or_default(),
+        Provider::OpenRouter => std::env::var("OPENROUTER_API_KEY").unwrap_or_default(),
     }
 }
 
@@ -213,6 +218,8 @@ pub fn provider_default_base_url(provider: Provider) -> String {
             .unwrap_or_else(|_| "https://api.z.ai/api/anthropic".to_string()),
         Provider::Ollama => std::env::var("OLLAMA_BASE_URL")
             .unwrap_or_else(|_| "http://localhost:11434".to_string()),
+        Provider::OpenRouter => std::env::var("OPENROUTER_BASE_URL")
+            .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string()),
     }
 }
 
@@ -224,6 +231,7 @@ pub fn provider_default_model(provider: Provider) -> String {
         Provider::OpenAI => "gpt-5.6-sol".to_string(),
         Provider::Zai => "glm-5.3".to_string(),
         Provider::Ollama => "llama2".to_string(),
+        Provider::OpenRouter => "anthropic/claude-opus-5".to_string(),
     }
 }
 
@@ -284,6 +292,63 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
         ],
         Provider::Zai => &["glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6", "glm-4.5"],
         Provider::Ollama => &["llama2", "gemma3:1b"],
+        Provider::OpenRouter => &[
+            "anthropic/claude-opus-5",
+            "anthropic/claude-sonnet-5",
+            "openai/gpt-5.6-sol",
+            "google/gemini-2.5-pro",
+            "meta-llama/llama-4-matrix",
+            "mistralai/mistral-large",
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "google/gemini-flash-latest",
+        ],
+    }
+}
+
+/// Fetch available models from OpenRouter API
+/// Returns dynamic list if successful, otherwise returns fallback models
+/// Fetch available models from OpenRouter API
+/// Returns dynamic list if successful, otherwise returns fallback models
+pub async fn fetch_openrouter_models(api_key: &str, base_url: &str) -> Vec<String> {
+    let client = OpenRouterClient::new(api_key.to_string(), base_url.to_string());
+
+    match client.fetch_models().await {
+        Ok(models) => {
+            info!("Successfully fetched {} models from OpenRouter", models.len());
+            models
+        }
+        Err(e) => {
+            info!("Failed to fetch OpenRouter models: {}. Using fallback models.", e);
+            OpenRouterClient::fallback_models()
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        }
+    }
+}
+
+/// Get available models for a provider
+/// For OpenRouter, attempts to fetch dynamic models if API key is available
+/// For other providers, returns static model list
+pub async fn get_provider_models(provider: Provider) -> Vec<String> {
+    if provider == Provider::OpenRouter {
+        let api_key = provider_default_api_key(provider);
+        let base_url = provider_default_base_url(provider);
+
+        if !api_key.is_empty() {
+            fetch_openrouter_models(&api_key, &base_url).await
+        } else {
+            OpenRouterClient::fallback_models()
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        }
+    } else {
+        provider_models(provider)
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 }
 

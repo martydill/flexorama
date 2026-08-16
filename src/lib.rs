@@ -26,6 +26,7 @@ pub mod mcp;
 pub mod mistral;
 pub mod ollama;
 pub mod openai;
+pub mod openrouter;
 pub mod processing;
 pub mod security;
 pub mod setup;

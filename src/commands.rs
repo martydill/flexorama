@@ -1005,13 +1005,18 @@ pub async fn handle_slash_command(
                 app_println!("{}", "LLM Model".cyan().bold());
                 app_println!("  Provider: {}", provider);
                 app_println!("  Current: {}", agent.model());
+                // Show first 10 models to avoid overwhelming output
                 if !available.is_empty() {
-                    app_println!("  Available:");
-                    for model in &available {
+                    let display_count = available.len().min(10);
+                    app_println!("  Available (showing first {} of {}):", display_count, available.len());
+                    for model in &available[..display_count] {
                         app_println!("    - {}", model);
                     }
+                    if available.len() > 10 {
+                        app_println!("    ... and {} more (use '/model list' to see all or '/model filter <term>' to search)", available.len() - 10);
+                    }
                 }
-                app_println!("  Usage: /model <name> | /model list | /model pick");
+                app_println!("  Usage: /model <name> | /model list | /model pick | /model filter <term>");
                 return Ok(true);
             }
 
@@ -1022,8 +1027,28 @@ pub async fn handle_slash_command(
                     if available.is_empty() {
                         app_println!("  (no default models configured)");
                     } else {
-                        for model in &available {
-                            app_println!("  - {}", model);
+                        // Check if there's a filter term after "list"
+                        let filter_term = if parts.len() > 2 { Some(parts[2..].join(" ").to_lowercase()) } else { None };
+
+                        let filtered: Vec<&str> = if let Some(ref term) = filter_term {
+                            available.iter().filter(|m| m.to_lowercase().contains(term)).copied().collect()
+                        } else {
+                            available.clone()
+                        };
+
+                        if let Some(ref term) = filter_term {
+                            app_println!("  Filter: '{}' ({} matches)", term, filtered.len());
+                        }
+
+                        if filtered.is_empty() {
+                            app_println!("  {} No models match your filter", "💡".yellow());
+                            if filter_term.is_some() {
+                                app_println!("  Try: /model list (without filter)");
+                            }
+                        } else {
+                            for model in &filtered {
+                                app_println!("  - {}", model);
+                            }
                         }
                     }
                 }
@@ -1036,12 +1061,34 @@ pub async fn handle_slash_command(
                         );
                         return Ok(true);
                     }
+
+                    // Check if there's a filter term after "pick"
+                    let filter_term = if parts.len() > 2 { Some(parts[2..].join(" ").to_lowercase()) } else { None };
+                    let filtered: Vec<&str> = if let Some(ref term) = filter_term {
+                        available.iter().filter(|m| m.to_lowercase().contains(term)).copied().collect()
+                    } else {
+                        available.clone()
+                    };
+
+                    if filtered.is_empty() {
+                        if let Some(ref term) = filter_term {
+                            app_println!("{} No models match filter '{}'", "💡".yellow(), term);
+                            app_println!("{} Try: /model pick (without filter)", "💡".blue());
+                        }
+                        return Ok(true);
+                    }
+
                     if let Some(tui) = tui {
                         let options: Vec<String> =
-                            available.iter().map(|model| model.to_string()).collect();
+                            filtered.iter().map(|model| model.to_string()).collect();
+                        let prompt = if let Some(ref term) = filter_term {
+                            format!("Select a model (filtered by '{}')", term)
+                        } else {
+                            "Select a model".to_string()
+                        };
                         if let Some(index) = select_index_with_tui(
                             tui,
-                            "Select a model",
+                            &prompt,
                             &options,
                             "Model pick cancelled.",
                         ) {
@@ -1051,15 +1098,42 @@ pub async fn handle_slash_command(
                         }
                     } else {
                         let selected = Select::new()
-                            .with_prompt("Select a model")
-                            .items(&available)
+                            .with_prompt(if filter_term.is_some() { "Select a model (filtered)" } else { "Select a model" })
+                            .items(&filtered)
                             .default(0)
                             .interact_opt()?;
                         if let Some(index) = selected {
-                            let new_model = available[index].to_string();
+                            let new_model = filtered[index].to_string();
                             agent.set_model(new_model.clone()).await?;
                             app_println!("{} Active model set to {}", "✅".green(), new_model);
                         }
+                    }
+                }
+                "filter" => {
+                    // Shortcut for /model list with filter
+                    if parts.len() < 3 {
+                        app_println!("{} Usage: /model filter <search_term>", "💡".yellow());
+                        app_println!("{} Examples:", "💡".blue());
+                        app_println!("  /model filter claude");
+                        app_println!("  /model filter gpt");
+                        app_println!("  /model filter anthropic/");
+                        return Ok(true);
+                    }
+                    let filter_term = parts[2..].join(" ").to_lowercase();
+                    app_println!("{}", "Available Models (Filtered)".cyan().bold());
+                    app_println!("  Provider: {}", provider);
+                    app_println!("  Filter: '{}'", filter_term);
+                    let filtered: Vec<&str> = available.iter().filter(|m| m.to_lowercase().contains(&filter_term)).copied().collect();
+                    if filtered.is_empty() {
+                        app_println!("  {} No models match your filter", "💡".yellow());
+                        app_println!("  Try a different search term or use '/model list' to see all models");
+                    } else {
+                        app_println!("  Found {} matching model(s):", filtered.len());
+                        for model in &filtered {
+                            app_println!("  - {}", model);
+                        }
+                        app_println!();
+                        app_println!("{} Use '/model pick {}' to interactively select from these models", "💡".blue(), filter_term);
                     }
                 }
                 _ => {

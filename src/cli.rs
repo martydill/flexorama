@@ -13,7 +13,7 @@ pub struct Cli {
     #[arg(short = 'k', long)]
     pub api_key: Option<String>,
 
-    /// LLM provider to use (anthropic, gemini, openai, z.ai, or ollama)
+    /// LLM provider to use (anthropic, gemini, openai, openrouter, z.ai, or ollama)
     #[arg(long)]
     pub provider: Option<crate::config::Provider>,
 

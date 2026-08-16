@@ -278,6 +278,9 @@ impl Agent {
         // Fetch Ollama models if using Ollama provider
         let _ = agent.fetch_ollama_models().await;
 
+        // Fetch OpenRouter models if using OpenRouter provider
+        let _ = agent.fetch_openrouter_models().await;
+
         agent
     }
 
@@ -330,6 +333,35 @@ impl Agent {
                 Err(e) => {
                     warn!("Failed to fetch Ollama models: {}. Using defaults.", e);
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Fetch available models from OpenRouter if using OpenRouter provider
+    pub async fn fetch_openrouter_models(&self) -> Result<()> {
+        if self.provider == Provider::OpenRouter {
+            // Try to fetch models from OpenRouter
+            let api_key = crate::config::provider_default_api_key(Provider::OpenRouter);
+
+            if !api_key.is_empty() {
+                let openrouter_client = crate::openrouter::OpenRouterClient::new(
+                    api_key,
+                    self.base_url.clone(),
+                );
+
+                match openrouter_client.fetch_models().await {
+                    Ok(models) => {
+                        let mut available = self.available_models.write().await;
+                        *available = models;
+                        debug!("Fetched {} models from OpenRouter", available.len());
+                    }
+                    Err(e) => {
+                        warn!("Failed to fetch OpenRouter models: {}. Using defaults.", e);
+                    }
+                }
+            } else {
+                debug!("No OpenRouter API key found, using default models");
             }
         }
         Ok(())

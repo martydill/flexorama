@@ -239,6 +239,9 @@ pub fn print_help() {
     app_println!("  /context      - Show current conversation context");
     app_println!("  /provider     - Show active LLM provider, model, and base URL");
     app_println!("  /model        - Show or set the active model");
+    app_println!("    /model list [filter]   - List all models (optionally filtered)");
+    app_println!("    /model pick [filter]   - Interactively pick a model (optionally filtered)");
+    app_println!("    /model filter <term>   - Search models by name");
     app_println!("  /search <q>   - Search previous conversations");
     app_println!("  /resume       - Resume a previous conversation");
     app_println!("  /export       - Export current conversation to Markdown and open in editor");
