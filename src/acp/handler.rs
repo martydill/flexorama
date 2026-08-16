@@ -779,6 +779,7 @@ mod tests {
             file_security: Default::default(),
             mcp: Default::default(),
             skills: Default::default(),
+            effort: Default::default(),
         };
 
         let agent = Agent::new(config.clone(), "test-model".to_string(), false, false);

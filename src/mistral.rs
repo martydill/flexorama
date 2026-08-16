@@ -1,4 +1,5 @@
 use crate::anthropic::{AnthropicResponse, ContentBlock, Message, Usage};
+use crate::config::EffortLevel;
 use crate::tools::Tool;
 use anyhow::Result;
 use futures_util::StreamExt;
@@ -166,6 +167,7 @@ impl MistralClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        _effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         if cancellation_flag.load(Ordering::SeqCst) {
@@ -223,6 +225,7 @@ impl MistralClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        _effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {

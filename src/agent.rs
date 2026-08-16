@@ -120,6 +120,8 @@ pub struct Agent {
     // Suppress output (for ACP mode where stdout must be clean)
     suppress_output: bool,
     hook_manager: Option<Arc<HookManager>>,
+    // Reasoning effort level
+    effort: crate::config::EffortLevel,
 }
 
 impl Agent {
@@ -215,6 +217,7 @@ impl Agent {
             available_models,
             suppress_output: false,
             hook_manager,
+            effort: config.effort,
         }
     }
 
@@ -920,6 +923,7 @@ impl Agent {
                         4096,
                         0.7,
                         self.conversation_manager.system_prompt.as_ref(),
+                        self.effort,
                         Arc::clone(on_content),
                         cancellation_flag.clone(),
                     )
@@ -933,6 +937,7 @@ impl Agent {
                         4096,
                         0.7,
                         self.conversation_manager.system_prompt.as_ref(),
+                        self.effort,
                         cancellation_flag.clone(),
                     )
                     .await?
@@ -1323,6 +1328,17 @@ impl Agent {
         &self.model
     }
 
+    /// Get the current reasoning effort level
+    pub fn effort(&self) -> crate::config::EffortLevel {
+        self.effort
+    }
+
+    /// Set the reasoning effort level
+    pub async fn set_effort(&mut self, effort: crate::config::EffortLevel) -> Result<()> {
+        self.effort = effort;
+        Ok(())
+    }
+
     /// Get the current plan mode state
     pub fn plan_mode(&self) -> bool {
         self.plan_mode
@@ -1367,6 +1383,7 @@ impl Agent {
             file_security: crate::security::FileSecurity::default(),
             mcp: crate::config::McpConfig::default(),
             skills: crate::config::SkillConfig::default(),
+            effort: self.effort,
         }
     }
 

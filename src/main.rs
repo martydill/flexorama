@@ -89,6 +89,9 @@ async fn main() -> Result<()> {
         .clone()
         .unwrap_or_else(|| config.default_model.clone());
 
+    // Apply effort level from CLI if specified, otherwise use config default
+    let effort = cli.effort.unwrap_or(config.effort);
+
     // Show a single-line status banner (unless in ACP mode)
     if !cli.acp {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -156,6 +159,9 @@ async fn main() -> Result<()> {
     // Create and run agent using the new async constructor
     let mut agent =
         Agent::new_with_plan_mode(config.clone(), model.clone(), cli.yolo, cli.plan_mode).await;
+
+    // Set effort level from CLI
+    agent.set_effort(effort).await?;
 
     // Initialize MCP manager
     let mcp_manager = Arc::new(McpManager::new());

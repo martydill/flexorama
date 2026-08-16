@@ -180,6 +180,7 @@ mod tests {
             file_security: Default::default(),
             mcp: Default::default(),
             skills: Default::default(),
+            effort: Default::default(),
         }
     }
 

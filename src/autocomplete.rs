@@ -133,6 +133,7 @@ pub fn get_completion(input: &str, cursor_pos: usize) -> Option<String> {
         "/permissions",
         "/file-permissions",
         "/mcp",
+        "/effort",
         "/exit",
         "/quit",
     ];

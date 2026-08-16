@@ -1,4 +1,5 @@
 use crate::anthropic::{AnthropicResponse, ContentBlock, Message, Usage};
+use crate::config::EffortLevel;
 use crate::tools::Tool;
 use anyhow::Result;
 use futures_util::StreamExt;
@@ -24,6 +25,8 @@ struct OpenAIRequest {
     tools: Option<Vec<OpenAITool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -167,6 +170,7 @@ impl OpenAIClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         if cancellation_flag.load(Ordering::SeqCst) {
@@ -181,6 +185,7 @@ impl OpenAIClient {
             temperature,
             system_prompt,
             false,
+            effort,
         );
         let endpoint = format!("{}/chat/completions", self.base_url);
 
@@ -224,6 +229,7 @@ impl OpenAIClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
@@ -239,6 +245,7 @@ impl OpenAIClient {
             temperature,
             system_prompt,
             true,
+            effort,
         );
         let endpoint = format!("{}/chat/completions", self.base_url);
 
@@ -380,6 +387,7 @@ impl OpenAIClient {
         temperature: f32,
         system_prompt: Option<&String>,
         stream: bool,
+        effort: EffortLevel,
     ) -> OpenAIRequest {
         let openai_messages = map_messages(messages, system_prompt);
 
@@ -401,6 +409,13 @@ impl OpenAIClient {
             )
         };
 
+        // Only include reasoning_effort for o1/o3 models, not for standard models
+        let reasoning_effort = if model.starts_with("o1") || model.starts_with("o3") {
+            Some(effort.openai_reasoning_effort().to_string())
+        } else {
+            None
+        };
+
         OpenAIRequest {
             model: model.to_string(),
             messages: openai_messages,
@@ -408,6 +423,7 @@ impl OpenAIClient {
             temperature: Some(temperature),
             tools: tool_defs,
             stream: Some(stream),
+            reasoning_effort,
         }
     }
 

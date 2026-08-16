@@ -1,5 +1,5 @@
 use crate::anthropic::{AnthropicClient, AnthropicResponse, ContentBlock, Message};
-use crate::config::Provider;
+use crate::config::{EffortLevel, Provider};
 use crate::gemini::GeminiClient;
 use crate::mistral::MistralClient;
 use crate::ollama::OllamaClient;
@@ -158,6 +158,7 @@ impl LlmClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<LlmResponse> {
         dispatch_to_provider!(
@@ -169,6 +170,7 @@ impl LlmClient {
             max_tokens,
             temperature,
             system_prompt,
+            effort,
             cancellation_flag
         )
     }
@@ -181,6 +183,7 @@ impl LlmClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<LlmResponse> {
@@ -193,6 +196,7 @@ impl LlmClient {
             max_tokens,
             temperature,
             system_prompt,
+            effort,
             on_content,
             cancellation_flag
         )
@@ -436,6 +440,7 @@ mod tests {
                     16,
                     0.0,
                     None,
+                    EffortLevel::default(),
                     cancellation_flag.clone(),
                 )
                 .await
@@ -449,6 +454,7 @@ mod tests {
                     16,
                     0.0,
                     None,
+                    EffortLevel::default(),
                     Arc::new(|_chunk| {}),
                     cancellation_flag.clone(),
                 )
@@ -487,6 +493,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 cancellation_flag.clone(),
             )
             .await
@@ -500,6 +507,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 Arc::new(|_chunk| {}),
                 cancellation_flag,
             )
@@ -536,6 +544,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 cancellation_flag.clone(),
             )
             .await
@@ -549,6 +558,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 Arc::new(|_chunk| {}),
                 cancellation_flag,
             )
@@ -585,6 +595,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 cancellation_flag.clone(),
             )
             .await
@@ -598,6 +609,7 @@ mod tests {
                 16,
                 0.0,
                 None,
+                EffortLevel::default(),
                 Arc::new(|_chunk| {}),
                 cancellation_flag,
             )
