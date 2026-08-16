@@ -18,6 +18,67 @@ pub enum Provider {
     Ollama,
 }
 
+/// Effort level for AI reasoning/thinking
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EffortLevel {
+    /// Minimal reasoning - fastest responses
+    Low,
+    /// Balanced reasoning (default)
+    #[default]
+    Medium,
+    /// Maximum reasoning - most thorough responses
+    High,
+}
+
+impl std::str::FromStr for EffortLevel {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "low" => Ok(EffortLevel::Low),
+            "medium" => Ok(EffortLevel::Medium),
+            "high" => Ok(EffortLevel::High),
+            _ => Err(format!("Invalid effort level '{}'. Valid values: low, medium, high", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for EffortLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EffortLevel::Low => write!(f, "low"),
+            EffortLevel::Medium => write!(f, "medium"),
+            EffortLevel::High => write!(f, "high"),
+        }
+    }
+}
+
+impl EffortLevel {
+    /// Returns the reasoning budget token count for Anthropic models
+    pub fn anthropic_reasoning_budget(&self) -> Option<u32> {
+        match self {
+            EffortLevel::Low => None, // No extended thinking
+            EffortLevel::Medium => Some(10_000),
+            EffortLevel::High => Some(50_000),
+        }
+    }
+
+    /// Returns the reasoning effort string for OpenAI o1/o3 models
+    pub fn openai_reasoning_effort(&self) -> &str {
+        match self {
+            EffortLevel::Low => "low",
+            EffortLevel::Medium => "medium",
+            EffortLevel::High => "high",
+        }
+    }
+
+    /// Returns whether to enable thinking mode for Ollama
+    pub fn ollama_think(&self) -> bool {
+        matches!(self, EffortLevel::Medium | EffortLevel::High)
+    }
+}
+
 impl Default for Provider {
     fn default() -> Self {
         Provider::Anthropic
@@ -169,6 +230,8 @@ pub struct Config {
     pub mcp: McpConfig,
     #[serde(default)]
     pub skills: SkillConfig,
+    #[serde(default)]
+    pub effort: EffortLevel,
 }
 const DEFAULT_SYSTEM_PROMPT: &str = r#"
 You are an expert in software development. Your job is to help the user build awesome software.
@@ -302,6 +365,7 @@ impl Default for Config {
             file_security: FileSecurity::default(),
             mcp: McpConfig::default(),
             skills: SkillConfig::default(),
+            effort: EffortLevel::default(),
         }
     }
 }

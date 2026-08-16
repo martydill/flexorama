@@ -80,6 +80,10 @@ pub struct Cli {
     /// Enable verbose logging (shows info/debug messages during startup)
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Set reasoning effort level (low, medium, high)
+    #[arg(long, value_name = "LEVEL")]
+    pub effort: Option<crate::config::EffortLevel>,
 }
 
 #[cfg(test)]
@@ -224,6 +228,7 @@ mod tests {
         let cli = Cli::try_parse_from(vec!["flexorama", "--continue"]).unwrap();
         assert!(cli.continue_session);
         assert!(cli.resume_conversation.is_none());
+        assert_eq!(cli.effort, None);
     }
 
     #[test]
@@ -275,5 +280,29 @@ mod tests {
         assert_eq!(cli_short.context_files, cli_long.context_files);
         assert_eq!(cli_short.system_prompt, cli_long.system_prompt);
         assert_eq!(cli_short.config, cli_long.config);
+    }
+
+    #[test]
+    fn test_cli_with_effort() {
+        let cli = Cli::try_parse_from(vec!["flexorama", "--effort", "high"]).unwrap();
+        assert_eq!(cli.effort, Some(crate::config::EffortLevel::High));
+    }
+
+    #[test]
+    fn test_cli_with_effort_low() {
+        let cli = Cli::try_parse_from(vec!["flexorama", "--effort", "low"]).unwrap();
+        assert_eq!(cli.effort, Some(crate::config::EffortLevel::Low));
+    }
+
+    #[test]
+    fn test_cli_with_effort_medium() {
+        let cli = Cli::try_parse_from(vec!["flexorama", "--effort", "medium"]).unwrap();
+        assert_eq!(cli.effort, Some(crate::config::EffortLevel::Medium));
+    }
+
+    #[test]
+    fn test_cli_with_invalid_effort() {
+        let cli = Cli::try_parse_from(vec!["flexorama", "--effort", "invalid"]);
+        assert!(cli.is_err(), "Should reject invalid effort level");
     }
 }
