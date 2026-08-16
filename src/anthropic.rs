@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use crate::config::EffortLevel;
 use crate::tools::Tool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,6 +204,7 @@ impl AnthropicClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        _effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         // Try the standard endpoint first, then fall back to alternatives if needed
@@ -256,6 +258,7 @@ impl AnthropicClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        _effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {

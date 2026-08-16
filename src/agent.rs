@@ -952,6 +952,7 @@ impl Agent {
                         4096,
                         0.7,
                         self.conversation_manager.system_prompt.as_ref(),
+                        crate::config::EffortLevel::default(),
                         Arc::clone(on_content),
                         cancellation_flag.clone(),
                     )
@@ -965,6 +966,7 @@ impl Agent {
                         4096,
                         0.7,
                         self.conversation_manager.system_prompt.as_ref(),
+                        crate::config::EffortLevel::default(),
                         cancellation_flag.clone(),
                     )
                     .await?

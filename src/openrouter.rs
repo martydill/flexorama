@@ -2,6 +2,7 @@
 // OpenRouter provides access to multiple LLM providers through a single API
 
 use crate::anthropic::{AnthropicResponse, Message};
+use crate::config::EffortLevel;
 use crate::openai::OpenAIClient;
 use crate::tools::Tool;
 use anyhow::Result;
@@ -125,10 +126,11 @@ impl OpenRouterClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         self.openai_client
-            .create_message(model, messages, tools, max_tokens, temperature, system_prompt, cancellation_flag)
+            .create_message(model, messages, tools, max_tokens, temperature, system_prompt, effort, cancellation_flag)
             .await
     }
 
@@ -141,11 +143,12 @@ impl OpenRouterClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         self.openai_client
-            .create_message_stream(model, messages, tools, max_tokens, temperature, system_prompt, on_content, cancellation_flag)
+            .create_message_stream(model, messages, tools, max_tokens, temperature, system_prompt, effort, on_content, cancellation_flag)
             .await
     }
 }

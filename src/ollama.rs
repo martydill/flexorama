@@ -1,4 +1,5 @@
 use crate::anthropic::{AnthropicResponse, ContentBlock, Message, Usage};
+use crate::config::EffortLevel;
 use crate::tools::Tool;
 use anyhow::Result;
 use futures_util::StreamExt;
@@ -254,6 +255,7 @@ impl OllamaClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
         if cancellation_flag.load(Ordering::SeqCst) {
@@ -267,6 +269,7 @@ impl OllamaClient {
             max_tokens,
             temperature,
             system_prompt,
+            effort,
             false,
         );
         let endpoint = format!("{}/api/chat", self.base_url);
@@ -324,6 +327,7 @@ impl OllamaClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         on_content: Arc<dyn Fn(String) + Send + Sync + 'static>,
         cancellation_flag: Arc<AtomicBool>,
     ) -> Result<AnthropicResponse> {
@@ -338,6 +342,7 @@ impl OllamaClient {
             max_tokens,
             temperature,
             system_prompt,
+            effort,
             true,
         );
         let endpoint = format!("{}/api/chat", self.base_url);
@@ -554,6 +559,7 @@ impl OllamaClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
+        effort: EffortLevel,
         stream: bool,
     ) -> OllamaRequest {
         debug!("=== Building Ollama Request ===");
@@ -580,7 +586,7 @@ impl OllamaClient {
             messages: ollama_messages,
             tools: None,
             stream: Some(stream),
-            think: Some(false),
+            think: Some(effort.ollama_think()),
             options: Some(OllamaOptions {
                 temperature: Some(temperature),
                 num_predict: Some(max_tokens),
