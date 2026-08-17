@@ -1239,7 +1239,7 @@ mod tests {
             role: "user".to_string(),
             content: vec![ContentBlock::text("Hi".to_string())],
         }];
-        let request = client.build_request("llama2", messages, &[], 1000, 0.7, None, false, crate::config::EffortLevel::default());
+        let request = client.build_request("llama2", messages, &[], 1000, 0.7, None, crate::config::EffortLevel::default(), false);
 
         assert_eq!(request.model, "llama2");
         assert_eq!(request.messages.len(), 1);
@@ -1259,7 +1259,7 @@ mod tests {
             content: vec![ContentBlock::text("Hi".to_string())],
         }];
         let system = "You are helpful".to_string();
-        let request = client.build_request("llama2", messages, &[], 1000, 0.5, Some(&system), true, crate::config::EffortLevel::default());
+        let request = client.build_request("llama2", messages, &[], 1000, 0.5, Some(&system), crate::config::EffortLevel::default(), true);
 
         assert_eq!(request.messages.len(), 2);
         assert_eq!(request.messages[0].role, "system");
@@ -1287,8 +1287,8 @@ mod tests {
             1000,
             0.7,
             None,
-            false,
             crate::config::EffortLevel::default(),
+            false,
         );
 
         // Ollama provider always sets tools to None
