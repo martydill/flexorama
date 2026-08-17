@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -152,7 +153,7 @@ struct ParsedOllamaStreamChunk {
 }
 
 pub struct OllamaClient {
-    client: Client,
+    client: Arc<OnceLock<Client>>,
     api_key: String,
     base_url: String,
 }
@@ -160,10 +161,15 @@ pub struct OllamaClient {
 impl OllamaClient {
     pub fn new(api_key: String, base_url: String) -> Self {
         Self {
-            client: Client::new(),
+            client: Arc::new(OnceLock::new()),
             api_key,
             base_url: base_url.trim_end_matches('/').to_string(),
         }
+    }
+
+    /// Get or initialize the HTTP client
+    fn get_client(&self) -> &Client {
+        self.client.get_or_init(|| Client::new())
     }
 
     /// Helper to build authenticated request with optional JSON body
@@ -174,7 +180,7 @@ impl OllamaClient {
         json_body: Option<&impl Serialize>,
     ) -> reqwest::RequestBuilder {
         let mut request_builder = self
-            .client
+            .get_client()
             .request(method, endpoint)
             .header("content-type", "application/json");
 

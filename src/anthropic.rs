@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use crate::config::EffortLevel;
 use crate::tools::Tool;
@@ -170,7 +171,7 @@ pub struct Usage {
 }
 
 pub struct AnthropicClient {
-    client: Client,
+    client: Arc<OnceLock<Client>>,
     api_key: String,
     base_url: String,
 }
@@ -178,10 +179,15 @@ pub struct AnthropicClient {
 impl AnthropicClient {
     pub fn new(api_key: String, base_url: String) -> Self {
         Self {
-            client: Client::new(),
+            client: Arc::new(OnceLock::new()),
             api_key,
             base_url,
         }
+    }
+
+    /// Get or initialize the HTTP client
+    fn get_client(&self) -> &Client {
+        self.client.get_or_init(|| Client::new())
     }
 
     fn endpoint_candidates(&self) -> Vec<String> {
@@ -365,7 +371,7 @@ impl AnthropicClient {
         }
 
         let response = self
-            .client
+            .get_client()
             .post(endpoint)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -483,7 +489,7 @@ impl AnthropicClient {
         }
 
         let response = self
-            .client
+            .get_client()
             .post(endpoint)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
