@@ -125,6 +125,7 @@ async fn main() -> Result<()> {
             Provider::OpenAI => "OPENAI_API_KEY",
             Provider::Zai => "ZAI_API_KEY",
             Provider::Ollama => "OLLAMA_API_KEY (optional for local instances)",
+            Provider::OpenRouter => "OPENROUTER_API_KEY",
         };
         app_eprintln!(
             "{}",

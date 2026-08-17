@@ -190,8 +190,8 @@ impl OpenAIClient {
             max_tokens,
             temperature,
             system_prompt,
-            false,
             effort,
+            false,
         );
         let endpoint = format!("{}/chat/completions", self.base_url);
 
@@ -250,8 +250,8 @@ impl OpenAIClient {
             max_tokens,
             temperature,
             system_prompt,
-            true,
             effort,
+            true,
         );
         let endpoint = format!("{}/chat/completions", self.base_url);
 
@@ -392,8 +392,8 @@ impl OpenAIClient {
         max_tokens: u32,
         temperature: f32,
         system_prompt: Option<&String>,
-        stream: bool,
         effort: EffortLevel,
+        stream: bool,
     ) -> OpenAIRequest {
         let openai_messages = map_messages(messages, system_prompt);
 
@@ -429,7 +429,7 @@ impl OpenAIClient {
             temperature: Some(temperature),
             tools: tool_defs,
             stream: Some(stream),
-            reasoning_effort,
+            reasoning_effort: Some(effort.openai_reasoning_effort().to_string()),
         }
     }
 

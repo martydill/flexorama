@@ -1080,13 +1080,37 @@ async fn send_message_to_conversation(
 async fn get_models(State(state): State<WebState>) -> impl IntoResponse {
     let agent = state.agent.lock().await;
     let provider = agent.provider();
-    let models = config::provider_models(provider)
-        .iter()
-        .map(|m| m.to_string())
-        .collect::<Vec<_>>();
+
+    // Fetch models dynamically for OpenRouter, static for other providers
+    let models = if provider == config::Provider::OpenRouter {
+        let api_key = config::provider_default_api_key(provider);
+        let base_url = config::provider_default_base_url(provider);
+
+        if !api_key.is_empty() {
+            drop(agent); // Release lock before async call
+            config::fetch_openrouter_models(&api_key, &base_url).await
+        } else {
+            config::provider_models(provider)
+                .iter()
+                .map(|m| m.to_string())
+                .collect::<Vec<_>>()
+        }
+    } else {
+        config::provider_models(provider)
+            .iter()
+            .map(|m| m.to_string())
+            .collect::<Vec<_>>()
+    };
+
+    // Re-acquire agent lock for model and provider info
+    let agent = state.agent.lock().await;
+    let active_model = agent.model().to_string();
+    let provider_str = provider.to_string();
+    drop(agent);
+
     Json(ModelListResponse {
-        provider: provider.to_string(),
-        active_model: agent.model().to_string(),
+        provider: provider_str,
+        active_model,
         models,
     })
     .into_response()

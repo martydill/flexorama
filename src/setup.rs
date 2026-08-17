@@ -1,8 +1,9 @@
 use anyhow::{anyhow, Result};
 use colored::*;
-use dialoguer::{theme::ColorfulTheme, Select};
+use dialoguer::{theme::ColorfulTheme, Input, Select};
 
 use crate::config::{Config, Provider};
+use crate::openrouter::OpenRouterClient;
 
 /// Check if this is the first run (no config file exists)
 pub fn is_first_run() -> bool {
@@ -37,6 +38,7 @@ pub async fn run_setup_wizard() -> Result<Config> {
             "Mistral AI",
             "Z.ai (GLM)",
             "Ollama (local)",
+            "OpenRouter (multi-provider)",
         ])
         .default(0)
         .interact()?;
@@ -48,6 +50,7 @@ pub async fn run_setup_wizard() -> Result<Config> {
         3 => Provider::Mistral,
         4 => Provider::Zai,
         5 => Provider::Ollama,
+        6 => Provider::OpenRouter,
         _ => return Err(anyhow!("Invalid provider selection")),
     };
 
@@ -61,22 +64,47 @@ pub async fn run_setup_wizard() -> Result<Config> {
         Provider::Mistral => "MISTRAL_API_KEY",
         Provider::Zai => "ZAI_API_KEY",
         Provider::Ollama => "OLLAMA_API_KEY (optional)",
+        Provider::OpenRouter => "OPENROUTER_API_KEY",
     };
 
-    println!();
-    println!("{}", "API Key Setup:".white().bold());
-    println!("Set your API key using one of these methods:");
-    println!();
-    println!("1. {} environment variable:", "Environment variable".cyan());
-    println!("   export {}=your-api-key", env_var_name);
-    println!();
-    println!("2. {} on the command line:", "Command line flag".cyan());
-    println!("   flexorama -k your-api-key -m \"your message\"");
-    println!();
-    println!("3. {} in your shell profile:", "Environment variable".cyan());
-    println!("   Add to ~/.zshrc or ~/.bashrc:");
-    println!("   echo 'export {}=your-api-key' >> ~/.zshrc", env_var_name);
-    println!();
+    // For OpenRouter, ask for API key interactively to enable model fetching
+    let api_key = if provider == Provider::OpenRouter {
+        println!();
+        println!("{}", "OpenRouter API Key:".white().bold());
+        println!("Get your API key from: {}", "https://openrouter.ai/keys".cyan().underline());
+        println!();
+
+        let key: String = Input::with_theme(&theme)
+            .with_prompt("Enter your OpenRouter API key")
+            .allow_empty(true)
+            .interact()?;
+
+        if !key.is_empty() {
+            println!("✓ API key provided (will be used for setup only)");
+        }
+
+        key
+    } else {
+        String::new()
+    };
+
+    // Show API key setup instructions for other providers or if no key provided
+    if api_key.is_empty() && provider != Provider::Ollama {
+        println!();
+        println!("{}", "API Key Setup:".white().bold());
+        println!("Set your API key using one of these methods:");
+        println!();
+        println!("1. {} environment variable:", "Environment variable".cyan());
+        println!("   export {}=your-api-key", env_var_name);
+        println!();
+        println!("2. {} on the command line:", "Command line flag".cyan());
+        println!("   flexorama -k your-api-key -m \"your message\"");
+        println!();
+        println!("3. {} in your shell profile:", "Environment variable".cyan());
+        println!("   Add to ~/.zshrc or ~/.bashrc:");
+        println!("   echo 'export {}=your-api-key' >> ~/.zshrc", env_var_name);
+        println!();
+    }
 
     if provider == Provider::Ollama {
         println!("{}", "Ollama runs locally and doesn't require an API key.".yellow());
@@ -88,7 +116,31 @@ pub async fn run_setup_wizard() -> Result<Config> {
     println!("{}", "Select your default model:".white().bold());
     println!("(You can change this later with --model flag or in config)");
 
-    let models = crate::config::provider_models(provider);
+    // For OpenRouter, fetch dynamic models if API key was provided
+    let models = if provider == Provider::OpenRouter && !api_key.is_empty() {
+        println!("{}", "Fetching available models from OpenRouter...".dimmed());
+        let base_url = crate::config::provider_default_base_url(provider);
+        let fetched_models = crate::config::fetch_openrouter_models(&api_key, &base_url).await;
+        if fetched_models.len() > OpenRouterClient::fallback_models().len() {
+            println!("✓ Fetched {} models from OpenRouter", fetched_models.len());
+        } else {
+            println!("Using fallback models (API fetch may have failed)");
+        }
+        fetched_models
+    } else if provider == Provider::OpenRouter {
+        // No API key provided, use fallback models
+        println!("{}", "Using fallback models (provide API key for full list)".dimmed());
+        crate::config::provider_models(provider)
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        crate::config::provider_models(provider)
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    };
+
     let default_model = crate::config::provider_default_model(provider);
     let default_index = models
         .iter()
@@ -96,17 +148,22 @@ pub async fn run_setup_wizard() -> Result<Config> {
         .unwrap_or(0);
 
     let model_selection = Select::with_theme(&theme)
-        .items(models)
+        .items(&models)
         .default(default_index)
         .interact()?;
 
-    let selected_model = models[model_selection].to_string();
+    let selected_model = models[model_selection].clone();
 
     println!();
     println!("{}", "Configuration Summary:".white().bold());
     println!("  Provider: {}", provider.to_string().green());
     println!("  Model: {}", selected_model.cyan());
-    println!("  API Key: Set via {} environment variable or -k flag", env_var_name);
+
+    if provider == Provider::OpenRouter && !api_key.is_empty() {
+        println!("  API Key: {} (set {} environment variable to use this key)", "Provided during setup".green(), env_var_name);
+    } else {
+        println!("  API Key: Set via {} environment variable or -k flag", env_var_name);
+    }
     println!();
 
     // Create and save config
