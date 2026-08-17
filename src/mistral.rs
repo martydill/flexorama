@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -145,7 +146,7 @@ struct ToolCallBuilder {
 }
 
 pub struct MistralClient {
-    client: Client,
+    client: Arc<OnceLock<Client>>,
     api_key: String,
     base_url: String,
 }
@@ -153,10 +154,15 @@ pub struct MistralClient {
 impl MistralClient {
     pub fn new(api_key: String, base_url: String) -> Self {
         Self {
-            client: Client::new(),
+            client: Arc::new(OnceLock::new()),
             api_key,
             base_url: base_url.trim_end_matches('/').to_string(),
         }
+    }
+
+    /// Get or initialize the HTTP client
+    fn get_client(&self) -> &Client {
+        self.client.get_or_init(|| Client::new())
     }
 
     pub async fn create_message(
@@ -187,7 +193,7 @@ impl MistralClient {
 
         debug!("Sending Mistral request to {}", endpoint);
         let response = self
-            .client
+            .get_client()
             .post(&endpoint)
             .header("authorization", format!("Bearer {}", self.api_key))
             .header("content-type", "application/json")
@@ -246,7 +252,7 @@ impl MistralClient {
 
         debug!("Sending Mistral streaming request to {}", endpoint);
         let response = self
-            .client
+            .get_client()
             .post(&endpoint)
             .header("authorization", format!("Bearer {}", self.api_key))
             .header("content-type", "application/json")

@@ -9,6 +9,7 @@ use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -114,7 +115,7 @@ struct GeminiResponse {
 }
 
 pub struct GeminiClient {
-    client: Client,
+    client: Arc<OnceLock<Client>>,
     api_key: String,
     base_url: String,
 }
@@ -122,10 +123,15 @@ pub struct GeminiClient {
 impl GeminiClient {
     pub fn new(api_key: String, base_url: String) -> Self {
         Self {
-            client: Client::new(),
+            client: Arc::new(OnceLock::new()),
             api_key,
             base_url: base_url.trim_end_matches('/').to_string(),
         }
+    }
+
+    /// Get or initialize the HTTP client
+    fn get_client(&self) -> &Client {
+        self.client.get_or_init(|| Client::new())
     }
 
     pub async fn create_message(
@@ -151,7 +157,7 @@ impl GeminiClient {
         );
 
         debug!("Sending Gemini request to {}", endpoint);
-        let response = self.client.post(&endpoint).json(&request).send().await?;
+        let response = self.get_client().post(&endpoint).json(&request).send().await?;
 
         let status = response.status();
         let response_text = response.text().await?;
