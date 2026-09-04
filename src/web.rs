@@ -1078,8 +1078,13 @@ async fn send_message_to_conversation(
 }
 
 async fn get_models(State(state): State<WebState>) -> impl IntoResponse {
-    let agent = state.agent.lock().await;
-    let provider = agent.provider();
+    // Scope the lock so it is always released before the await below
+    // (tokio::sync::Mutex is not reentrant - re-locking while a guard is
+    // still held deadlocks).
+    let provider = {
+        let agent = state.agent.lock().await;
+        agent.provider()
+    };
 
     // Fetch models dynamically for OpenRouter, static for other providers
     let models = if provider == config::Provider::OpenRouter {
@@ -1087,7 +1092,6 @@ async fn get_models(State(state): State<WebState>) -> impl IntoResponse {
         let base_url = config::provider_default_base_url(provider);
 
         if !api_key.is_empty() {
-            drop(agent); // Release lock before async call
             config::fetch_openrouter_models(&api_key, &base_url).await
         } else {
             config::provider_models(provider)
