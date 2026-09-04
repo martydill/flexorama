@@ -1013,4 +1013,217 @@ mod tests {
         assert!(all_events.contains(&HookEvent::SessionStart));
         assert!(all_events.contains(&HookEvent::PermissionRequest));
     }
+
+    #[cfg(not(windows))]
+    fn shell_hook(command: &str, matcher: Option<&str>, continue_on_error: bool, timeout_ms: Option<u64>) -> HookCommand {
+        HookCommand {
+            command: command.to_string(),
+            args: Vec::new(),
+            env: HashMap::new(),
+            working_dir: None,
+            timeout_ms,
+            continue_on_error,
+            use_shell: true,
+            source: "test".to_string(),
+            matcher: matcher.map(str::to_string),
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn manager_with_hooks(event: HookEvent, commands: Vec<HookCommand>) -> HookManager {
+        let mut manager = HookManager {
+            hooks: HashMap::new(),
+            project_root: PathBuf::from("."),
+        };
+        manager
+            .hooks
+            .insert(event.primary_name().to_string(), commands);
+        manager
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn hook_explicit_approve_sets_decision_flag() {
+        let manager = manager_with_hooks(
+            HookEvent::SessionStart,
+            vec![shell_hook("echo '{\"decision\":\"approve\"}'", None, false, None)],
+        );
+
+        let decision = manager.run_session_start(None, "model").await.unwrap();
+
+        assert_eq!(decision.action, HookAction::Continue);
+        assert!(decision.explicit_decision, "approve should be explicit");
+        assert_eq!(decision.message, None);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn hook_non_json_output_is_ignored() {
+        let manager = manager_with_hooks(
+            HookEvent::UserPromptSubmit,
+            vec![shell_hook("echo 'plain text output'", None, false, None)],
+        );
+
+        let decision = manager
+            .run_pre_message("cleaned", "original", &[], None, "model")
+            .await
+            .unwrap();
+
+        assert_eq!(decision.action, HookAction::Continue);
+        assert!(!decision.explicit_decision);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn hook_with_empty_output_changes_nothing() {
+        let manager = manager_with_hooks(
+            HookEvent::Stop,
+            vec![shell_hook("exit 0", None, false, None)],
+        );
+
+        let decision = manager.run_post_message("done", None, "model").await.unwrap();
+
+        assert_eq!(decision.action, HookAction::Continue);
+        assert!(!decision.explicit_decision);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn failing_hook_errors_without_continue_on_error() {
+        let manager = manager_with_hooks(
+            HookEvent::PreToolUse,
+            vec![shell_hook("echo boom >&2; exit 3", None, false, None)],
+        );
+
+        let result = manager
+            .run_pre_tool("tool-1", "Bash", &serde_json::json!({}), None, "model")
+            .await;
+
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("exit code: 3") || err.contains("status"), "error: {}", err);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn failing_hook_continues_when_continue_on_error_set() {
+        let manager = manager_with_hooks(
+            HookEvent::PreToolUse,
+            vec![shell_hook("echo boom >&2; exit 3", None, true, None)],
+        );
+
+        let decision = manager
+            .run_pre_tool("tool-1", "Bash", &serde_json::json!({}), None, "model")
+            .await
+            .expect("continue_on_error should swallow the failure");
+
+        assert_eq!(decision.action, HookAction::Continue);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn hook_timeout_returns_error() {
+        let manager = manager_with_hooks(
+            HookEvent::PreToolUse,
+            vec![shell_hook("sleep 2", None, false, Some(100))],
+        );
+
+        let result = manager
+            .run_pre_tool("tool-1", "Bash", &serde_json::json!({}), None, "model")
+            .await;
+
+        assert!(result.is_err(), "timed-out hook should error");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn matcher_filters_hooks_for_other_tools() {
+        // A hook that would fail if executed, guarded by a matcher for a different tool
+        let manager = manager_with_hooks(
+            HookEvent::PreToolUse,
+            vec![shell_hook("exit 5", Some("Bash"), false, None)],
+        );
+
+        let decision = manager
+            .run_pre_tool("tool-1", "Read", &serde_json::json!({}), None, "model")
+            .await
+            .expect("hook must be filtered out for Read");
+
+        assert_eq!(decision.action, HookAction::Continue);
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn matcher_matching_is_case_insensitive() {
+        let manager = manager_with_hooks(
+            HookEvent::PermissionRequest,
+            vec![shell_hook("echo '{\"decision\":\"approve\"}'", Some("BASH"), false, None)],
+        );
+
+        let decision = manager
+            .run_permission_request("file", "Bash", "detail", None, "model")
+            .await
+            .unwrap();
+
+        assert!(decision.explicit_decision, "matcher should match case-insensitively");
+    }
+
+    #[test]
+    fn list_hooks_returns_sorted_entries() {
+        let mut manager = HookManager {
+            hooks: HashMap::new(),
+            project_root: PathBuf::from("."),
+        };
+        manager.hooks.insert(
+            "Stop".to_string(),
+            vec![HookCommand {
+                command: "echo stop".to_string(),
+                args: vec!["--flag".to_string()],
+                env: HashMap::new(),
+                working_dir: None,
+                timeout_ms: Some(1234),
+                continue_on_error: true,
+                use_shell: true,
+                source: "project".to_string(),
+                matcher: Some("Bash".to_string()),
+            }],
+        );
+        manager.hooks.insert(
+            "PreToolUse".to_string(),
+            vec![HookCommand {
+                command: "echo pre".to_string(),
+                args: Vec::new(),
+                env: HashMap::new(),
+                working_dir: None,
+                timeout_ms: None,
+                continue_on_error: false,
+                use_shell: true,
+                source: "home".to_string(),
+                matcher: None,
+            }],
+        );
+
+        let hooks = manager.list_hooks();
+
+        assert_eq!(hooks.len(), 2);
+        assert_eq!(hooks[0].event, "PreToolUse", "hooks should be sorted by event");
+        assert_eq!(hooks[1].event, "Stop");
+        let stop = &hooks[1];
+        assert_eq!(stop.command, "echo stop");
+        assert_eq!(stop.args, vec!["--flag".to_string()]);
+        assert_eq!(stop.timeout_ms, Some(1234));
+        assert!(stop.continue_on_error);
+        assert_eq!(stop.matcher.as_deref(), Some("Bash"));
+        assert_eq!(stop.source, "project");
+    }
+
+    #[test]
+    fn config_paths_include_global_and_project_locations() {
+        let paths = HookManager::get_config_paths();
+
+        assert!(!paths.is_empty());
+        assert!(paths.iter().any(|(label, _, _)| label.contains("Global")));
+        assert!(paths.iter().any(|(label, path, _)| {
+            label.contains("Project") && path.ends_with(".flexorama/hooks.json")
+        }));
+    }
 }

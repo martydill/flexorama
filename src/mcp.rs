@@ -4067,4 +4067,211 @@ mod tests {
         let result = connection.disconnect().await;
         assert!(result.is_ok());
     }
+
+    // A minimal MCP server speaking line-delimited JSON-RPC over stdio, implemented in bash.
+    fn fake_mcp_server_script(tool_call_result: &str) -> String {
+        format!(
+            r#"while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{{"jsonrpc":"2.0","id":"%s","result":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{"listChanged":true}}}},"serverInfo":{{"name":"fake","version":"1.0"}}}}}}\n' "$id"
+      ;;
+    *'"method":"tools/list"'*)
+      printf '{{"jsonrpc":"2.0","id":"%s","result":{{"tools":[{{"name":"echo_tool","description":"Echoes text back","inputSchema":{{"type":"object","properties":{{"text":{{"type":"string"}}}},"required":["text"]}}}}]}}}}\n' "$id"
+      ;;
+    *'"method":"tools/call"'*)
+      printf '{{"jsonrpc":"2.0","id":"%s",{}}}\n' "$id"
+      ;;
+  esac
+done
+"#,
+            tool_call_result
+        )
+    }
+
+    fn empty_env() -> HashMap<String, String> {
+        HashMap::new()
+    }
+
+    async fn connect_fake_server(tool_call_result: &str) -> McpConnection {
+        let mut connection = McpConnection::new("fake-server".to_string());
+        connection
+            .connect_stdio(
+                "bash",
+                &["-c".to_string(), fake_mcp_server_script(tool_call_result)],
+                &empty_env(),
+            )
+            .await
+            .expect("connect to fake MCP server");
+        connection
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stdio_connection_completes_handshake_and_lists_tools() {
+        let connection = connect_fake_server(
+            r#""result":{"content":[{"type":"text","text":"tool ran"}]}"#,
+        )
+        .await;
+
+        let tools = connection.get_tools().await;
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "echo_tool");
+        assert_eq!(tools[0].description.as_deref(), Some("Echoes text back"));
+        assert!(tools[0].input_schema.is_object());
+        assert_eq!(connection.get_tools_version().await, 1);
+
+        let mut connection = connection;
+        connection.disconnect().await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stdio_connection_calls_tools_over_json_rpc() {
+        let mut connection = connect_fake_server(
+            r#""result":{"content":[{"type":"text","text":"tool ran"}]}"#,
+        )
+        .await;
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            connection.call_tool("echo_tool", Some(json!({ "text": "hi" }))),
+        )
+        .await
+        .expect("tool call should not time out")
+        .expect("tool call should succeed");
+
+        assert_eq!(result["content"][0]["text"], json!("tool ran"));
+
+        connection.disconnect().await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stdio_connection_surfaces_tool_errors() {
+        let mut connection = connect_fake_server(
+            r#""error":{"code":-32601,"message":"tool not found"}"#,
+        )
+        .await;
+
+        let err = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            connection.call_tool("echo_tool", None),
+        )
+        .await
+        .expect("tool call should not time out")
+        .expect_err("error responses should surface");
+
+        assert!(err.to_string().contains("tool not found"), "error: {}", err);
+
+        connection.disconnect().await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stdio_connection_fails_for_missing_binary() {
+        let mut connection = McpConnection::new("missing".to_string());
+
+        let err = connection
+            .connect_stdio("flexorama-definitely-missing-cmd", &[], &empty_env())
+            .await
+            .expect_err("spawning a missing binary must fail");
+
+        assert!(
+            err.to_string().contains("Failed to spawn"),
+            "error: {}",
+            err
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manager_connects_and_aggregates_tools_from_configured_server() {
+        let manager = McpManager::new();
+
+        let mut servers = HashMap::new();
+        servers.insert(
+            "fake".to_string(),
+            McpServerConfig {
+                name: "fake".to_string(),
+                command: Some("bash".to_string()),
+                args: Some(vec![
+                    "-c".to_string(),
+                    fake_mcp_server_script(r#""result":{"content":[{"type":"text","text":"manager ran"}]}"#),
+                ]),
+                env: None,
+                url: None,
+                auth: None,
+                enabled: true,
+            },
+        );
+        manager
+            .initialize(McpConfig {
+                servers: servers.clone(),
+            })
+            .await
+            .unwrap();
+
+        assert!(!manager.is_connected("fake").await);
+        manager.connect_server("fake").await.unwrap();
+        assert!(manager.is_connected("fake").await);
+
+        let servers_list = manager.list_servers().await.unwrap();
+        assert_eq!(servers_list.len(), 1);
+        assert!(servers_list[0].2, "server should report connected");
+
+        let tools = manager.get_all_tools().await.unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].0, "fake");
+        assert_eq!(tools[0].1.name, "echo_tool");
+
+        let result = manager
+            .call_tool("fake", "echo_tool", Some(json!({ "text": "x" })))
+            .await
+            .unwrap();
+        assert_eq!(result["content"][0]["text"], json!("manager ran"));
+
+        // Disconnecting clears the connection state
+        manager.disconnect_all().await.unwrap();
+        assert!(!manager.is_connected("fake").await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn manager_connect_reports_disabled_and_unknown_servers() {
+        let manager = McpManager::new();
+
+        let mut servers = HashMap::new();
+        servers.insert(
+            "off".to_string(),
+            McpServerConfig {
+                name: "off".to_string(),
+                command: Some("bash".to_string()),
+                args: Some(vec!["-c".to_string(), "true".to_string()]),
+                env: None,
+                url: None,
+                auth: None,
+                enabled: false,
+            },
+        );
+        manager
+            .initialize(McpConfig {
+                servers: servers.clone(),
+            })
+            .await
+            .unwrap();
+
+        let disabled = manager
+            .connect_server("off")
+            .await
+            .expect_err("disabled servers must not connect");
+        assert!(disabled.to_string().contains("disabled"));
+
+        let unknown = manager
+            .connect_server("nope")
+            .await
+            .expect_err("unknown servers must fail");
+        assert!(unknown.to_string().contains("not found"));
+    }
 }

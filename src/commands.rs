@@ -2861,4 +2861,54 @@ mod tests {
         let result = truncate_line(line, 50);
         assert!(result.len() <= 50 || result.ends_with("..."));
     }
+
+    #[test]
+    #[serial_test::serial]
+    fn handle_hooks_command_lists_available_events() {
+        let out = crate::tests_support::capture_stdout(|| {
+            handle_hooks_command(&["events"]).unwrap();
+        });
+
+        for event in [
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "Stop",
+            "SubagentStop",
+            "SessionStart",
+            "PermissionRequest",
+        ] {
+            assert!(out.contains(event), "events output missing {}: {}", event, out);
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn handle_hooks_command_shows_config_paths() {
+        let out = crate::tests_support::capture_stdout(|| {
+            handle_hooks_command(&["paths"]).unwrap();
+        });
+
+        assert!(out.contains("hooks.json"), "output: {}", out);
+        assert!(out.contains("Global") && out.contains("Project"), "output: {}", out);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn handle_hooks_command_rejects_unknown_subcommand() {
+        let out = crate::tests_support::capture_stdout(|| {
+            handle_hooks_command(&["bogus"]).unwrap();
+        });
+
+        assert!(out.contains("Unknown hooks command: bogus"), "output: {}", out);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn handle_hooks_command_help_renders() {
+        let out = crate::tests_support::capture_stdout(|| {
+            handle_hooks_command(&["help"]).unwrap();
+        });
+        assert!(!out.is_empty());
+    }
 }

@@ -430,3 +430,281 @@ fn normalize_args(args: Option<Value>) -> Value {
         None => Value::Object(Map::new()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{ToolCall, ToolResult};
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use std::sync::Mutex;
+    use tokio::net::TcpListener;
+
+    fn client() -> GeminiClient {
+        GeminiClient::new("test-key".to_string(), "https://gemini.test/v1beta".to_string())
+    }
+
+    fn message(role: &str, blocks: Vec<ContentBlock>) -> Message {
+        Message {
+            role: role.to_string(),
+            content: blocks,
+        }
+    }
+
+    fn tool() -> Tool {
+        Tool {
+            name: "read_file".to_string(),
+            description: "Read a file".to_string(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+            handler: Box::new(|_call: ToolCall| {
+                Box::pin(async {
+                    Ok(ToolResult {
+                        tool_use_id: String::new(),
+                        content: String::new(),
+                        is_error: false,
+                    })
+                })
+            }),
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn normalize_args_wraps_non_object_values() {
+        assert_eq!(
+            normalize_args(Some(json!({ "path": "x" }))),
+            json!({ "path": "x" })
+        );
+        assert_eq!(
+            normalize_args(Some(json!("plain"))),
+            json!({ "value": "plain" })
+        );
+        assert_eq!(normalize_args(None), json!({}));
+    }
+
+    #[test]
+    fn build_request_maps_text_and_roles() {
+        let request = client().build_request(
+            vec![
+                message("user", vec![ContentBlock::text("question".to_string())]),
+                message("assistant", vec![ContentBlock::text("answer".to_string())]),
+            ],
+            &[tool()],
+            900,
+            0.4,
+            Some(&"You are terse.".to_string()),
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(
+            wire["systemInstruction"]["parts"][0]["text"],
+            json!("You are terse.")
+        );
+        assert_eq!(wire["contents"][0]["role"], json!("user"));
+        assert_eq!(wire["contents"][0]["parts"][0]["text"], json!("question"));
+        assert_eq!(wire["contents"][1]["role"], json!("model"));
+        assert_eq!(wire["generationConfig"]["maxOutputTokens"], json!(900));
+        assert_eq!(wire["tools"][0]["functionDeclarations"][0]["name"], json!("read_file"));
+        assert!(wire.get("tools").is_some());
+    }
+
+    #[test]
+    fn build_request_sends_images_as_inline_data() {
+        let image = ContentBlock::image("image/png".to_string(), "aGk=".to_string());
+        let request = client().build_request(
+            vec![message("user", vec![image])],
+            &[],
+            100,
+            0.5,
+            None,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        let part = &wire["contents"][0]["parts"][0];
+        assert_eq!(part["inlineData"]["mimeType"], json!("image/png"));
+        assert_eq!(part["inlineData"]["data"], json!("aGk="));
+    }
+
+    #[test]
+    fn build_request_only_sends_tool_calls_with_thought_signatures() {
+        let mut signed = ContentBlock::tool_use("call-1".to_string(), "read_file".to_string(), json!({ "path": "x" }));
+        signed.thought_signature = Some("sig-1".to_string());
+        let unsigned = ContentBlock::tool_use("call-2".to_string(), "glob".to_string(), json!({}));
+
+        let request = client().build_request(
+            vec![message("assistant", vec![signed, unsigned])],
+            &[],
+            100,
+            0.5,
+            None,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        let parts = wire["contents"][0]["parts"].as_array().unwrap();
+        assert_eq!(parts.len(), 1, "unsigned tool calls must be dropped");
+        assert_eq!(parts[0]["functionCall"]["name"], json!("read_file"));
+        assert_eq!(parts[0]["functionCall"]["args"], json!({ "path": "x" }));
+        assert_eq!(parts[0]["functionCall"]["thoughtSignature"], json!("sig-1"));
+    }
+
+    #[test]
+    fn build_request_resolves_tool_result_names_and_roles() {
+        let mut tool_use =
+            ContentBlock::tool_use("call-1".to_string(), "read_file".to_string(), json!({}));
+        tool_use.thought_signature = Some("sig".to_string());
+        let json_result =
+            ContentBlock::tool_result("call-1".to_string(), r#"{"content":"body"}"#.to_string(), None);
+
+        let request = client().build_request(
+            vec![
+                message("assistant", vec![tool_use]),
+                message("user", vec![json_result]),
+            ],
+            &[],
+            100,
+            0.5,
+            None,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(wire["contents"][1]["role"], json!("function"));
+        let response_part = &wire["contents"][1]["parts"][0]["functionResponse"];
+        assert_eq!(response_part["name"], json!("read_file"));
+        assert_eq!(response_part["response"], json!({ "content": "body" }));
+    }
+
+    #[test]
+    fn build_request_wraps_non_json_tool_results() {
+        let result = ContentBlock::tool_result(
+            "unknown-tool".to_string(),
+            "plain failure text".to_string(),
+            None,
+        );
+
+        let request = client().build_request(
+            vec![message("user", vec![result])],
+            &[],
+            100,
+            0.5,
+            None,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        let response_part = &wire["contents"][0]["parts"][0]["functionResponse"];
+        assert_eq!(response_part["name"], json!("unknown-tool"));
+        assert_eq!(response_part["response"], json!({ "result": "plain failure text" }));
+    }
+
+    #[test]
+    fn map_response_handles_all_part_kinds_and_usage() {
+        let parsed: GeminiResponse = serde_json::from_value(json!({
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        { "text": "here you go" },
+                        { "functionCall": { "name": "read_file", "args": { "path": "z" }, "thoughtSignature": "s" } },
+                        { "functionResponse": { "name": "read_file", "response": { "ok": true } } }
+                    ]
+                }
+            }],
+            "usageMetadata": { "promptTokenCount": 12, "candidatesTokenCount": 5 }
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+
+        assert_eq!(mapped.content.len(), 3);
+        assert_eq!(mapped.content[0].text.as_deref(), Some("here you go"));
+
+        let tool_use = &mapped.content[1];
+        assert_eq!(tool_use.block_type, "tool_use");
+        assert_eq!(tool_use.name.as_deref(), Some("read_file"));
+        assert_eq!(tool_use.input, Some(json!({ "path": "z" })));
+        assert_eq!(tool_use.thought_signature.as_deref(), Some("s"));
+        assert!(tool_use.id.as_deref().unwrap_or_default().starts_with("gemini_call_"));
+
+        let tool_result = &mapped.content[2];
+        assert_eq!(tool_result.block_type, "tool_result");
+        assert_eq!(tool_result.tool_use_id.as_deref(), Some("read_file"));
+        assert_eq!(tool_result.content.as_deref(), Some(r#"{"ok":true}"#));
+
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (12, 5));
+    }
+
+    #[test]
+    fn map_response_falls_back_to_total_token_count() {
+        let parsed: GeminiResponse = serde_json::from_value(json!({
+            "candidates": [{ "content": { "role": "model", "parts": [{ "text": "hi" }] } }],
+            "usageMetadata": { "promptTokenCount": 3, "totalTokenCount": 9 }
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (3, 9));
+    }
+
+    #[test]
+    fn map_response_without_candidates_is_empty() {
+        let parsed: GeminiResponse = serde_json::from_value(json!({})).unwrap();
+        let mapped = client().map_response(parsed);
+        assert!(mapped.content.is_empty());
+        assert!(mapped.usage.is_none());
+    }
+
+    #[tokio::test]
+    async fn stream_fallback_emits_aggregated_text_via_callback() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let base_url = format!("http://{}", addr);
+
+        let app = Router::new().route(
+            "/models/gemini-test:generateContent",
+            post(|| async {
+                Json(json!({
+                    "candidates": [{
+                        "content": {
+                            "role": "model",
+                            "parts": [{ "text": "line one" }, { "text": "line two" }]
+                        }
+                    }]
+                }))
+            }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+
+        let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&chunks);
+        let callback: Arc<dyn Fn(String) + Send + Sync + 'static> =
+            Arc::new(move |text: String| sink.lock().unwrap().push(text));
+
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "gemini-test",
+                vec![message("user", vec![ContentBlock::text("hi".to_string())])],
+                &[],
+                100,
+                0.5,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join("|"), "line one\nline two");
+        assert_eq!(response.content.len(), 2);
+    }
+
+    fn client_at(base_url: &str) -> GeminiClient {
+        GeminiClient::new("test-key".to_string(), base_url.to_string())
+    }
+}

@@ -182,3 +182,88 @@ pub fn get_builtin_tools() -> Vec<Tool> {
         },
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_tool_list_is_not_empty() {
+        assert!(!get_builtin_tools().is_empty());
+    }
+
+    #[test]
+    fn builtin_tool_names_are_unique() {
+        let tools = get_builtin_tools();
+        let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), tools.len(), "duplicate builtin tool names");
+    }
+
+    #[test]
+    fn builtin_tools_expose_expected_surface() {
+        let tools = get_builtin_tools();
+
+        for tool in &tools {
+            assert!(!tool.description.is_empty(), "{} has empty description", tool.name);
+            assert_eq!(
+                tool.input_schema.get("type").and_then(|v| v.as_str()),
+                Some("object"),
+                "{} schema is not an object",
+                tool.name
+            );
+        }
+
+        for expected in [
+            "list_directory",
+            "Read",
+            "MultiRead",
+            "search_in_files",
+            "glob",
+            "create_todo",
+            "complete_todo",
+            "list_todos",
+            "Write",
+            "Edit",
+            "delete_file",
+            "create_directory",
+            "Bash",
+        ] {
+            assert!(
+                tools.iter().any(|t| t.name == expected),
+                "missing builtin tool '{}'",
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_tool_schemas_declare_required_fields() {
+        let tools = get_builtin_tools();
+
+        for tool in &tools {
+            let properties = tool
+                .input_schema
+                .get("properties")
+                .and_then(|v| v.as_object())
+                .expect("properties object");
+
+            let required = tool
+                .input_schema
+                .get("required")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            for field in required {
+                assert!(
+                    properties.contains_key(field.as_str().unwrap()),
+                    "{} requires '{}' but does not define it",
+                    tool.name,
+                    field
+                );
+            }
+        }
+    }
+}

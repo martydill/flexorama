@@ -213,3 +213,36 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod display_tests {
+    use super::*;
+
+    #[test]
+    fn logo_is_non_empty_block_art() {
+        assert!(FLEXORAMA_LOGO.contains("█"), "full logo should be block art");
+        assert!(FLEXORAMA_LOGO_MINIMAL.contains("█"));
+    }
+
+    #[test]
+    fn logo_variants_differ_in_size() {
+        assert!(
+            FLEXORAMA_LOGO.len() > FLEXORAMA_LOGO_MINIMAL.len(),
+            "minimal logo should be smaller"
+        );
+    }
+
+    #[test]
+    fn get_logo_for_terminal_returns_a_known_variant() {
+        let logo = get_logo_for_terminal();
+        assert!(
+            std::ptr::eq(logo, FLEXORAMA_LOGO) || std::ptr::eq(logo, FLEXORAMA_LOGO_MINIMAL),
+            "unexpected logo variant returned"
+        );
+    }
+
+    #[test]
+    fn display_logo_prints_without_panicking() {
+        display_logo();
+    }
+}

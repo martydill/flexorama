@@ -575,3 +575,377 @@ fn parse_arguments(arguments: &str) -> Value {
 
     serde_json::from_str::<Value>(trimmed).unwrap_or_else(|_| Value::String(arguments.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{ToolCall, ToolResult};
+    use serde_json::json;
+
+    fn client() -> MistralClient {
+        MistralClient::new("test-key".to_string(), "https://api.mistral.test/v1".to_string())
+    }
+
+    fn message(role: &str, blocks: Vec<ContentBlock>) -> Message {
+        Message {
+            role: role.to_string(),
+            content: blocks,
+        }
+    }
+
+    fn tool() -> Tool {
+        Tool {
+            name: "read_file".to_string(),
+            description: "Read a file".to_string(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+            handler: Box::new(|_call: ToolCall| {
+                Box::pin(async {
+                    Ok(ToolResult {
+                        tool_use_id: String::new(),
+                        content: String::new(),
+                        is_error: false,
+                    })
+                })
+            }),
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn parse_arguments_handles_empty_and_valid_json() {
+        assert_eq!(parse_arguments(""), json!({}));
+        assert_eq!(parse_arguments("  {}  "), json!({}));
+        assert_eq!(
+            parse_arguments(r#"{"path": "main.rs"}"#),
+            json!({ "path": "main.rs" })
+        );
+        assert_eq!(
+            parse_arguments("broken"),
+            Value::String("broken".to_string())
+        );
+    }
+
+    #[test]
+    fn map_messages_prepends_system_prompt() {
+        let mapped = map_messages(
+            vec![message("user", vec![ContentBlock::text("hi".to_string())])],
+            Some(&"Be brief.".to_string()),
+        );
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].role, "system");
+        match &mapped[0].content {
+            Some(MistralContent::Text(text)) => assert_eq!(text, "Be brief."),
+            other => panic!("expected text content, got {:?}", other),
+        }
+        assert_eq!(mapped[1].role, "user");
+    }
+
+    #[test]
+    fn map_messages_sends_images_as_data_urls() {
+        let image = ContentBlock::image("image/jpeg".to_string(), "aGk=".to_string());
+        let mapped = map_messages(
+            vec![message(
+                "user",
+                vec![ContentBlock::text("look".to_string()), image],
+            )],
+            None,
+        );
+
+        match &mapped[0].content {
+            Some(MistralContent::Parts(parts)) => {
+                assert_eq!(parts.len(), 2);
+                match &parts[1] {
+                    MistralContentPart::ImageUrl { image_url } => {
+                        assert_eq!(image_url.url, "data:image/jpeg;base64,aGk=");
+                    }
+                    other => panic!("expected image url part, got {:?}", other),
+                }
+            }
+            other => panic!("expected parts content, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_messages_converts_tool_use_and_tool_result_blocks() {
+        let tool_use = ContentBlock::tool_use(
+            "call-1".to_string(),
+            "read_file".to_string(),
+            json!({ "path": "main.rs" }),
+        );
+        let tool_result =
+            ContentBlock::tool_result("call-1".to_string(), "contents".to_string(), None);
+
+        let mapped = map_messages(
+            vec![
+                message("assistant", vec![tool_use]),
+                message("user", vec![tool_result]),
+            ],
+            None,
+        );
+
+        assert_eq!(mapped.len(), 2);
+
+        let calls = mapped[0].tool_calls.as_ref().expect("tool calls");
+        assert_eq!(calls[0].id, "call-1");
+        assert_eq!(calls[0].function.name, "read_file");
+        assert_eq!(calls[0].function.arguments, r#"{"path":"main.rs"}"#);
+        assert!(mapped[0].content.is_none());
+
+        assert_eq!(mapped[1].role, "tool");
+        assert_eq!(mapped[1].tool_call_id.as_deref(), Some("call-1"));
+        match &mapped[1].content {
+            Some(MistralContent::Text(text)) => assert_eq!(text, "contents"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_request_serializes_tools_and_streaming_without_reasoning_field() {
+        let request = client().build_request(
+            "mistral-large-latest",
+            vec![message("user", vec![ContentBlock::text("hi".to_string())])],
+            &[tool()],
+            777,
+            0.3,
+            Some(&"system".to_string()),
+            true,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(wire.get("model"), Some(&json!("mistral-large-latest")));
+        assert_eq!(wire.get("max_tokens"), Some(&json!(777)));
+        assert_eq!(wire.get("stream"), Some(&json!(true)));
+        assert!(wire.get("reasoning_effort").is_none());
+
+        let tools = wire.get("tools").unwrap().as_array().unwrap();
+        assert_eq!(tools[0]["type"], "function");
+        assert_eq!(tools[0]["function"]["name"], "read_file");
+
+        let messages = wire.get("messages").unwrap().as_array().unwrap();
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[1]["role"], "user");
+    }
+
+    #[test]
+    fn map_response_extracts_text_tool_calls_and_usage() {
+        let parsed: MistralResponse = serde_json::from_value(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "reply",
+                    "tool_calls": [{
+                        "id": "call-3",
+                        "type": "function",
+                        "function": { "name": "read_file", "arguments": "{\"path\":\"y\"}" }
+                    }]
+                }
+            }],
+            "usage": { "prompt_tokens": 8, "completion_tokens": 3 }
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+
+        assert_eq!(mapped.content[0].text.as_deref(), Some("reply"));
+        assert_eq!(mapped.content[1].block_type, "tool_use");
+        assert_eq!(mapped.content[1].id.as_deref(), Some("call-3"));
+        assert_eq!(mapped.content[1].input, Some(json!({ "path": "y" })));
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (8, 3));
+    }
+
+    #[test]
+    fn map_response_drops_empty_text_and_defaults_usage() {
+        let parsed: MistralResponse = serde_json::from_value(json!({
+            "choices": [{ "message": { "role": "assistant", "content": "" } }],
+            "usage": {}
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+
+        assert!(mapped.content.is_empty());
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (0, 0));
+    }
+
+    #[test]
+    fn base_url_trailing_slash_is_trimmed() {
+        let client = MistralClient::new("k".to_string(), "https://api.test/v1/".to_string());
+        let request = client.build_request("m", vec![], &[], 10, 0.5, None, false);
+        let wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(wire.get("stream"), Some(&json!(false)));
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+    use crate::tools::ToolCall;
+    use axum::response::IntoResponse;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use serde_json::json;
+    use std::sync::Mutex;
+    use tokio::net::TcpListener;
+
+    fn client_at(base_url: &str) -> MistralClient {
+        MistralClient::new("test-key".to_string(), base_url.to_string())
+    }
+
+    fn user_message(text: &str) -> Message {
+        Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text(text.to_string())],
+        }
+    }
+
+    async fn spawn_server(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base_url
+    }
+
+    fn collected_text() -> (Arc<Mutex<Vec<String>>>, Arc<dyn Fn(String) + Send + Sync + 'static>) {
+        let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&chunks);
+        let callback = Arc::new(move |text: String| {
+            sink.lock().unwrap().push(text);
+        }) as Arc<dyn Fn(String) + Send + Sync + 'static>;
+        (chunks, callback)
+    }
+
+    #[tokio::test]
+    async fn stream_accumulates_text_and_usage() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|| async {
+                let body = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Bo\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"njour\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":6}}\n\n",
+                    "data: [DONE]\n\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body.to_string(),
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "mistral-large-latest",
+                vec![user_message("hi")],
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join(""), "Bonjour");
+        assert_eq!(response.content[0].text.as_deref(), Some("Bonjour"));
+        let usage = response.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (5, 6));
+    }
+
+    #[tokio::test]
+    async fn stream_reassembles_tool_calls_from_fragments() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|| async {
+                let body = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-7\",\"type\":\"function\",\"function\":{\"name\":\"glob\",\"arguments\":\"\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"pattern\\\":\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"*.rs\\\"}\"}}]}}]}\n\n",
+                    "data: [DONE]\n\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body.to_string(),
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "mistral-large-latest",
+                vec![user_message("find rs files")],
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert!(chunks.lock().unwrap().is_empty());
+        let block = &response.content[0];
+        assert_eq!(block.block_type, "tool_use");
+        assert_eq!(block.id.as_deref(), Some("call-7"));
+        assert_eq!(block.name.as_deref(), Some("glob"));
+        assert_eq!(block.input, Some(json!({ "pattern": "*.rs" })));
+    }
+
+    #[tokio::test]
+    async fn create_message_sends_expected_request_and_maps_reply() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|Json(payload): Json<serde_json::Value>| async move {
+                assert_eq!(payload["model"], json!("mistral-large-latest"));
+                assert_eq!(payload["messages"][0]["role"], json!("user"));
+                Json(json!({
+                    "choices": [{
+                        "message": { "role": "assistant", "content": "mistral says hi" }
+                    }],
+                    "usage": { "prompt_tokens": 2, "completion_tokens": 3 }
+                }))
+            }),
+        ))
+        .await;
+
+        let response = client_at(&base_url)
+            .create_message(
+                "mistral-large-latest",
+                vec![user_message("hi")],
+                &[],
+                64,
+                0.5,
+                None,
+                EffortLevel::Low,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.content[0].text.as_deref(),
+            Some("mistral says hi")
+        );
+        let usage = response.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (2, 3));
+    }
+}

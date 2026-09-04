@@ -196,6 +196,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_streaming_renderer_spinner_is_optional() {
         let formatter = CodeFormatter::new().unwrap();
         let (_state, _callback, spinner) = create_streaming_renderer(&formatter, None);

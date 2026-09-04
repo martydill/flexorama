@@ -239,3 +239,217 @@ impl SubagentManager {
         self.active_subagent = name;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn temp_agents_dir() -> (tempfile::TempDir, PathBuf) {
+        let current_dir = std::env::current_dir().expect("current dir");
+        let temp = tempfile::tempdir_in(current_dir).expect("temp dir");
+        let dir = temp.path().join("agents");
+        (temp, dir)
+    }
+
+    fn sample_config(name: &str) -> SubagentConfig {
+        let now = Utc::now();
+        SubagentConfig {
+            name: name.to_string(),
+            system_prompt: "You are a test subagent.".to_string(),
+            allowed_tools: ["read_file".to_string(), "glob".to_string()]
+                .into_iter()
+                .collect(),
+            denied_tools: ["bash".to_string()].into_iter().collect(),
+            max_tokens: Some(2048),
+            temperature: Some(0.4),
+            model: Some("claude-haiku-4-5".to_string()),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn new_with_dir_creates_missing_directory() {
+        let (temp, dir) = temp_agents_dir();
+        assert!(!dir.exists());
+
+        SubagentManager::new_with_dir(dir.clone()).unwrap();
+
+        assert!(dir.is_dir());
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn create_subagent_persists_file_and_registers_it() {
+        let (temp, dir) = temp_agents_dir();
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+
+        let config = manager
+            .create_subagent("reviewer", "Review code", vec!["read_file".to_string()], vec![])
+            .await
+            .unwrap();
+
+        assert!(dir.join("reviewer.md").exists());
+        assert_eq!(manager.list_subagents().len(), 1);
+        assert_eq!(manager.get_subagent("reviewer").unwrap().name, "reviewer");
+        assert_eq!(config.system_prompt, "Review code");
+        assert_eq!(config.allowed_tools, HashSet::from(["read_file".to_string()]));
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn save_and_load_roundtrip_preserves_all_fields() {
+        let (temp, dir) = temp_agents_dir();
+        let manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+        let original = sample_config("full");
+
+        manager.save_subagent(&original).await.unwrap();
+
+        let mut loader = SubagentManager::new_with_dir(dir.clone()).unwrap();
+        loader.load_all_subagents().await.unwrap();
+
+        let loaded = loader.get_subagent("full").expect("subagent loaded");
+        assert_eq!(loaded.system_prompt, original.system_prompt);
+        assert_eq!(loaded.allowed_tools, original.allowed_tools);
+        assert_eq!(loaded.denied_tools, original.denied_tools);
+        assert_eq!(loaded.max_tokens, original.max_tokens);
+        assert_eq!(loaded.temperature, original.temperature);
+        assert_eq!(loaded.model, original.model);
+        assert_eq!(loaded.created_at, original.created_at);
+        assert_eq!(loaded.updated_at, original.updated_at);
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn load_all_subagents_ignores_non_markdown_and_malformed_files() {
+        let (temp, dir) = temp_agents_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("good.md"), "---\nname: good\nallowed_tools: []\ndenied_tools: []\nmax_tokens: ~\ntemperature: ~\nmodel: ~\ncreated_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n---\nPrompt body\n").unwrap();
+        std::fs::write(dir.join("notes.txt"), "not a subagent").unwrap();
+        std::fs::write(dir.join("broken.md"), "no frontmatter here").unwrap();
+        std::fs::write(
+            dir.join("unclosed.md"),
+            "---\nname: unclosed\nallowed_tools: []\ndenied_tools: []\n",
+        )
+        .unwrap();
+
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+        manager.load_all_subagents().await.unwrap();
+
+        assert_eq!(manager.list_subagents().len(), 1);
+        assert!(manager.get_subagent("good").is_some());
+        assert!(manager.get_subagent("unclosed").is_none());
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn load_all_subagents_normalizes_crlf_and_bom() {
+        let (temp, dir) = temp_agents_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let frontmatter = "name: windows\r\nallowed_tools: []\r\ndenied_tools: []\r\nmax_tokens: ~\r\ntemperature: ~\r\nmodel: ~\r\ncreated_at: 2026-01-01T00:00:00Z\r\nupdated_at: 2026-01-01T00:00:00Z\r\n";
+        let crlf_file = format!("---\r\n{}\r\n---\r\nWindows prompt", frontmatter);
+        std::fs::write(dir.join("windows.md"), crlf_file).unwrap();
+
+        let bom_file = format!(
+            "\u{FEFF}---\nname: bommy\nallowed_tools: []\ndenied_tools: []\nmax_tokens: ~\ntemperature: ~\nmodel: ~\ncreated_at: 2026-01-01T00:00:00Z\nupdated_at: 2026-01-01T00:00:00Z\n---\nBOM prompt"
+        );
+        std::fs::write(dir.join("bommy.md"), bom_file).unwrap();
+
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+        manager.load_all_subagents().await.unwrap();
+
+        assert_eq!(manager.list_subagents().len(), 2);
+        assert_eq!(
+            manager.get_subagent("windows").unwrap().system_prompt,
+            "Windows prompt"
+        );
+        assert_eq!(
+            manager.get_subagent("bommy").unwrap().system_prompt,
+            "BOM prompt"
+        );
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn load_all_subagents_on_missing_directory_creates_it_and_yields_empty() {
+        let (temp, dir) = temp_agents_dir();
+
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+        manager.load_all_subagents().await.unwrap();
+
+        assert!(dir.exists());
+        assert!(manager.list_subagents().is_empty());
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn delete_subagent_removes_file_entry_and_active_pointer() {
+        let (temp, dir) = temp_agents_dir();
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+
+        manager
+            .create_subagent("doomed", "bye", vec![], vec![])
+            .await
+            .unwrap();
+        manager.set_active_subagent(Some("doomed".to_string()));
+
+        manager.delete_subagent("doomed").await.unwrap();
+
+        assert!(!dir.join("doomed.md").exists());
+        assert!(manager.get_subagent("doomed").is_none());
+        assert_eq!(manager.active_subagent, None);
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn delete_missing_subagent_errors() {
+        let (temp, dir) = temp_agents_dir();
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+
+        assert!(manager.delete_subagent("ghost").await.is_err());
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn update_subagent_persists_changes_and_refreshes_timestamp() {
+        let (temp, dir) = temp_agents_dir();
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+
+        let mut config = manager
+            .create_subagent("evolving", "v1", vec![], vec![])
+            .await
+            .unwrap();
+        config.system_prompt = "v2".to_string();
+        config.max_tokens = Some(99);
+
+        manager.update_subagent(&config).await.unwrap();
+
+        let updated = manager.get_subagent("evolving").unwrap();
+        assert_eq!(updated.system_prompt, "v2");
+        assert_eq!(updated.max_tokens, Some(99));
+        assert!(updated.updated_at >= config.created_at);
+
+        let mut loader = SubagentManager::new_with_dir(dir.clone()).unwrap();
+        loader.load_all_subagents().await.unwrap();
+        assert_eq!(loader.get_subagent("evolving").unwrap().system_prompt, "v2");
+        drop(temp);
+    }
+
+    #[tokio::test]
+    async fn created_subagent_has_no_model_or_limits() {
+        let (temp, dir) = temp_agents_dir();
+        let mut manager = SubagentManager::new_with_dir(dir.clone()).unwrap();
+
+        let config = manager
+            .create_subagent("plain", "prompt", vec![], vec![])
+            .await
+            .unwrap();
+
+        assert_eq!(config.model, None);
+        assert_eq!(config.max_tokens, None);
+        assert_eq!(config.temperature, None);
+        drop(temp);
+    }
+}

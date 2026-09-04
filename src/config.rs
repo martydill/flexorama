@@ -519,3 +519,457 @@ impl Config {
         Self::default_config_path()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    fn temp_dir() -> TempDir {
+        let current_dir = std::env::current_dir().expect("current dir");
+        tempfile::tempdir_in(current_dir).expect("temp dir")
+    }
+
+    fn set_env(key: &str, value: &str) {
+        std::env::set_var(key, value);
+    }
+
+    fn remove_env(key: &str) {
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn provider_parses_all_known_names() {
+        assert_eq!("anthropic".parse::<Provider>(), Ok(Provider::Anthropic));
+        assert_eq!("gemini".parse::<Provider>(), Ok(Provider::Gemini));
+        assert_eq!("mistral".parse::<Provider>(), Ok(Provider::Mistral));
+        assert_eq!("openai".parse::<Provider>(), Ok(Provider::OpenAI));
+        assert_eq!("z.ai".parse::<Provider>(), Ok(Provider::Zai));
+        assert_eq!("zai".parse::<Provider>(), Ok(Provider::Zai));
+        assert_eq!("ollama".parse::<Provider>(), Ok(Provider::Ollama));
+        assert_eq!("openrouter".parse::<Provider>(), Ok(Provider::OpenRouter));
+    }
+
+    #[test]
+    fn provider_parsing_is_case_insensitive() {
+        assert_eq!("ANTHROPIC".parse::<Provider>(), Ok(Provider::Anthropic));
+        assert_eq!("OpenAI".parse::<Provider>(), Ok(Provider::OpenAI));
+        assert_eq!("Z.AI".parse::<Provider>(), Ok(Provider::Zai));
+    }
+
+    #[test]
+    fn provider_rejects_unknown_names() {
+        assert!("".parse::<Provider>().is_err());
+        assert!("claude".parse::<Provider>().is_err());
+        let err = "nope".parse::<Provider>().unwrap_err();
+        assert_eq!(err, "Unsupported provider 'nope'");
+    }
+
+    #[test]
+    fn provider_display_roundtrips_through_from_str() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::Gemini,
+            Provider::Mistral,
+            Provider::OpenAI,
+            Provider::Zai,
+            Provider::Ollama,
+            Provider::OpenRouter,
+        ];
+        for provider in providers {
+            assert_eq!(provider.to_string().parse::<Provider>(), Ok(provider));
+        }
+    }
+
+    #[test]
+    fn zai_serializes_with_dotted_name() {
+        let json = serde_json::to_value(Provider::Zai).unwrap();
+        assert_eq!(json, serde_json::json!("z.ai"));
+        assert_eq!(
+            serde_json::from_value::<Provider>(serde_json::json!("z.ai")).unwrap(),
+            Provider::Zai
+        );
+    }
+
+    #[test]
+    fn provider_serde_roundtrips_every_variant() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::Gemini,
+            Provider::Mistral,
+            Provider::OpenAI,
+            Provider::Zai,
+            Provider::Ollama,
+            Provider::OpenRouter,
+        ];
+        for provider in providers {
+            let value = serde_json::to_value(provider).unwrap();
+            assert_eq!(serde_json::from_value::<Provider>(value).unwrap(), provider);
+        }
+    }
+
+    #[test]
+    fn provider_defaults_to_anthropic() {
+        assert_eq!(Provider::default(), Provider::Anthropic);
+    }
+
+    #[test]
+    fn effort_level_parses_case_insensitively() {
+        assert_eq!("low".parse::<EffortLevel>(), Ok(EffortLevel::Low));
+        assert_eq!("MEDIUM".parse::<EffortLevel>(), Ok(EffortLevel::Medium));
+        assert_eq!("High".parse::<EffortLevel>(), Ok(EffortLevel::High));
+    }
+
+    #[test]
+    fn effort_level_rejects_unknown_values() {
+        let err = "extreme".parse::<EffortLevel>().unwrap_err();
+        assert_eq!(
+            err,
+            "Invalid effort level 'extreme'. Valid values: low, medium, high"
+        );
+    }
+
+    #[test]
+    fn effort_level_display_roundtrips() {
+        for level in [EffortLevel::Low, EffortLevel::Medium, EffortLevel::High] {
+            assert_eq!(level.to_string().parse::<EffortLevel>(), Ok(level));
+        }
+    }
+
+    #[test]
+    fn effort_level_defaults_to_medium() {
+        assert_eq!(EffortLevel::default(), EffortLevel::Medium);
+    }
+
+    #[test]
+    fn effort_level_anthropic_reasoning_budget() {
+        assert_eq!(EffortLevel::Low.anthropic_reasoning_budget(), None);
+        assert_eq!(EffortLevel::Medium.anthropic_reasoning_budget(), Some(10_000));
+        assert_eq!(EffortLevel::High.anthropic_reasoning_budget(), Some(50_000));
+    }
+
+    #[test]
+    fn effort_level_openai_reasoning_effort() {
+        assert_eq!(EffortLevel::Low.openai_reasoning_effort(), "low");
+        assert_eq!(EffortLevel::Medium.openai_reasoning_effort(), "medium");
+        assert_eq!(EffortLevel::High.openai_reasoning_effort(), "high");
+    }
+
+    #[test]
+    fn effort_level_ollama_think() {
+        assert!(!EffortLevel::Low.ollama_think());
+        assert!(EffortLevel::Medium.ollama_think());
+        assert!(EffortLevel::High.ollama_think());
+    }
+
+    #[test]
+    fn provider_default_models_are_populated() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::Gemini,
+            Provider::Mistral,
+            Provider::OpenAI,
+            Provider::Zai,
+            Provider::Ollama,
+            Provider::OpenRouter,
+        ];
+        for provider in providers {
+            assert!(!provider_default_model(provider).is_empty());
+            assert!(!provider_models(provider).is_empty());
+        }
+    }
+
+    #[test]
+    fn provider_default_model_is_in_model_list() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::Gemini,
+            Provider::Mistral,
+            Provider::OpenAI,
+            Provider::Zai,
+            Provider::Ollama,
+            Provider::OpenRouter,
+        ];
+        for provider in providers {
+            let default_model = provider_default_model(provider);
+            assert!(
+                provider_models(provider).contains(&default_model.as_str()),
+                "default model '{}' for {} missing from model list",
+                default_model,
+                provider
+            );
+        }
+    }
+
+    #[test]
+    fn provider_default_base_urls_are_https() {
+        let providers = [
+            Provider::Anthropic,
+            Provider::Gemini,
+            Provider::Mistral,
+            Provider::OpenAI,
+            Provider::Zai,
+            Provider::OpenRouter,
+        ];
+        for provider in providers {
+            let url = provider_default_base_url(provider);
+            assert!(
+                url.starts_with("https://"),
+                "unexpected default base url for {}: {}",
+                provider,
+                url
+            );
+        }
+    }
+
+    #[test]
+    fn ollama_default_base_url_is_local() {
+        assert_eq!(
+            provider_default_base_url(Provider::Ollama),
+            "http://localhost:11434"
+        );
+    }
+
+    #[test]
+    fn default_config_path_points_at_flexorama_config() {
+        let path = Config::default_config_path();
+        assert_eq!(path.file_name().unwrap(), "config.toml");
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "flexorama");
+    }
+
+    #[test]
+    fn default_config_has_sane_values() {
+        let config = Config::default();
+        assert_eq!(config.provider, Provider::Anthropic);
+        assert_eq!(config.max_tokens, 4096);
+        assert!((config.temperature - 0.7).abs() < f32::EPSILON);
+        assert_eq!(config.effort, EffortLevel::Medium);
+        assert!(config.default_system_prompt.is_some());
+        assert!(config.mcp.servers.is_empty());
+    }
+
+    #[test]
+    fn set_provider_refreshes_provider_specific_defaults() {
+        let mut config = Config::default();
+        config.set_provider(Provider::Mistral);
+
+        assert_eq!(config.provider, Provider::Mistral);
+        assert_eq!(config.base_url, provider_default_base_url(Provider::Mistral));
+        assert_eq!(
+            config.default_model,
+            provider_default_model(Provider::Mistral)
+        );
+        assert_eq!(config.api_key, provider_default_api_key(Provider::Mistral));
+    }
+
+    #[tokio::test]
+    async fn save_writes_toml_without_api_key() {
+        let temp = temp_dir();
+        let path = temp.path().join("config.toml");
+
+        let mut config = Config::default();
+        config.api_key = "sk-secret".to_string();
+        config.default_system_prompt = Some("Be brief.".to_string());
+
+        config.save(Some(path.to_str().unwrap())).await.unwrap();
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(!contents.contains("sk-secret"), "api key leaked to disk");
+        assert!(!contents.contains("api_key"), "api key field present on disk");
+        assert!(contents.contains("default_system_prompt"));
+        assert!(contents.contains("max_tokens"));
+    }
+
+    #[tokio::test]
+    async fn save_creates_missing_parent_directories() {
+        let temp = temp_dir();
+        let path = temp.path().join("nested/dir/config.toml");
+
+        Config::default()
+            .save(Some(path.to_str().unwrap()))
+            .await
+            .unwrap();
+
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn load_returns_defaults_when_file_missing() {
+        let temp = temp_dir();
+        let path = temp.path().join("does-not-exist.toml");
+
+        let config = Config::load(Some(path.to_str().unwrap())).await.unwrap();
+
+        assert_eq!(config.provider, Provider::default());
+        assert_eq!(config.max_tokens, 4096);
+        assert!(!config.base_url.is_empty());
+        assert!(!config.default_model.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn load_reads_back_saved_config() {
+        let temp = temp_dir();
+        let path = temp.path().join("config.toml");
+
+        let mut saved = Config::default();
+        saved.provider = Provider::Mistral;
+        saved.base_url = "https://example.test/v1".to_string();
+        saved.default_model = "mistral-large-latest".to_string();
+        saved.max_tokens = 1234;
+        saved.temperature = 0.3;
+        saved.effort = EffortLevel::High;
+        saved
+            .skills
+            .active_skills
+            .push("code-review".to_string());
+        saved.save(Some(path.to_str().unwrap())).await.unwrap();
+
+        set_env("MISTRAL_API_KEY", "test-mistral-key");
+        let loaded = Config::load(Some(path.to_str().unwrap())).await.unwrap();
+        remove_env("MISTRAL_API_KEY");
+
+        assert_eq!(loaded.provider, Provider::Mistral);
+        assert_eq!(loaded.base_url, "https://example.test/v1");
+        assert_eq!(loaded.default_model, "mistral-large-latest");
+        assert_eq!(loaded.max_tokens, 1234);
+        assert!((loaded.temperature - 0.3).abs() < f32::EPSILON);
+        assert_eq!(loaded.effort, EffortLevel::High);
+        assert_eq!(loaded.skills.active_skills, vec!["code-review".to_string()]);
+        assert_eq!(loaded.api_key, "test-mistral-key");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn load_fills_missing_base_url_and_model_from_provider() {
+        let temp = temp_dir();
+        let path = temp.path().join("config.toml");
+
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "provider = \"openai\"\nbase_url = \"\"\ndefault_model = \"\"\nmax_tokens = 100\ntemperature = 0.5\ndefault_system_prompt = \"p\"\n\n[bash_security]\nallowed_commands = []\ndenied_commands = []\nask_for_permission = false\nenabled = false\n\n[mcp]\n[mcp.servers]"
+        )
+        .unwrap();
+        drop(file);
+
+        remove_env("OPENAI_BASE_URL");
+        let config = Config::load(Some(path.to_str().unwrap())).await.unwrap();
+
+        assert_eq!(config.provider, Provider::OpenAI);
+        assert_eq!(config.base_url, provider_default_base_url(Provider::OpenAI));
+        assert_eq!(
+            config.default_model,
+            provider_default_model(Provider::OpenAI)
+        );
+        assert_eq!(config.max_tokens, 100);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn load_never_takes_api_key_from_config_file() {
+        let temp = temp_dir();
+        let path = temp.path().join("config.toml");
+
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "api_key = \"leaked-key\"\nprovider = \"anthropic\"\nbase_url = \"https://example.test/v1\"\ndefault_model = \"claude\"\nmax_tokens = 10\ntemperature = 0.5\ndefault_system_prompt = \"p\"\n\n[bash_security]\nallowed_commands = []\ndenied_commands = []\nask_for_permission = false\nenabled = false\n\n[mcp]\n[mcp.servers]"
+        )
+        .unwrap();
+        drop(file);
+
+        remove_env("ANTHROPIC_AUTH_TOKEN");
+        let config = Config::load(Some(path.to_str().unwrap())).await.unwrap();
+        remove_env("ANTHROPIC_BASE_URL");
+
+        assert_eq!(config.api_key, "");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn load_prefers_environment_base_url_override() {
+        let temp = temp_dir();
+        let path = temp.path().join("config.toml");
+
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "provider = \"anthropic\"\nbase_url = \"\"\ndefault_model = \"\"\nmax_tokens = 10\ntemperature = 0.5\ndefault_system_prompt = \"p\"\n\n[bash_security]\nallowed_commands = []\ndenied_commands = []\nask_for_permission = false\nenabled = false\n\n[mcp]\n[mcp.servers]"
+        )
+        .unwrap();
+        drop(file);
+
+        set_env("ANTHROPIC_BASE_URL", "https://proxy.test/v1");
+        let config = Config::load(Some(path.to_str().unwrap())).await.unwrap();
+        remove_env("ANTHROPIC_BASE_URL");
+
+        assert_eq!(config.base_url, "https://proxy.test/v1");
+    }
+
+    #[tokio::test]
+    async fn load_rejects_invalid_toml() {
+        let temp = temp_dir();
+        let path = temp.path().join("config.toml");
+
+        std::fs::write(&path, "not [ valid toml").unwrap();
+
+        assert!(Config::load(Some(path.to_str().unwrap())).await.is_err());
+    }
+
+    #[test]
+    fn config_path_reflects_default_location() {
+        let config = Config::default();
+        assert_eq!(config.path(), Config::default_config_path());
+    }
+
+    #[test]
+    fn mcp_oauth_grant_and_client_auth_have_defaults() {
+        assert_eq!(
+            McpOAuthGrantType::default(),
+            McpOAuthGrantType::AuthorizationCode
+        );
+        assert_eq!(McpOAuthClientAuth::default(), McpOAuthClientAuth::Body);
+    }
+
+    #[test]
+    fn mcp_server_config_deserializes_from_partial_toml() {
+        let config: McpServerConfig = toml::from_str(
+            "name = \"docs\"\ncommand = \"npx\"\nargs = [\"-y\", \"@modelcontextprotocol/server\"]\nenabled = true",
+        )
+        .unwrap();
+
+        assert_eq!(config.name, "docs");
+        assert!(config.url.is_none());
+        assert!(config.auth.is_none());
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn mcp_oauth_config_deserializes_with_defaults() {
+        let config: McpOAuthConfig = toml::from_str(
+            "client_id = \"client\"\ntoken_url = \"https://example.test/token\"",
+        )
+        .unwrap();
+
+        assert_eq!(config.client_id, "client");
+        assert_eq!(config.token_url.as_deref(), Some("https://example.test/token"));
+        assert_eq!(config.grant_type, McpOAuthGrantType::AuthorizationCode);
+        assert_eq!(config.client_auth, McpOAuthClientAuth::Body);
+        assert!(config.client_secret.is_none());
+    }
+
+    #[test]
+    fn mcp_auth_config_tags_oauth_variant() {
+        let config: McpAuthConfig = toml::from_str(
+            "type = \"oauth\"\nclient_id = \"client\"",
+        )
+        .unwrap();
+
+        match config {
+            McpAuthConfig::OAuth(oauth) => assert_eq!(oauth.client_id, "client"),
+        }
+    }
+}

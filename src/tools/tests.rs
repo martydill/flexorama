@@ -1246,3 +1246,227 @@ async fn search_in_files_uses_default_path() {
     // Should use current directory as default
     assert!(!result.is_error);
 }
+
+use crate::security::{BashSecurity, BashSecurityManager};
+use crate::tools::bash::bash;
+
+fn deny_file_permissions() -> FileSecurityManager {
+    let mut manager = FileSecurityManager::new(FileSecurity {
+        ask_for_permission: true,
+        enabled: true,
+        allow_all_session: false,
+    });
+    manager.set_permission_handler(Some(std::sync::Arc::new(
+        move |_prompt| Box::pin(async move { Some(2) }),
+    )));
+    manager
+}
+
+fn require_bash_permissions() -> BashSecurityManager {
+    let security = BashSecurity {
+        allowed_commands: Default::default(),
+        denied_commands: Default::default(),
+        ask_for_permission: true,
+        enabled: true,
+    };
+    BashSecurityManager::new(security)
+}
+
+fn deny_bash_handler() -> crate::security::PermissionHandler {
+    use crate::security::PermissionPrompt;
+    // Selection 3 is "deny" for commands with parameters (2 is the wildcard allow)
+    std::sync::Arc::new(move |_prompt: PermissionPrompt| Box::pin(async move { Some(3) }))
+}
+
+#[tokio::test]
+async fn delete_file_removes_directories_recursively() {
+    let temp = temp_dir();
+    let dir_path = temp.path().join("tree/inner");
+    tokio::fs::create_dir_all(&dir_path).await.unwrap();
+    tokio::fs::write(dir_path.join("leaf.txt"), "data").await.unwrap();
+
+    let mut manager = new_file_security_manager();
+    let call = make_call("delete_file", json!({ "path": dir_path.to_string_lossy() }));
+    let result = delete_file(&call, &mut manager, false).await.unwrap();
+
+    assert!(!result.is_error);
+    assert!(result.content.contains("Successfully deleted directory"));
+    assert!(!dir_path.exists());
+}
+
+#[tokio::test]
+async fn delete_file_reports_missing_paths() {
+    let temp = temp_dir();
+    let missing = temp.path().join("ghost.txt");
+
+    let mut manager = new_file_security_manager();
+    let call = make_call("delete_file", json!({ "path": missing.to_string_lossy() }));
+    let result = delete_file(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("Error accessing path"));
+}
+
+#[tokio::test]
+async fn delete_file_denied_by_permission_prompt_keeps_file() {
+    let temp = temp_dir();
+    let file_path = temp.path().join("protected.txt");
+    tokio::fs::write(&file_path, "keep me").await.unwrap();
+
+    let mut manager = deny_file_permissions();
+    let call = make_call("delete_file", json!({ "path": file_path.to_string_lossy() }));
+    let result = delete_file(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("Permission denied"));
+    assert!(file_path.exists(), "denied delete must not remove the file");
+}
+
+#[tokio::test]
+async fn write_file_yolo_mode_bypasses_permission_prompt() {
+    let temp = temp_dir();
+    let file_path = temp.path().join("yolo.txt");
+
+    let mut manager = FileSecurityManager::new(FileSecurity {
+        ask_for_permission: true,
+        enabled: true,
+        allow_all_session: false,
+    });
+    let call = make_call(
+        "Write",
+        json!({ "path": file_path.to_string_lossy(), "content": "written" }),
+    );
+    let result = write_file(&call, &mut manager, true).await.unwrap();
+
+    assert!(!result.is_error);
+    assert_eq!(tokio::fs::read_to_string(&file_path).await.unwrap(), "written");
+}
+
+#[tokio::test]
+async fn write_file_denied_by_permission_prompt() {
+    let temp = temp_dir();
+    let file_path = temp.path().join("denied.txt");
+
+    let mut manager = deny_file_permissions();
+    let call = make_call(
+        "Write",
+        json!({ "path": file_path.to_string_lossy(), "content": "nope" }),
+    );
+    let result = write_file(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("Permission denied"));
+    assert!(!file_path.exists());
+}
+
+#[tokio::test]
+async fn create_directory_creates_nested_paths_and_reports_existing() {
+    let temp = temp_dir();
+    let nested = temp.path().join("level1/level2/level3");
+
+    let mut manager = new_file_security_manager();
+    let call = make_call("create_directory", json!({ "path": nested.to_string_lossy() }));
+    let result = create_directory(&call, &mut manager, false).await.unwrap();
+    assert!(!result.is_error);
+    assert!(nested.is_dir());
+
+    // Creating again is idempotent
+    let result = create_directory(&call, &mut manager, false).await.unwrap();
+    assert!(!result.is_error);
+}
+
+#[tokio::test]
+async fn create_directory_denied_by_permission_prompt() {
+    let temp = temp_dir();
+    let target = temp.path().join("denied-dir");
+
+    let mut manager = deny_file_permissions();
+    let call = make_call("create_directory", json!({ "path": target.to_string_lossy() }));
+    let result = create_directory(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("Permission denied"));
+    assert!(!target.exists());
+}
+
+#[tokio::test]
+async fn bash_denied_command_is_blocked_by_security_policy() {
+    let mut security = BashSecurity {
+        allowed_commands: Default::default(),
+        denied_commands: ["echo".to_string()].into_iter().collect(),
+        ask_for_permission: false,
+        enabled: true,
+    };
+    security.allowed_commands.insert("echo *".to_string());
+    let mut manager = BashSecurityManager::new(security);
+
+    let call = make_call("Bash", json!({ "command": "echo blocked" }));
+    let result = bash(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("not allowed by security policy"));
+}
+
+#[tokio::test]
+async fn bash_yolo_mode_skips_security_checks() {
+    let mut manager = require_bash_permissions();
+
+    let call = make_call("Bash", json!({ "command": "echo free" }));
+    let result = bash(&call, &mut manager, true).await.unwrap();
+
+    assert!(!result.is_error);
+    assert!(result.content.contains("free"));
+}
+
+#[tokio::test]
+async fn bash_requires_permission_prompt_and_denies_on_rejection() {
+    let mut manager = require_bash_permissions();
+    manager.set_permission_handler(Some(deny_bash_handler()));
+
+    let call = make_call("Bash", json!({ "command": "echo never" }));
+    let result = bash(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("Permission denied"));
+}
+
+#[tokio::test]
+async fn bash_allow_with_allowlist_persists_and_notes_update() {
+    let mut manager = require_bash_permissions();
+    // Selection 1 = allow and add to allowlist
+    manager.set_permission_handler(Some(std::sync::Arc::new(
+        move |_prompt| Box::pin(async move { Some(1) }),
+    )));
+
+    let call = make_call("Bash", json!({ "command": "echo saved" }));
+    let result = bash(&call, &mut manager, false).await.unwrap();
+
+    assert!(!result.is_error);
+    assert!(result.content.contains("Exit code: 0"));
+    assert!(result.content.contains("added to your allowlist"));
+    assert!(
+        manager.get_security().allowed_commands.contains("echo saved"),
+        "command should be persisted to the allowlist"
+    );
+}
+
+#[tokio::test]
+async fn bash_reports_stderr_and_failure_exit_codes() {
+    let mut manager = BashSecurityManager::new(BashSecurity {
+        allowed_commands: ["echo".to_string(), "false".to_string(), "sh".to_string()]
+            .into_iter()
+            .collect(),
+        denied_commands: Default::default(),
+        ask_for_permission: false,
+        enabled: true,
+    });
+
+    let call = make_call("Bash", json!({ "command": "sh -c 'echo out; echo err >&2; exit 4'" }));
+    let result = bash(&call, &mut manager, false).await.unwrap();
+
+    assert!(result.is_error);
+    assert!(result.content.contains("Exit code: 4"));
+    assert!(result.content.contains("out"));
+    assert!(result.content.contains("Stderr:"));
+    assert!(result.content.contains("err"));
+}
