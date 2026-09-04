@@ -429,7 +429,7 @@ impl OpenAIClient {
             temperature: Some(temperature),
             tools: tool_defs,
             stream: Some(stream),
-            reasoning_effort: Some(effort.openai_reasoning_effort().to_string()),
+            reasoning_effort,
         }
     }
 
@@ -588,4 +588,544 @@ fn parse_arguments(arguments: &str) -> Value {
     }
 
     serde_json::from_str::<Value>(trimmed).unwrap_or_else(|_| Value::String(arguments.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::{ToolCall, ToolResult};
+    use serde_json::json;
+
+    fn client() -> OpenAIClient {
+        OpenAIClient::new("test-key".to_string(), "https://api.openai.test/v1".to_string())
+    }
+
+    fn message(role: &str, blocks: Vec<ContentBlock>) -> Message {
+        Message {
+            role: role.to_string(),
+            content: blocks,
+        }
+    }
+
+    fn tool() -> Tool {
+        Tool {
+            name: "read_file".to_string(),
+            description: "Read a file".to_string(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+            handler: Box::new(|_call: ToolCall| {
+                Box::pin(async {
+                    Ok(ToolResult {
+                        tool_use_id: String::new(),
+                        content: String::new(),
+                        is_error: false,
+                    })
+                })
+            }),
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn parse_arguments_handles_empty_and_valid_json() {
+        assert_eq!(parse_arguments(""), json!({}));
+        assert_eq!(parse_arguments("   "), json!({}));
+        assert_eq!(
+            parse_arguments(r#"{"path": "main.rs"}"#),
+            json!({ "path": "main.rs" })
+        );
+    }
+
+    #[test]
+    fn parse_arguments_falls_back_to_raw_string_for_invalid_json() {
+        assert_eq!(
+            parse_arguments("not json at all"),
+            Value::String("not json at all".to_string())
+        );
+    }
+
+    #[test]
+    fn map_messages_prepends_system_prompt() {
+        let mapped = map_messages(
+            vec![message("user", vec![ContentBlock::text("hello".to_string())])],
+            Some(&"You are terse.".to_string()),
+        );
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].role, "system");
+        match &mapped[0].content {
+            Some(OpenAIContent::Text(text)) => assert_eq!(text, "You are terse."),
+            other => panic!("expected text content, got {:?}", other),
+        }
+        assert_eq!(mapped[1].role, "user");
+    }
+
+    #[test]
+    fn map_messages_collapses_single_text_part_to_plain_content() {
+        let mapped = map_messages(
+            vec![message("user", vec![ContentBlock::text("just text".to_string())])],
+            None,
+        );
+
+        assert_eq!(mapped.len(), 1);
+        match &mapped[0].content {
+            Some(OpenAIContent::Text(text)) => assert_eq!(text, "just text"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+        assert!(mapped[0].tool_calls.is_none());
+    }
+
+    #[test]
+    fn map_messages_sends_images_as_data_urls() {
+        let image = ContentBlock::image("image/png".to_string(), "aGk=".to_string());
+        let mapped = map_messages(
+            vec![message(
+                "user",
+                vec![ContentBlock::text("look".to_string()), image],
+            )],
+            None,
+        );
+
+        assert_eq!(mapped.len(), 1);
+        match &mapped[0].content {
+            Some(OpenAIContent::Parts(parts)) => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(parts[0], OpenAIContentPart::Text { .. }));
+                match &parts[1] {
+                    OpenAIContentPart::ImageUrl { image_url } => {
+                        assert_eq!(image_url.url, "data:image/png;base64,aGk=");
+                    }
+                    other => panic!("expected image url part, got {:?}", other),
+                }
+            }
+            other => panic!("expected parts content, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_messages_converts_tool_use_blocks_to_tool_calls() {
+        let tool_use = ContentBlock::tool_use(
+            "call-1".to_string(),
+            "read_file".to_string(),
+            json!({ "path": "main.rs" }),
+        );
+        let mapped = map_messages(vec![message("assistant", vec![tool_use])], None);
+
+        assert_eq!(mapped.len(), 1);
+        let calls = mapped[0].tool_calls.as_ref().expect("tool calls");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call-1");
+        assert_eq!(calls[0].call_type, "function");
+        assert_eq!(calls[0].function.name, "read_file");
+        assert_eq!(calls[0].function.arguments, r#"{"path":"main.rs"}"#);
+        assert!(mapped[0].content.is_none(), "tool-only message has no content");
+    }
+
+    #[test]
+    fn map_messages_keeps_raw_string_tool_input() {
+        let mut tool_use = ContentBlock::tool_use("call-1".to_string(), "t".to_string(), json!({}));
+        tool_use.input = Some(Value::String("{\"path\":\"x\"}".to_string()));
+
+        let mapped = map_messages(vec![message("assistant", vec![tool_use])], None);
+        let calls = mapped[0].tool_calls.as_ref().unwrap();
+        assert_eq!(calls[0].function.arguments, "{\"path\":\"x\"}");
+    }
+
+    #[test]
+    fn map_messages_emits_tool_results_as_tool_role_messages() {
+        let result = ContentBlock::tool_result("call-1".to_string(), "file contents".to_string(), None);
+        let mapped = map_messages(vec![message("user", vec![result])], None);
+
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(mapped[0].role, "tool");
+        assert_eq!(mapped[0].tool_call_id.as_deref(), Some("call-1"));
+        match &mapped[0].content {
+            Some(OpenAIContent::Text(text)) => assert_eq!(text, "file contents"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_messages_drops_tool_results_without_ids_and_unknown_blocks() {
+        let orphan = ContentBlock {
+            block_type: "tool_result".to_string(),
+            text: None,
+            id: None,
+            name: None,
+            input: None,
+            tool_use_id: None,
+            content: Some("no id".to_string()),
+            is_error: None,
+            thought_signature: None,
+            source: None,
+        };
+        let unknown = ContentBlock {
+            block_type: "mystery".to_string(),
+            text: Some("ignored".to_string()),
+            ..orphan.clone()
+        };
+
+        let mapped = map_messages(
+            vec![message("user", vec![orphan, unknown])],
+            None,
+        );
+
+        assert!(mapped.is_empty());
+    }
+
+    #[test]
+    fn build_request_omits_reasoning_effort_for_standard_models() {
+        let request = client().build_request(
+            "gpt-4o",
+            vec![message("user", vec![ContentBlock::text("hi".to_string())])],
+            &[],
+            512,
+            0.2,
+            None,
+            EffortLevel::High,
+            false,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(wire.get("model"), Some(&json!("gpt-4o")));
+        assert!(
+            wire.get("reasoning_effort").is_none(),
+            "standard models must not send reasoning_effort"
+        );
+        assert_eq!(wire.get("max_completion_tokens"), Some(&json!(512)));
+        let temperature = wire.get("temperature").unwrap().as_f64().unwrap();
+        assert!((temperature - 0.2).abs() < 1e-6);
+        assert_eq!(wire.get("stream"), Some(&json!(false)));
+        assert!(wire.get("tools").is_none());
+    }
+
+    #[test]
+    fn build_request_includes_reasoning_effort_for_reasoning_models() {
+        for model in ["o1", "o1-mini", "o3", "o3-mini"] {
+            let request = client().build_request(
+                model,
+                vec![],
+                &[],
+                256,
+                0.5,
+                None,
+                EffortLevel::Low,
+                true,
+            );
+
+            let wire = serde_json::to_value(&request).unwrap();
+            assert_eq!(
+                wire.get("reasoning_effort"),
+                Some(&json!("low")),
+                "expected reasoning_effort for {}",
+                model
+            );
+            assert_eq!(wire.get("stream"), Some(&json!(true)));
+        }
+    }
+
+    #[test]
+    fn build_request_maps_tool_definitions() {
+        let request = client().build_request(
+            "gpt-4o",
+            vec![],
+            &[tool()],
+            128,
+            0.7,
+            None,
+            EffortLevel::Medium,
+            false,
+        );
+
+        let wire = serde_json::to_value(&request).unwrap();
+        let tools = wire.get("tools").unwrap().as_array().unwrap();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["type"], "function");
+        assert_eq!(tools[0]["function"]["name"], "read_file");
+        assert_eq!(tools[0]["function"]["description"], "Read a file");
+    }
+
+    #[test]
+    fn map_response_extracts_text_tool_calls_and_usage() {
+        let parsed: OpenAIResponse = serde_json::from_value(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "answer",
+                    "tool_calls": [{
+                        "id": "call-7",
+                        "type": "function",
+                        "function": { "name": "read_file", "arguments": "{\"path\":\"x\"}" }
+                    }]
+                }
+            }],
+            "usage": { "prompt_tokens": 9, "completion_tokens": 4 }
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+
+        assert_eq!(mapped.content.len(), 2);
+        assert_eq!(mapped.content[0].text.as_deref(), Some("answer"));
+        assert_eq!(mapped.content[1].block_type, "tool_use");
+        assert_eq!(mapped.content[1].id.as_deref(), Some("call-7"));
+        assert_eq!(mapped.content[1].input, Some(json!({ "path": "x" })));
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (9, 4));
+    }
+
+    #[test]
+    fn map_response_handles_parts_and_defaulted_usage() {
+        let parsed: OpenAIResponse = serde_json::from_value(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        { "type": "text", "text": "first" },
+                        { "type": "image_url", "image_url": { "url": "data:image/png;base64,aGk=" } },
+                        { "type": "text", "text": "second" }
+                    ]
+                }
+            }],
+            "usage": {}
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+
+        let texts: Vec<&str> = mapped
+            .content
+            .iter()
+            .filter_map(|b| b.text.as_deref())
+            .collect();
+        assert_eq!(texts, vec!["first", "second"]);
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (0, 0));
+    }
+
+    #[test]
+    fn map_response_skips_empty_text() {
+        let parsed: OpenAIResponse = serde_json::from_value(json!({
+            "choices": [{ "message": { "role": "assistant", "content": "" } }]
+        }))
+        .unwrap();
+
+        let mapped = client().map_response(parsed);
+        assert!(mapped.content.is_empty());
+        assert!(mapped.usage.is_none());
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+    use crate::tools::ToolCall;
+    use axum::response::IntoResponse;
+    use serde_json::json;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use std::sync::Mutex;
+    use tokio::net::TcpListener;
+
+    fn client_at(base_url: &str) -> OpenAIClient {
+        OpenAIClient::new("test-key".to_string(), base_url.to_string())
+    }
+
+    fn user_message(text: &str) -> Message {
+        Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text(text.to_string())],
+        }
+    }
+
+    async fn spawn_server(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base_url
+    }
+
+    fn collected_text() -> (Arc<Mutex<Vec<String>>>, Arc<dyn Fn(String) + Send + Sync + 'static>) {
+        let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&chunks);
+        let callback = Arc::new(move |text: String| {
+            sink.lock().unwrap().push(text);
+        }) as Arc<dyn Fn(String) + Send + Sync + 'static>;
+        (chunks, callback)
+    }
+
+    #[tokio::test]
+    async fn stream_accumulates_text_and_usage() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|| async {
+                let body = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hel\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{}}],\"usage\":{\"prompt_tokens\":6,\"completion_tokens\":2}}\n\n",
+                    "data: [DONE]\n\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body.to_string(),
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "gpt-4o",
+                vec![user_message("hi")],
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join(""), "Hello");
+        assert_eq!(response.content[0].text.as_deref(), Some("Hello"));
+        let usage = response.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (6, 2));
+    }
+
+    #[tokio::test]
+    async fn stream_reassembles_tool_calls_from_fragments() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|| async {
+                let body = concat!(
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"a.txt\\\"}\"}}]}}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{}}]}\n\n",
+                    "data: [DONE]\n\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body.to_string(),
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "gpt-4o",
+                vec![user_message("read a.txt")],
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert!(chunks.lock().unwrap().is_empty());
+        assert_eq!(response.content.len(), 1);
+        let block = &response.content[0];
+        assert_eq!(block.block_type, "tool_use");
+        assert_eq!(block.id.as_deref(), Some("call-1"));
+        assert_eq!(block.name.as_deref(), Some("read_file"));
+        assert_eq!(block.input, Some(json!({ "path": "a.txt" })));
+    }
+
+    #[tokio::test]
+    async fn stream_reports_http_errors() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|| async {
+                (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    "{\"error\":\"rate limited\"}".to_string(),
+                )
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let err = client_at(&base_url)
+            .create_message_stream(
+                "gpt-4o",
+                vec![user_message("hi")],
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("429"), "error: {}", message);
+        assert!(message.contains("rate limited"));
+        assert!(chunks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn create_message_maps_tool_call_response() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/chat/completions",
+            post(|Json(payload): Json<serde_json::Value>| async move {
+                assert_eq!(payload["model"], json!("gpt-4o"));
+                assert_eq!(payload["max_completion_tokens"], json!(321));
+                Json(json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "calling tool",
+                            "tool_calls": [{
+                                "id": "call-9",
+                                "type": "function",
+                                "function": { "name": "read_file", "arguments": "{\"path\":\"z\"}" }
+                            }]
+                        }
+                    }],
+                    "usage": { "prompt_tokens": 4, "completion_tokens": 1 }
+                }))
+            }),
+        ))
+        .await;
+
+        let response = client_at(&base_url)
+            .create_message(
+                "gpt-4o",
+                vec![user_message("hi")],
+                &[],
+                321,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.content[0].text.as_deref(), Some("calling tool"));
+        assert_eq!(response.content[1].id.as_deref(), Some("call-9"));
+        assert_eq!(response.content[1].input, Some(json!({ "path": "z" })));
+    }
 }

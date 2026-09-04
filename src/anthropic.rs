@@ -798,3 +798,554 @@ impl AnthropicClient {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::ToolCall;
+    use axum::extract::OriginalUri;
+    use axum::response::IntoResponse;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use serde_json::json;
+    use std::sync::Mutex;
+    use tokio::net::TcpListener;
+
+    fn client_at(base_url: &str) -> AnthropicClient {
+        AnthropicClient::new("test-key".to_string(), base_url.to_string())
+    }
+
+    fn text_message(text: &str) -> Vec<Message> {
+        vec![Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text(text.to_string())],
+        }]
+    }
+
+    fn sample_tool() -> Tool {
+        Tool {
+            name: "read_file".to_string(),
+            description: "Read a file".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            }),
+            handler: Box::new(|_call: ToolCall| {
+                Box::pin(async {
+                    Ok(crate::tools::ToolResult {
+                        tool_use_id: String::new(),
+                        content: String::new(),
+                        is_error: false,
+                    })
+                })
+            }),
+            metadata: None,
+        }
+    }
+
+    fn no_cancel() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(false))
+    }
+
+    fn collected_text() -> (Arc<Mutex<Vec<String>>>, Arc<dyn Fn(String) + Send + Sync + 'static>) {
+        let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&chunks);
+        let callback = Arc::new(move |text: String| {
+            sink.lock().expect("sink lock").push(text);
+        }) as Arc<dyn Fn(String) + Send + Sync + 'static>;
+        (chunks, callback)
+    }
+
+    #[test]
+    fn text_block_has_only_text_set() {
+        let block = ContentBlock::text("hello".to_string());
+
+        assert_eq!(block.block_type, "text");
+        assert_eq!(block.text.as_deref(), Some("hello"));
+        assert!(block.id.is_none());
+        assert!(block.name.is_none());
+        assert!(block.input.is_none());
+        assert!(block.tool_use_id.is_none());
+        assert!(!block.is_image());
+    }
+
+    #[test]
+    fn tool_use_block_carries_id_name_and_input() {
+        let block = ContentBlock::tool_use(
+            "call-1".to_string(),
+            "read_file".to_string(),
+            json!({ "path": "a.txt" }),
+        );
+
+        assert_eq!(block.block_type, "tool_use");
+        assert_eq!(block.id.as_deref(), Some("call-1"));
+        assert_eq!(block.name.as_deref(), Some("read_file"));
+        assert_eq!(block.input, Some(json!({ "path": "a.txt" })));
+        assert!(!block.is_image());
+    }
+
+    #[test]
+    fn tool_result_block_carries_result_fields() {
+        let block = ContentBlock::tool_result("call-1".to_string(), "file body".to_string(), Some(true));
+
+        assert_eq!(block.block_type, "tool_result");
+        assert_eq!(block.tool_use_id.as_deref(), Some("call-1"));
+        assert_eq!(block.content.as_deref(), Some("file body"));
+        assert_eq!(block.is_error, Some(true));
+    }
+
+    #[test]
+    fn image_block_wraps_base64_source() {
+        let block = ContentBlock::image("image/png".to_string(), "aGk=".to_string());
+
+        assert!(block.is_image());
+        let source = block.source.expect("image source");
+        assert_eq!(source.source_type, "base64");
+        assert_eq!(source.media_type, "image/png");
+        assert_eq!(source.data, "aGk=");
+    }
+
+    #[test]
+    fn text_block_serializes_without_null_fields() {
+        let value = serde_json::to_value(ContentBlock::text("hi".to_string())).unwrap();
+
+        assert_eq!(value, json!({ "type": "text", "text": "hi" }));
+    }
+
+    #[test]
+    fn tool_use_block_roundtrips_through_json() {
+        let block = ContentBlock::tool_use(
+            "call-9".to_string(),
+            "Edit".to_string(),
+            json!({ "path": "f.rs", "old_text": "a", "new_text": "b" }),
+        );
+
+        let parsed: ContentBlock =
+            serde_json::from_value(serde_json::to_value(&block).unwrap()).unwrap();
+
+        assert_eq!(parsed.block_type, "tool_use");
+        assert_eq!(parsed.id, block.id);
+        assert_eq!(parsed.name, block.name);
+        assert_eq!(parsed.input, block.input);
+    }
+
+    #[test]
+    fn thought_signature_is_never_serialized_or_deserialized() {
+        let mut block = ContentBlock::tool_use("call-1".to_string(), "t".to_string(), json!({}));
+        block.thought_signature = Some("sig".to_string());
+
+        let value = serde_json::to_value(&block).unwrap();
+        assert!(value.get("thought_signature").is_none());
+
+        let from_json: ContentBlock = serde_json::from_value(json!({
+            "type": "tool_use",
+            "id": "call-2",
+            "name": "t",
+            "input": {},
+            "thoughtSignature": "sig"
+        }))
+        .unwrap();
+        assert!(from_json.thought_signature.is_none());
+    }
+
+    #[test]
+    fn response_parses_content_and_usage() {
+        let response: AnthropicResponse = serde_json::from_str(
+            r#"{
+                "content": [
+                    { "type": "text", "text": "part one" },
+                    { "type": "tool_use", "id": "call-1", "name": "Read", "input": { "path": "x" } }
+                ],
+                "usage": { "input_tokens": 11, "output_tokens": 7 }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(response.content.len(), 2);
+        assert_eq!(response.content[0].text.as_deref(), Some("part one"));
+        assert_eq!(response.content[1].name.as_deref(), Some("Read"));
+        let usage = response.usage.expect("usage");
+        assert_eq!(usage.input_tokens, 11);
+        assert_eq!(usage.output_tokens, 7);
+    }
+
+    #[test]
+    fn response_parses_without_usage() {
+        let response: AnthropicResponse = serde_json::from_str(
+            r#"{ "content": [ { "type": "text", "text": "hi" } ] }"#,
+        )
+        .unwrap();
+
+        assert!(response.usage.is_none());
+    }
+
+    #[test]
+    fn stream_events_parse_all_relevant_shapes() {
+        let start: StreamEvent = serde_json::from_str(
+            r#"{ "type": "content_block_start", "content_block": { "type": "tool_use", "id": "call-1", "name": "Read" } }"#,
+        )
+        .unwrap();
+        assert_eq!(start.event_type, "content_block_start");
+        assert_eq!(start.content_block.unwrap().block_type, "tool_use");
+
+        let delta: StreamEvent = serde_json::from_str(
+            r#"{ "type": "content_block_delta", "delta": { "type": "input_json_delta", "partial_json": "{\"path\":" } }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            delta.delta.unwrap().partial_json.as_deref(),
+            Some("{\"path\":")
+        );
+
+        let usage: StreamEvent = serde_json::from_str(
+            r#"{ "type": "message_delta", "usage": { "input_tokens": 3, "output_tokens": 4 } }"#,
+        )
+        .unwrap();
+        assert_eq!(usage.usage.unwrap().output_tokens, 4);
+    }
+
+    #[test]
+    fn endpoint_candidates_append_messages_path_correctly() {
+        let with_version = client_at("https://proxy.example.com/v1");
+        assert_eq!(
+            with_version.endpoint_candidates(),
+            vec![
+                "https://proxy.example.com/v1/messages".to_string(),
+                "https://proxy.example.com/v1/messages".to_string(),
+            ]
+        );
+
+        let without_version = client_at("https://proxy.example.com");
+        assert_eq!(
+            without_version.endpoint_candidates(),
+            vec![
+                "https://proxy.example.com/v1/messages".to_string(),
+                "https://proxy.example.com/messages".to_string(),
+            ]
+        );
+
+        let trailing_slash = client_at("https://proxy.example.com/v1/");
+        assert_eq!(
+            trailing_slash.endpoint_candidates()[0],
+            "https://proxy.example.com/v1/messages"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_message_returns_cancelled_error_when_flag_set() {
+        let client = client_at("http://127.0.0.1:9");
+        let cancelled = Arc::new(AtomicBool::new(true));
+
+        let err = client
+            .create_message(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                cancelled,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("CANCELLED"));
+    }
+
+    async fn spawn_server(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test server");
+        let addr = listener.local_addr().expect("local addr");
+        let base_url = format!("http://{}", addr);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve test server");
+        });
+        base_url
+    }
+
+    async fn non_streaming_handler(
+        OriginalUri(uri): OriginalUri,
+        Json(payload): Json<serde_json::Value>,
+    ) -> impl IntoResponse {
+        assert_eq!(uri.path(), "/v1/messages");
+        assert_eq!(payload.get("stream").and_then(|v| v.as_bool()), Some(false));
+
+        Json(json!({
+            "content": [{ "type": "text", "text": "non-streamed reply" }],
+            "usage": { "input_tokens": 5, "output_tokens": 2 }
+        }))
+    }
+
+    #[tokio::test]
+    async fn create_message_parses_non_streaming_response() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(
+            Router::new().route("/v1/messages", post(non_streaming_handler)),
+        )
+        .await;
+
+        let response = client_at(&base_url)
+            .create_message(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                Some(&"Be helpful.".to_string()),
+                EffortLevel::High,
+                no_cancel(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.content[0].text.as_deref(),
+            Some("non-streamed reply")
+        );
+        assert_eq!(response.usage.unwrap().output_tokens, 2);
+    }
+
+    #[tokio::test]
+    async fn create_message_surfaces_http_errors() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let handler = || async {
+            (
+                axum::http::StatusCode::UNAUTHORIZED,
+                "{\"error\":\"invalid api key\"}".to_string(),
+            )
+        };
+        let base_url = spawn_server(
+            Router::new()
+                .route("/v1/messages", post(handler))
+                .route("/messages", post(handler)),
+        )
+        .await;
+
+        let err = client_at(&base_url)
+            .create_message(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                no_cancel(),
+            )
+            .await
+            .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("401"), "unexpected error: {}", message);
+        assert!(message.contains("invalid api key"));
+    }
+
+    #[tokio::test]
+    async fn create_message_reports_error_envelopes_with_success_false() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let handler = || async { Json(json!({ "code": 401, "msg": "bad key", "success": false })) };
+        let base_url = spawn_server(
+            Router::new()
+                .route("/v1/messages", post(handler))
+                .route("/messages", post(handler)),
+        )
+        .await;
+
+        let err = client_at(&base_url)
+            .create_message(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                no_cancel(),
+            )
+            .await
+            .unwrap_err();
+
+        let message = err.to_string();
+        assert!(
+            message.contains("API Error (HTTP 401)") && message.contains("bad key"),
+            "unexpected error: {}",
+            message
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_accumulates_text_deltas() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/v1/messages",
+            post(|| async {
+                let body = concat!(
+                    "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\"}}\n\n",
+                    "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}}\n\n",
+                    "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\n\n",
+                    "data: {\"type\":\"content_block_stop\"}\n\n",
+                    "data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2}}\n\n",
+                    "data: {\"type\":\"message_stop\"}\n\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body,
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                no_cancel(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join(""), "Hello");
+        assert_eq!(response.content.len(), 1);
+        assert_eq!(response.content[0].text.as_deref(), Some("Hello"));
+        let usage = response.usage.expect("streamed usage");
+        assert_eq!((usage.input_tokens, usage.output_tokens), (4, 2));
+    }
+
+    #[tokio::test]
+    async fn stream_assembles_tool_use_from_partial_json() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/v1/messages",
+            post(|| async {
+                let body = concat!(
+                    "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"id\":\"call-42\",\"name\":\"read_file\"}}\n\n",
+                    "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\"}}\n\n",
+                    "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"main.rs\\\"}\"}}\n\n",
+                    "data: {\"type\":\"content_block_stop\"}\n\n",
+                    "data: {\"type\":\"message_stop\"}\n\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body,
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "claude-opus-5",
+                text_message("read main.rs"),
+                &[sample_tool()],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                no_cancel(),
+            )
+            .await
+            .unwrap();
+
+        assert!(chunks.lock().unwrap().is_empty(), "no text should stream");
+        assert_eq!(response.content.len(), 1);
+        let tool_block = &response.content[0];
+        assert_eq!(tool_block.block_type, "tool_use");
+        assert_eq!(tool_block.id.as_deref(), Some("call-42"));
+        assert_eq!(tool_block.name.as_deref(), Some("read_file"));
+        assert_eq!(tool_block.input, Some(json!({ "path": "main.rs" })));
+    }
+
+    #[tokio::test]
+    async fn stream_accepts_crlf_line_endings() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/v1/messages",
+            post(|| async {
+                let body = "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\"}}\r\n\r\n\
+                            data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"CRLF ok\"}}\r\n\r\n\
+                            data: {\"type\":\"content_block_stop\"}\r\n\r\n";
+                (
+                    [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                    body,
+                )
+                    .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                no_cancel(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join(""), "CRLF ok");
+        assert_eq!(response.content[0].text.as_deref(), Some("CRLF ok"));
+    }
+
+    #[tokio::test]
+    async fn stream_falls_back_to_plain_json_body() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+        let base_url = spawn_server(Router::new().route(
+            "/v1/messages",
+            post(|| async {
+                // Not SSE: some proxies return a plain JSON envelope even when streaming
+                Json(json!({
+                    "content": [{ "type": "text", "text": "json fallback" }]
+                }))
+                .into_response()
+            }),
+        ))
+        .await;
+
+        let (chunks, callback) = collected_text();
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "claude-opus-5",
+                text_message("hi"),
+                &[],
+                100,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                no_cancel(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join(""), "json fallback");
+        assert_eq!(response.content[0].text.as_deref(), Some("json fallback"));
+    }
+}

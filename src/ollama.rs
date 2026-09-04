@@ -1331,3 +1331,334 @@ mod tests {
         assert!(!json.contains("parameters"));
     }
 }
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+    use crate::tools::ToolResult;
+    use axum::routing::post;
+    use axum::{Json, Router};
+    use serde_json::json;
+    use std::sync::Mutex;
+    use tokio::net::TcpListener;
+
+    fn client_at(base_url: &str) -> OllamaClient {
+        OllamaClient::new("test-key".to_string(), base_url.to_string())
+    }
+
+    fn user_message(text: &str) -> Message {
+        Message {
+            role: "user".to_string(),
+            content: vec![ContentBlock::text(text.to_string())],
+        }
+    }
+
+    #[test]
+    fn parse_stream_chunk_reads_message_form() {
+        let parsed = parse_stream_chunk(
+            r#"{"message":{"role":"assistant","content":"Hi","thinking":"pondering"},"done":false,"prompt_eval_count":4,"eval_count":9}"#,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.content, "Hi");
+        assert_eq!(parsed.reasoning.as_deref(), Some("pondering"));
+        assert!(!parsed.done);
+        assert_eq!(parsed.prompt_eval_count, Some(4));
+        assert_eq!(parsed.eval_count, Some(9));
+    }
+
+    #[test]
+    fn parse_stream_chunk_reads_delta_form() {
+        let parsed = parse_stream_chunk(
+            r#"{"delta":{"content":"chunk","thinking":"hmm"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.content, "chunk");
+        assert_eq!(parsed.reasoning.as_deref(), Some("hmm"));
+    }
+
+    #[test]
+    fn parse_stream_chunk_delta_reasoning_fallback() {
+        let parsed = parse_stream_chunk(r#"{"delta":{"reasoning":"why"}}"#).unwrap();
+        assert_eq!(parsed.reasoning.as_deref(), Some("why"));
+
+        // Empty thinking is filtered out
+        let parsed =
+            parse_stream_chunk(r#"{"message":{"role":"assistant","content":"c","thinking":""}}"#)
+                .unwrap();
+        assert_eq!(parsed.reasoning, None);
+    }
+
+    #[test]
+    fn parse_stream_chunk_without_message_or_delta_is_empty() {
+        let parsed = parse_stream_chunk(r#"{"done":true}"#).unwrap();
+
+        assert_eq!(parsed.content, "");
+        assert_eq!(parsed.reasoning, None);
+        assert!(parsed.tool_calls.is_none());
+        assert!(parsed.done);
+    }
+
+    #[test]
+    fn parse_stream_chunk_rejects_invalid_json() {
+        assert!(parse_stream_chunk("not json").is_err());
+    }
+
+    #[test]
+    fn build_request_sets_think_and_generation_options() {
+        let client = OllamaClient::new(String::new(), "http://localhost:11434".to_string());
+
+        for (effort, expected_think) in [
+            (EffortLevel::Low, false),
+            (EffortLevel::Medium, true),
+            (EffortLevel::High, true),
+        ] {
+            let request = client.build_request(
+                "llama3",
+                vec![user_message("hi")],
+                &[],
+                555,
+                0.6,
+                Some(&"sys".to_string()),
+                effort,
+                true,
+            );
+
+            let wire = serde_json::to_value(&request).unwrap();
+            assert_eq!(wire["model"], json!("llama3"));
+            assert_eq!(wire["think"], json!(expected_think));
+            assert_eq!(wire["stream"], json!(true));
+            assert_eq!(wire["options"]["num_predict"], json!(555));
+            let temperature = wire["options"]["temperature"].as_f64().unwrap();
+            assert!((temperature - 0.6).abs() < 1e-6);
+            assert!(
+                wire.get("tools").is_none(),
+                "ollama requests never carry tool payloads"
+            );
+            assert_eq!(wire["messages"][0]["role"], json!("system"));
+        }
+    }
+
+    #[test]
+    fn map_response_builds_content_and_tool_blocks() {
+        let client = OllamaClient::new(String::new(), "http://localhost:11434".to_string());
+        let response: OllamaResponse = serde_json::from_value(json!({
+            "model": "llama3",
+            "message": {
+                "role": "assistant",
+                "content": "here you go",
+                "tool_calls": [
+                    { "id": "call-1", "type": "function", "function": { "name": "read_file", "arguments": { "path": "x" } } },
+                    { "function": { "name": "glob", "arguments": {} } }
+                ]
+            },
+            "done": true,
+            "prompt_eval_count": 7,
+            "eval_count": 2
+        }))
+        .unwrap();
+
+        let mapped = client.map_response(response);
+
+        assert_eq!(mapped.content.len(), 3);
+        assert_eq!(mapped.content[0].text.as_deref(), Some("here you go"));
+        assert_eq!(mapped.content[1].id.as_deref(), Some("call-1"));
+        assert_eq!(mapped.content[1].input, Some(json!({ "path": "x" })));
+        assert!(
+            mapped.content[2]
+                .id
+                .as_deref()
+                .unwrap_or_default()
+                .starts_with("ollama_call_"),
+            "missing ids are generated"
+        );
+        let usage = mapped.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (7, 2));
+    }
+
+    #[test]
+    fn map_response_without_content_or_usage() {
+        let client = OllamaClient::new(String::new(), "http://localhost:11434".to_string());
+        let response: OllamaResponse = serde_json::from_value(json!({
+            "model": "llama3",
+            "message": { "role": "assistant", "content": "" },
+            "done": true
+        }))
+        .unwrap();
+
+        let mapped = client.map_response(response);
+        assert!(mapped.content.is_empty());
+        assert!(mapped.usage.is_none());
+    }
+
+    #[tokio::test]
+    async fn fetch_available_models_parses_tags_response() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        let app = Router::new().route(
+            "/api/tags",
+            axum::routing::get(|| async {
+                Json(json!({ "models": [{ "name": "llama3:8b" }, { "name": "mistral" }] }))
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let models = client_at(&base_url).fetch_available_models().await.unwrap();
+        assert_eq!(models, vec!["llama3:8b".to_string(), "mistral".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn fetch_available_models_falls_back_on_error_or_bad_payload() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let fallback = vec!["llama2".to_string(), "gemma3:1b".to_string()];
+
+        // Server error status
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/api/tags",
+            axum::routing::get(|| async { (axum::http::StatusCode::BAD_REQUEST, "nope") }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        assert_eq!(
+            client_at(&base_url).fetch_available_models().await.unwrap(),
+            fallback
+        );
+
+        // Malformed payload
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().route(
+            "/api/tags",
+            axum::routing::get(|| async { "not json" }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        assert_eq!(
+            client_at(&base_url).fetch_available_models().await.unwrap(),
+            fallback
+        );
+    }
+
+    #[tokio::test]
+    async fn create_message_parses_non_streaming_response() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        let app = Router::new().route(
+            "/api/chat",
+            post(|Json(payload): Json<serde_json::Value>| async move {
+                assert_eq!(payload["stream"], json!(false));
+                Json(json!({
+                    "model": "llama3",
+                    "message": { "role": "assistant", "content": "ollama reply" },
+                    "done": true,
+                    "prompt_eval_count": 3,
+                    "eval_count": 5
+                }))
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let response = client_at(&base_url)
+            .create_message(
+                "llama3",
+                vec![user_message("hi")],
+                &[],
+                128,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.content[0].text.as_deref(), Some("ollama reply"));
+        let usage = response.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (3, 5));
+    }
+
+    #[tokio::test]
+    async fn create_message_stream_accumulates_ndjson_chunks() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        let app = Router::new().route(
+            "/api/chat",
+            post(|| async {
+                let body = concat!(
+                    "{\"message\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"done\":false}\n",
+                    "{\"message\":{\"role\":\"assistant\",\"content\":\"lo\"},\"done\":false}\n",
+                    "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done\":true,\"prompt_eval_count\":2,\"eval_count\":4}\n"
+                );
+                (
+                    [(axum::http::header::CONTENT_TYPE, "application/x-ndjson")],
+                    body.to_string(),
+                )
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&chunks);
+        let callback: Arc<dyn Fn(String) + Send + Sync> =
+            Arc::new(move |text: String| sink.lock().unwrap().push(text));
+
+        let response = client_at(&base_url)
+            .create_message_stream(
+                "llama3",
+                vec![user_message("hi")],
+                &[],
+                128,
+                0.7,
+                None,
+                EffortLevel::Medium,
+                callback,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(chunks.lock().unwrap().join(""), "Hello");
+        assert_eq!(response.content[0].text.as_deref(), Some("Hello"));
+        let usage = response.usage.unwrap();
+        assert_eq!((usage.input_tokens, usage.output_tokens), (2, 4));
+    }
+
+    #[test]
+    fn authenticated_requests_carry_bearer_only_with_key() {
+        let with_key = OllamaClient::new("secret".to_string(), "http://localhost:11434".to_string());
+        let request = with_key
+            .build_authenticated_request(reqwest::Method::GET, "http://localhost:11434/api/tags", None::<&()>)
+            .build()
+            .unwrap();
+        assert_eq!(
+            request.headers().get("authorization").unwrap(),
+            "Bearer secret"
+        );
+
+        let without_key = OllamaClient::new(String::new(), "http://localhost:11434".to_string());
+        let request = without_key
+            .build_authenticated_request(reqwest::Method::GET, "http://localhost:11434/api/tags", None::<&()>)
+            .build()
+            .unwrap();
+        assert!(request.headers().get("authorization").is_none());
+    }
+
+    // Silence unused-import warning for ToolResult in case handlers change
+    #[allow(dead_code)]
+    fn _tool_result_type_check(_r: ToolResult) {}
+}

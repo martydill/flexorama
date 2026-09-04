@@ -236,4 +236,204 @@ impl InputHistory {
         self.index = None;
         self.temp_input.clone()
     }
+
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    fn history_with(entries: &[&str]) -> InputHistory {
+        let mut history = InputHistory::new();
+        for entry in entries {
+            history.add_entry((*entry).to_string());
+        }
+        history
+    }
+
+    #[test]
+    fn navigation_walks_history_and_restores_pending_input() {
+        let mut history = history_with(&["first", "second", "third"]);
+
+        assert_eq!(history.navigate_up("draft").as_deref(), Some("third"));
+        assert_eq!(history.navigate_up("").as_deref(), Some("second"));
+        assert_eq!(history.navigate_up("").as_deref(), Some("first"));
+        // Staying at the oldest entry keeps returning it
+        assert_eq!(history.navigate_up("").as_deref(), Some("first"));
+
+        // Walking back down restores the saved draft at the end
+        assert_eq!(history.navigate_down().as_deref(), Some("second"));
+        assert_eq!(history.navigate_down().as_deref(), Some("third"));
+        assert_eq!(history.navigate_down().as_deref(), Some("draft"));
+        assert_eq!(history.navigate_down(), None, "no navigation after restore");
+    }
+
+    #[test]
+    fn navigate_up_on_empty_history_returns_none() {
+        let mut history = InputHistory::new();
+        assert_eq!(history.navigate_up("draft"), None);
+        assert_eq!(history.navigate_down(), None);
+    }
+
+    #[test]
+    fn add_entry_resets_navigation_state() {
+        let mut history = history_with(&["one", "two"]);
+
+        history.navigate_up("draft");
+        history.add_entry("three".to_string());
+
+        assert_eq!(history.navigate_down(), None);
+        assert_eq!(history.navigate_up("new draft").as_deref(), Some("three"));
+    }
+
+    #[test]
+    fn add_entry_ignores_whitespace_only_input() {
+        let mut history = InputHistory::new();
+        history.add_entry("   ".to_string());
+        assert!(history.entries.is_empty());
+    }
+
+    #[test]
+    fn history_is_capped_at_1000_entries() {
+        let mut history = InputHistory::new();
+        for i in 0..1005 {
+            history.add_entry(format!("entry-{i}"));
+        }
+        assert_eq!(history.entries.len(), 1000);
+        assert_eq!(history.entries[0], "entry-5", "oldest entries are dropped");
+        assert_eq!(history.entries[999], "entry-1004");
+    }
+
+    #[test]
+    fn reset_navigation_clears_search_and_navigation() {
+        let mut history = history_with(&["git status"]);
+        history.navigate_up("draft");
+        history.start_reverse_search("in progress");
+        history.update_reverse_search("git");
+
+        history.reset_navigation();
+
+        assert_eq!(history.navigate_down(), None);
+        assert_eq!(history.get_reverse_search_state().search_query, "");
+        assert_eq!(history.get_reverse_search_state().matched_entry, None);
+    }
+
+    #[test]
+    fn reverse_search_finds_most_recent_match_first() {
+        let mut history = history_with(&["git status", "cargo test", "git push"]);
+
+        history.start_reverse_search("");
+        history.update_reverse_search("git");
+
+        let state = history.get_reverse_search_state();
+        assert_eq!(state.search_query, "git");
+        assert_eq!(state.all_matches, vec!["git push", "git status"]);
+        assert_eq!(state.matched_entry.as_deref(), Some("git push"));
+    }
+
+    #[test]
+    fn reverse_search_is_case_insensitive() {
+        let mut history = history_with(&["CARGO BUILD", "cargo test"]);
+
+        history.start_reverse_search("");
+        history.update_reverse_search("cargo build");
+
+        assert_eq!(
+            history.get_reverse_search_state().matched_entry.as_deref(),
+            Some("CARGO BUILD")
+        );
+    }
+
+    #[test]
+    fn reverse_search_with_no_matches_clears_selection() {
+        let mut history = history_with(&["git status"]);
+
+        history.start_reverse_search("");
+        history.update_reverse_search("docker");
+
+        let state = history.get_reverse_search_state();
+        assert!(state.all_matches.is_empty());
+        assert_eq!(state.matched_entry, None);
+    }
+
+    #[test]
+    fn reverse_search_empty_query_clears_matches() {
+        let mut history = history_with(&["git status"]);
+
+        history.start_reverse_search("");
+        history.update_reverse_search("git");
+        history.update_reverse_search("");
+
+        let state = history.get_reverse_search_state();
+        assert!(state.all_matches.is_empty());
+        assert_eq!(state.matched_entry, None);
+    }
+
+    #[test]
+    fn reverse_search_cycles_through_matches() {
+        let mut history = history_with(&["git status", "git push"]);
+
+        history.start_reverse_search("");
+        history.update_reverse_search("git");
+
+        history.reverse_search_next();
+        assert_eq!(
+            history.get_reverse_search_state().matched_entry.as_deref(),
+            Some("git status")
+        );
+        // Wraps around to the start
+        history.reverse_search_next();
+        assert_eq!(
+            history.get_reverse_search_state().matched_entry.as_deref(),
+            Some("git push")
+        );
+
+        history.reverse_search_prev();
+        assert_eq!(
+            history.get_reverse_search_state().matched_entry.as_deref(),
+            Some("git status")
+        );
+        // Wraps backwards to the most recent match
+        history.reverse_search_prev();
+        assert_eq!(
+            history.get_reverse_search_state().matched_entry.as_deref(),
+            Some("git push")
+        );
+    }
+
+    #[test]
+    fn finish_reverse_search_returns_match_and_resets() {
+        let mut history = history_with(&["git status", "git push"]);
+        history.start_reverse_search("draft");
+        history.update_reverse_search("push");
+
+        let result = history.finish_reverse_search();
+
+        assert_eq!(result.as_deref(), Some("git push"));
+        assert_eq!(history.get_reverse_search_state().matched_entry, None);
+        assert_eq!(history.get_reverse_search_state().search_query, "");
+        assert_eq!(history.navigate_down(), None);
+    }
+
+    #[test]
+    fn finish_reverse_search_without_match_returns_none() {
+        let mut history = history_with(&["git status"]);
+        history.start_reverse_search("draft");
+        history.update_reverse_search("docker");
+
+        assert_eq!(history.finish_reverse_search(), None);
+    }
+
+    #[test]
+    fn cancel_reverse_search_restores_original_input() {
+        let mut history = history_with(&["git status"]);
+        history.start_reverse_search("original draft");
+        history.update_reverse_search("git");
+
+        let restored = history.cancel_reverse_search();
+
+        assert_eq!(restored, "original draft");
+        assert_eq!(history.get_reverse_search_state().search_query, "");
+        assert_eq!(history.navigate_down(), None);
+    }
 }

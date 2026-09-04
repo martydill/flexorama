@@ -911,4 +911,325 @@ mod tests {
             "cargo *"
         );
     }
+
+    use serial_test::serial;
+    use std::sync::{Arc, Mutex};
+
+    fn bash_manager(
+        allowed: &[&str],
+        denied: &[&str],
+        ask_for_permission: bool,
+    ) -> BashSecurityManager {
+        security_manager_with_lists(allowed, denied, ask_for_permission)
+    }
+
+    fn bash_handler(selection: Option<usize>) -> PermissionHandler {
+        Arc::new(move |_prompt| {
+            let selection = selection;
+            Box::pin(async move { selection })
+        })
+    }
+
+    #[derive(Default)]
+    struct RecordingSink {
+        lines: Mutex<Vec<(String, bool)>>,
+    }
+
+    impl crate::output::OutputSink for RecordingSink {
+        fn write(&self, text: &str, is_err: bool) {
+            self.lines
+                .lock()
+                .expect("lines lock")
+                .push((text.to_string(), is_err));
+        }
+
+        fn flush(&self) {}
+    }
+
+    /// Run `f` with the global output sink capturing, returning stdout text.
+    fn capture_stdout<F: FnOnce()>(f: F) -> String {
+        colored::control::set_override(false);
+        let sink = Arc::new(RecordingSink::default());
+        crate::output::set_output_sink(sink.clone());
+        f();
+        crate::output::clear_output_sink();
+        colored::control::unset_override();
+        let guard = sink.lines.lock().unwrap();
+        let text = guard
+            .iter()
+            .filter(|(_, is_err)| !*is_err)
+            .map(|(text, _)| text.clone())
+            .collect::<Vec<_>>()
+            .join("");
+        drop(guard);
+        text
+    }
+
+    #[tokio::test]
+    async fn disabled_security_allows_everything() {
+        let security = BashSecurity {
+            allowed_commands: Default::default(),
+            denied_commands: ["rm -rf /".to_string()].into_iter().collect(),
+            ask_for_permission: true,
+            enabled: false,
+        };
+        let manager = BashSecurityManager::new(security);
+
+        assert_eq!(
+            manager.check_command_permission("rm -rf /"),
+            PermissionResult::Allowed
+        );
+    }
+
+    #[tokio::test]
+    async fn unmatched_command_denied_when_not_asking_permission() {
+        let manager = bash_manager(&[], &[], false);
+
+        assert_eq!(
+            manager.check_command_permission("curl example.com"),
+            PermissionResult::Denied
+        );
+    }
+
+    #[tokio::test]
+    async fn question_mark_wildcard_matches_single_character() {
+        let manager = bash_manager(&["git status?"], &[], true);
+
+        assert_eq!(
+            manager.check_command_permission("git statuss"),
+            PermissionResult::Allowed
+        );
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::RequiresPermission
+        );
+    }
+
+    #[tokio::test]
+    async fn prefix_match_requires_word_boundary() {
+        let manager = bash_manager(&["git"], &[], true);
+
+        assert_eq!(
+            manager.check_command_permission("gitx status"),
+            PermissionResult::RequiresPermission
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_permission_short_circuits_when_not_asking() {
+        let mut manager = bash_manager(&[], &[], false);
+        manager.set_permission_handler(Some(bash_handler(Some(1))));
+
+        let result = manager.ask_permission("git status").await.unwrap();
+
+        assert_eq!(result, None);
+        assert!(
+            !manager.get_security().allowed_commands.contains("git status"),
+            "handler must not run when ask_for_permission is false"
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_permission_allow_this_time_only() {
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(Some(0))));
+
+        let result = manager.ask_permission("git status").await.unwrap();
+
+        assert_eq!(result, Some(false));
+        assert!(
+            !manager.get_security().allowed_commands.contains("git status"),
+            "this-time-only grants must not persist"
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_permission_allow_and_persist_to_allowlist() {
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(Some(1))));
+
+        let result = manager.ask_permission("git status").await.unwrap();
+
+        assert_eq!(result, Some(true));
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::Allowed,
+            "allowlist grant must persist"
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_permission_wildcard_option_adds_pattern() {
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(Some(2))));
+
+        let result = manager.ask_permission("cargo build --release").await.unwrap();
+
+        assert_eq!(result, Some(true));
+        assert_eq!(
+            manager.check_command_permission("cargo build"),
+            PermissionResult::Allowed
+        );
+        assert!(
+            manager.get_security().allowed_commands.contains("cargo *"),
+            "wildcard pattern should be stored, got {:?}",
+            manager.get_security().allowed_commands
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_permission_deny_selections() {
+        // Selection 2 is "deny" for parameter-less commands
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(Some(2))));
+        assert_eq!(manager.ask_permission("git").await.unwrap(), None);
+
+        // Selection 3 is "deny" when a wildcard option exists
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(Some(3))));
+        assert_eq!(manager.ask_permission("git status").await.unwrap(), None);
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::RequiresPermission
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_permission_invalid_selection_denies_for_safety() {
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(Some(99))));
+
+        assert_eq!(manager.ask_permission("git").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn ask_permission_dismissed_prompt_denies() {
+        let mut manager = bash_manager(&[], &[], true);
+        manager.set_permission_handler(Some(bash_handler(None)));
+
+        assert_eq!(manager.ask_permission("git").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn allowlist_and_denylist_membership_updates() {
+        let mut manager = bash_manager(&[], &[], true);
+
+        manager.add_to_allowlist("cargo build".to_string());
+        assert_eq!(
+            manager.check_command_permission("cargo build"),
+            PermissionResult::Allowed
+        );
+        assert!(manager.remove_from_allowlist("cargo build"));
+        assert!(!manager.remove_from_allowlist("cargo build"));
+        assert_eq!(
+            manager.check_command_permission("cargo build"),
+            PermissionResult::RequiresPermission
+        );
+
+        manager.add_to_denylist("rm *".to_string());
+        assert_eq!(
+            manager.check_command_permission("rm -rf build"),
+            PermissionResult::Denied
+        );
+        assert!(manager.remove_from_denylist("rm *"));
+        assert!(!manager.remove_from_denylist("rm *"));
+    }
+
+    #[test]
+    fn update_security_replaces_settings() {
+        let mut manager = bash_manager(&["git"], &[], true);
+        let replacement = BashSecurity {
+            allowed_commands: ["npm".to_string()].into_iter().collect(),
+            denied_commands: Default::default(),
+            ask_for_permission: false,
+            enabled: true,
+        };
+
+        manager.update_security(replacement);
+
+        assert_eq!(
+            manager.check_command_permission("npm install"),
+            PermissionResult::Allowed
+        );
+        assert_eq!(
+            manager.check_command_permission("git status"),
+            PermissionResult::Denied
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn display_permissions_prints_settings() {
+        let manager = bash_manager(&["git"], &["rm *"], true);
+
+        let out = capture_stdout(|| manager.display_permissions());
+
+        assert!(out.contains("Bash Security Settings"), "output: {}", out);
+        assert!(out.contains("git"), "allowlist should be shown: {}", out);
+        assert!(out.contains("rm *"), "denylist should be shown: {}", out);
+    }
+
+    #[test]
+    #[serial]
+    fn display_file_permissions_prints_settings() {
+        let manager = FileSecurityManager::new(FileSecurity {
+            ask_for_permission: true,
+            enabled: true,
+            allow_all_session: false,
+        });
+
+        let out = capture_stdout(|| manager.display_file_permissions());
+
+        assert!(out.contains("File Security Settings"), "output: {}", out);
+        assert!(out.contains("Ask for permission"), "output: {}", out);
+    }
+
+    #[test]
+    fn file_security_session_grant_can_be_reset() {
+        let mut manager = FileSecurityManager::new(FileSecurity {
+            ask_for_permission: false,
+            enabled: true,
+            allow_all_session: false,
+        });
+
+        manager.update_file_security(FileSecurity {
+            ask_for_permission: false,
+            enabled: true,
+            allow_all_session: true,
+        });
+        assert_eq!(
+            manager.check_file_permission("Write", "/tmp/x"),
+            FilePermissionResult::Allowed
+        );
+        assert!(manager.get_file_security().allow_all_session);
+
+        manager.reset_session_permissions();
+
+        assert!(!manager.get_file_security().allow_all_session);
+        // With ask_for_permission=false the operation is still policy-allowed
+        assert_eq!(
+            manager.check_file_permission("Write", "/tmp/x"),
+            FilePermissionResult::Allowed
+        );
+    }
+
+    #[test]
+    fn file_security_update_replaces_settings() {
+        let mut manager = FileSecurityManager::new(FileSecurity {
+            ask_for_permission: false,
+            enabled: true,
+            allow_all_session: false,
+        });
+
+        manager.update_file_security(FileSecurity {
+            ask_for_permission: true,
+            enabled: true,
+            allow_all_session: false,
+        });
+
+        assert_eq!(
+            manager.check_file_permission("Write", "/tmp/x"),
+            FilePermissionResult::RequiresPermission
+        );
+    }
 }

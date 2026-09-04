@@ -174,3 +174,88 @@ mod tests {
         assert!(models.contains(&"anthropic/claude-opus-5"));
     }
 }
+
+#[cfg(test)]
+mod fetch_tests {
+    use super::*;
+    use axum::routing::get;
+    use axum::{Json, Router};
+    use tokio::net::TcpListener;
+
+    async fn spawn_server(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        base_url
+    }
+
+    #[tokio::test]
+    async fn fetch_models_parses_model_ids() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let base_url = spawn_server(Router::new().route(
+            "/models",
+            get(|| async {
+                Json(serde_json::json!({
+                    "data": [
+                        {
+                            "id": "anthropic/claude-opus-5",
+                            "name": "Claude Opus 5",
+                            "description": "flagship model",
+                            "context_length": 200000,
+                            "pricing": { "prompt": "0.000005", "completion": "0.000025" }
+                        },
+                        { "id": "openai/gpt-4o", "name": "GPT-4o" }
+                    ]
+                }))
+            }),
+        ))
+        .await;
+
+        let client = OpenRouterClient::new("key".to_string(), base_url);
+        let models = client.fetch_models().await.unwrap();
+
+        assert_eq!(
+            models,
+            vec![
+                "anthropic/claude-opus-5".to_string(),
+                "openai/gpt-4o".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_models_surfaces_api_errors() {
+        std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
+        std::env::set_var("no_proxy", "127.0.0.1,localhost");
+
+        let base_url = spawn_server(Router::new().route(
+            "/models",
+            get(|| async {
+                (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "{\"error\":\"invalid key\"}".to_string(),
+                )
+            }),
+        ))
+        .await;
+
+        let client = OpenRouterClient::new("bad-key".to_string(), base_url);
+        let err = client.fetch_models().await.unwrap_err().to_string();
+
+        assert!(err.contains("401"), "error: {}", err);
+        assert!(err.contains("invalid key"));
+    }
+
+    #[test]
+    fn fallback_models_cover_multiple_providers() {
+        let models = OpenRouterClient::fallback_models();
+
+        assert!(models.len() >= 5);
+        assert!(models.iter().any(|m| m.starts_with("anthropic/")));
+        assert!(models.iter().any(|m| m.starts_with("openai/")));
+        assert!(models.iter().any(|m| m.starts_with("google/")));
+    }
+}

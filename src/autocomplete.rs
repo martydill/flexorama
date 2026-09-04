@@ -114,6 +114,200 @@ mod tests {
 
         assert!(result.is_none());
     }
+
+    #[test]
+    fn mcp_subcommands_are_completed() {
+        assert_eq!(
+            get_completion("/mcp co", 7),
+            Some("/mcp connect".to_string())
+        );
+        // First matching entry in list order wins
+        assert_eq!(
+            get_completion("/mcp re", 7),
+            Some("/mcp remove".to_string())
+        );
+        // Exact match leaves nothing to complete
+        assert_eq!(get_completion("/mcp list", 9), None);
+        // Unknown prefix
+        assert_eq!(get_completion("/mcp zzz", 8), None);
+    }
+
+    #[test]
+    fn permissions_subcommands_are_completed() {
+        assert_eq!(
+            get_completion("/permissions allo", 17),
+            Some("/permissions allow".to_string())
+        );
+        assert_eq!(
+            get_completion("/permissions remove-a", 21),
+            Some("/permissions remove-allow".to_string())
+        );
+        assert_eq!(get_completion("/permissions show", 17), None);
+    }
+
+    #[test]
+    fn file_permissions_subcommands_are_completed() {
+        assert_eq!(
+            get_completion("/file-permissions re", 20),
+            Some("/file-permissions reset-session".to_string())
+        );
+        assert_eq!(
+            get_completion("/file-permissions dis", 21),
+            Some("/file-permissions disable".to_string())
+        );
+        assert_eq!(get_completion("/file-permissions list", 22), None);
+    }
+
+    #[test]
+    fn commands_complete_only_from_start() {
+        assert_eq!(get_completion("/cl", 3), Some("/clear".to_string()));
+        assert_eq!(get_completion("/res", 4), Some("/resume".to_string()));
+        // Exact command has nothing to complete
+        assert_eq!(get_completion("/clear", 6), None);
+    }
+
+    #[test]
+    fn common_prefix_of_strings() {
+        assert_eq!(find_common_prefix(&[]), "");
+        assert_eq!(
+            find_common_prefix(&["alpha".to_string()]),
+            "alpha"
+        );
+        assert_eq!(
+            find_common_prefix(&["alpha.txt".to_string(), "alphabet.md".to_string()]),
+            "alpha"
+        );
+        assert_eq!(
+            find_common_prefix(&["abc".to_string(), "xyz".to_string()]),
+            ""
+        );
+    }
+
+    fn temp_completion_dir() -> (tempfile::TempDir, String) {
+        let current_dir = std::env::current_dir().expect("current dir");
+        let temp = tempfile::tempdir_in(current_dir).expect("temp dir");
+        let dir_name = temp
+            .path()
+            .file_name()
+            .expect("temp name")
+            .to_string_lossy()
+            .to_string();
+        (temp, dir_name)
+    }
+
+    #[test]
+    fn file_completion_joins_multiple_matches_on_common_prefix() {
+        let (_temp, dir_name) = temp_completion_dir();
+        std::fs::write(
+            std::path::Path::new(&dir_name).join("alpha.txt"),
+            "a",
+        )
+        .unwrap();
+        std::fs::write(
+            std::path::Path::new(&dir_name).join("alphabet.md"),
+            "b",
+        )
+        .unwrap();
+
+        assert_eq!(
+            complete_file_path(&format!("{dir_name}/al")),
+            Some(format!("{dir_name}/alpha"))
+        );
+        // Single match returns the whole file name
+        assert_eq!(
+            complete_file_path(&format!("{dir_name}/alphab")),
+            Some(format!("{dir_name}/alphabet.md"))
+        );
+        // No match
+        assert_eq!(complete_file_path(&format!("{dir_name}/zzz")), None);
+
+        drop(_temp);
+    }
+
+    #[test]
+    fn file_completion_marks_directories_with_trailing_slash() {
+        let (temp, dir_name) = temp_completion_dir();
+        std::fs::create_dir(temp.path().join("subdir")).unwrap();
+        std::fs::write(temp.path().join("subdir/nested.txt"), "n").unwrap();
+
+        assert_eq!(
+            complete_file_path(&format!("{dir_name}/subdir/nest")),
+            Some(format!("{dir_name}/subdir/nested.txt"))
+        );
+        // Completing within the temp dir finds the directory with a slash
+        let (parent_temp, parent_name) = temp_completion_dir();
+        std::fs::rename(temp.path().join("subdir"), parent_temp.path().join("moved_dir")).unwrap();
+
+        assert_eq!(
+            complete_file_path(&format!("{parent_name}/moved")),
+            Some(format!("{parent_name}/moved_dir/"))
+        );
+
+        drop(parent_temp);
+    }
+
+    #[test]
+    fn file_completion_without_directory_searches_current_dir() {
+        let (temp, dir_name) = temp_completion_dir();
+        std::fs::write(temp.path().join("uniquefile.txt"), "u").unwrap();
+
+        // No slash: the file prefix is matched against the current directory
+        assert_eq!(
+            complete_file_path(&format!("{dir_name}uniquefile")),
+            None,
+            "prefix includes the temp dir name so nothing else matches"
+        );
+        assert_eq!(
+            complete_file_path(&format!("{dir_name}/uniquefile")),
+            Some(format!("{dir_name}/uniquefile.txt"))
+        );
+
+        drop(temp);
+    }
+
+    #[test]
+    fn file_completion_through_get_completion_rewrites_input() {
+        let (temp, dir_name) = temp_completion_dir();
+        std::fs::write(temp.path().join("report.md"), "r").unwrap();
+
+        let input = format!("check @{dir_name}/repo");
+        let completed = get_completion(&input, input.len()).expect("completion");
+
+        assert_eq!(
+            completed,
+            format!("check @{dir_name}/report.md"),
+            "text before @ must be preserved"
+        );
+
+        drop(temp);
+    }
+
+    #[test]
+    fn file_completion_keeps_text_after_the_path() {
+        let (temp, dir_name) = temp_completion_dir();
+        std::fs::write(temp.path().join("report.md"), "r").unwrap();
+
+        let input = format!("see @{dir_name}/repo for details");
+        let cursor = input.find(" for").unwrap();
+        let completed = get_completion(&input, cursor).expect("completion");
+
+        assert_eq!(
+            completed,
+            format!("see @{dir_name}/report.md for details")
+        );
+
+        drop(temp);
+    }
+
+    #[test]
+    fn tab_completion_reports_completion_or_none() {
+        // Command completion needs no filesystem access
+        assert_eq!(
+            handle_tab_completion("/cl", 3),
+            Some("/clear".to_string())
+        );
+        assert_eq!(handle_tab_completion("@definitely-no-match-xyz", 23), None);
+    }
 }
 
 /// Get completion suggestions based on current input and cursor position

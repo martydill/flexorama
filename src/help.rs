@@ -454,3 +454,109 @@ pub fn display_mcp_yolo_warning() {
     );
     app_println!();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct RecordingSink {
+        lines: Mutex<Vec<(String, bool)>>,
+    }
+
+    impl crate::output::OutputSink for RecordingSink {
+        fn write(&self, text: &str, is_err: bool) {
+            self.lines
+                .lock()
+                .unwrap()
+                .push((text.to_string(), is_err));
+        }
+
+        fn flush(&self) {}
+    }
+
+    fn capture<F: FnOnce()>(f: F) -> String {
+        colored::control::set_override(false);
+        let sink = Arc::new(RecordingSink::default());
+        crate::output::set_output_sink(sink.clone());
+        f();
+        crate::output::clear_output_sink();
+        colored::control::unset_override();
+        let guard = sink.lines.lock().unwrap();
+        let text = guard
+            .iter()
+            .map(|(line, _)| line.as_str())
+            .collect::<Vec<_>>()
+            .join("");
+        drop(guard);
+        text
+    }
+
+    #[test]
+    #[serial]
+    fn main_help_lists_all_slash_commands() {
+        let out = capture(print_help);
+
+        for command in [
+            "/help",
+            "/stats",
+            "/context",
+            "/clear",
+            "/reset-stats",
+            "/exit",
+            "/quit",
+        ] {
+            assert!(out.contains(command), "help is missing {}: {}", command, out);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn agent_help_describes_agent_management() {
+        let out = capture(print_agent_help);
+        assert!(!out.is_empty());
+        assert!(out.contains("agent"), "output: {}", out);
+    }
+
+    #[test]
+    #[serial]
+    fn mcp_help_describes_server_management() {
+        let out = capture(print_mcp_help);
+        assert!(out.contains("mcp"), "output: {}", out);
+        assert!(out.contains("connect"), "output: {}", out);
+    }
+
+    #[test]
+    #[serial]
+    fn file_permissions_help_lists_operations() {
+        let out = capture(print_file_permissions_help);
+        assert!(out.contains("permission"), "output: {}", out);
+    }
+
+    #[test]
+    #[serial]
+    fn hooks_help_shows_event_documentation() {
+        let out = capture(print_hooks_help);
+        assert!(out.contains("hooks"), "output: {}", out);
+    }
+
+    #[test]
+    #[serial]
+    fn skill_and_permissions_help_render() {
+        assert!(!capture(print_skill_help).is_empty());
+        let permissions = capture(print_permissions_help);
+        assert!(permissions.contains("allow"), "output: {}", permissions);
+    }
+
+    #[test]
+    #[serial]
+    fn yolo_warnings_mention_risk() {
+        let out = capture(|| display_yolo_warning());
+        assert!(!out.is_empty(), "yolo warning should print something");
+
+        let mcp_out = capture(|| display_mcp_yolo_warning());
+        assert!(!mcp_out.is_empty(), "mcp yolo warning should print something");
+    }
+}

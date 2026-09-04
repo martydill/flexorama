@@ -161,3 +161,114 @@ impl ToolRegistry {
         registry
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_registry_starts_empty() {
+        let registry = ToolRegistry::new();
+
+        assert_eq!(registry.get_all_tools().count(), 0);
+        assert!(registry.get_metadata("Read").is_none());
+        assert!(!registry.is_readonly("Read"));
+    }
+
+    #[test]
+    fn register_and_retrieve_tool_metadata() {
+        let mut registry = ToolRegistry::new();
+        registry.register_tool(ToolMetadata {
+            name: "custom".to_string(),
+            icon: "🧪",
+            display_format: DisplayFormat::File { show_size: true },
+            readonly: true,
+        });
+
+        let metadata = registry.get_metadata("custom").expect("registered tool");
+        assert_eq!(metadata.icon, "🧪");
+        assert!(metadata.readonly);
+        assert!(matches!(metadata.display_format, DisplayFormat::File { show_size: true }));
+
+        assert!(registry.is_readonly("custom"));
+        assert_eq!(registry.get_all_tools().count(), 1);
+    }
+
+    #[test]
+    fn registering_same_name_replaces_entry() {
+        let mut registry = ToolRegistry::new();
+        registry.register_tool(ToolMetadata {
+            name: "Read".to_string(),
+            icon: "📖",
+            display_format: DisplayFormat::File { show_size: false },
+            readonly: true,
+        });
+        registry.register_tool(ToolMetadata {
+            name: "Read".to_string(),
+            icon: "📘",
+            display_format: DisplayFormat::Generic,
+            readonly: false,
+        });
+
+        assert_eq!(registry.get_all_tools().count(), 1);
+        assert_eq!(registry.get_metadata("Read").unwrap().icon, "📘");
+        assert!(!registry.is_readonly("Read"));
+    }
+
+    #[test]
+    fn unknown_tools_default_to_generic_non_readonly_metadata() {
+        let default = ToolRegistry::get_default_metadata("mystery_tool");
+
+        assert_eq!(default.name, "mystery_tool");
+        assert_eq!(default.icon, "🔧");
+        assert!(matches!(default.display_format, DisplayFormat::Generic));
+        assert!(!default.readonly);
+    }
+
+    #[test]
+    fn builtin_registry_contains_expected_tools() {
+        let registry = ToolRegistry::with_builtin_tools();
+        let names: Vec<&str> = registry.get_all_tools().map(|t| t.name.as_str()).collect();
+
+        for expected in [
+            "list_directory",
+            "Read",
+            "Write",
+            "Edit",
+            "delete_file",
+            "create_directory",
+            "Bash",
+            "search_in_files",
+            "glob",
+            "use_skill",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "builtin registry missing '{}'",
+                expected
+            );
+        }
+        assert_eq!(names.len(), 10);
+    }
+
+    #[test]
+    fn builtin_readonly_flags_match_tool_semantics() {
+        let registry = ToolRegistry::with_builtin_tools();
+
+        for readonly_tool in ["Read", "list_directory", "search_in_files", "glob", "use_skill"] {
+            assert!(
+                registry.is_readonly(readonly_tool),
+                "'{}' should be readonly",
+                readonly_tool
+            );
+        }
+
+        for mutating_tool in ["Write", "Edit", "delete_file", "create_directory", "Bash"] {
+            assert!(
+                !registry.is_readonly(mutating_tool),
+                "'{}' should not be readonly",
+                mutating_tool
+            );
+        }
+    }
+}

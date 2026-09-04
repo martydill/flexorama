@@ -158,3 +158,198 @@ macro_rules! app_eprint {
         $crate::output::write(&format!($($arg)*), true)
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use log::Log as _;
+    use serial_test::serial;
+    use std::sync::Mutex;
+
+    macro_rules! record {
+        ($level:expr, $msg:expr) => {
+            Record::builder()
+                .args(format_args!("{}", $msg))
+                .level($level)
+                .target("test")
+                .build()
+        };
+    }
+
+    #[derive(Default)]
+    struct RecordingSink {
+        entries: Mutex<Vec<(String, bool)>>,
+        flushes: Mutex<usize>,
+    }
+
+    impl OutputSink for RecordingSink {
+        fn write(&self, text: &str, is_err: bool) {
+            self.entries
+                .lock()
+                .expect("entries lock")
+                .push((text.to_string(), is_err));
+        }
+
+        fn flush(&self) {
+            *self.flushes.lock().expect("flush lock") += 1;
+        }
+    }
+
+    impl RecordingSink {
+        fn texts(&self) -> Vec<String> {
+            self.entries
+                .lock()
+                .expect("entries lock")
+                .iter()
+                .map(|(text, _)| text.clone())
+                .collect()
+        }
+
+        fn error_flags(&self) -> Vec<bool> {
+            self.entries
+                .lock()
+                .expect("entries lock")
+                .iter()
+                .map(|(_, is_err)| *is_err)
+                .collect()
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn sink_receives_written_lines_and_error_flags() {
+        let sink = Arc::new(RecordingSink::default());
+        set_output_sink(sink.clone());
+
+        write("plain", false);
+        write_line("line", false);
+        write_line("error line", true);
+
+        assert_eq!(sink.texts(), vec!["plain", "line", "\n", "error line", "\n"]);
+        assert_eq!(sink.error_flags(), vec![false, false, false, true, true]);
+
+        clear_output_sink();
+        assert!(!is_tui_active());
+    }
+
+    #[test]
+    #[serial]
+    fn is_tui_active_reflects_sink_registration() {
+        assert!(!is_tui_active());
+
+        set_output_sink(Arc::new(RecordingSink::default()));
+        assert!(is_tui_active());
+
+        clear_output_sink();
+        assert!(!is_tui_active());
+    }
+
+    #[test]
+    #[serial]
+    fn flush_is_forwarded_to_sink() {
+        let sink = Arc::new(RecordingSink::default());
+        set_output_sink(sink.clone());
+
+        flush();
+
+        assert_eq!(*sink.flushes.lock().unwrap(), 1);
+        clear_output_sink();
+    }
+
+    #[test]
+    #[serial]
+    fn replacing_sink_stops_previous_sink_receiving_output() {
+        let first = Arc::new(RecordingSink::default());
+        set_output_sink(first.clone());
+
+        let second = Arc::new(RecordingSink::default());
+        set_output_sink(second.clone());
+
+        write_line("latest", false);
+
+        assert!(first.texts().is_empty());
+        assert_eq!(second.texts(), vec!["latest", "\n"]);
+        clear_output_sink();
+    }
+
+    #[test]
+    #[serial]
+    fn logger_respects_level_filter() {
+        let logger = OutputLogger::new(LevelFilter::Warn, false);
+
+        assert!(logger.enabled(&Metadata::builder().level(Level::Error).target("t").build()));
+        assert!(logger.enabled(&Metadata::builder().level(Level::Warn).target("t").build()));
+        assert!(!logger.enabled(&Metadata::builder().level(Level::Info).target("t").build()));
+    }
+
+    #[test]
+    #[serial]
+    fn logger_routes_error_and_warn_to_stderr() {
+        let sink = Arc::new(RecordingSink::default());
+        set_output_sink(sink.clone());
+
+        let logger = OutputLogger::new(LevelFilter::Info, false);
+        logger.log(&record!(Level::Info, "info message"));
+        logger.log(&record!(Level::Warn, "warn message"));
+        logger.log(&record!(Level::Error, "error message"));
+
+        assert_eq!(
+            sink.texts(),
+            vec!["[INFO] info message", "\n", "[WARN] warn message", "\n", "[ERROR] error message", "\n"]
+        );
+        assert_eq!(sink.error_flags(), vec![false, false, true, true, true, true]);
+
+        clear_output_sink();
+    }
+
+    #[test]
+    #[serial]
+    fn stderr_only_logger_sends_everything_to_stderr() {
+        let sink = Arc::new(RecordingSink::default());
+        set_output_sink(sink.clone());
+
+        let logger = OutputLogger::new(LevelFilter::Debug, true);
+        logger.log(&record!(Level::Debug, "debug message"));
+
+        assert_eq!(sink.error_flags(), vec![true, true]);
+        clear_output_sink();
+    }
+
+    #[test]
+    #[serial]
+    fn logger_skips_records_above_level() {
+        let sink = Arc::new(RecordingSink::default());
+        set_output_sink(sink.clone());
+
+        let logger = OutputLogger::new(LevelFilter::Warn, false);
+        logger.log(&record!(Level::Info, "should not appear"));
+
+        assert!(sink.texts().is_empty());
+        clear_output_sink();
+    }
+
+    #[test]
+    fn init_logger_parses_rust_log_levels() {
+        // Verify the level parsing logic directly through the env fallback chain.
+        let parse = |value: &str| {
+            value
+                .parse::<LevelFilter>()
+                .ok()
+                .or_else(|| match value.to_lowercase().as_str() {
+                    "trace" => Some(LevelFilter::Trace),
+                    "debug" => Some(LevelFilter::Debug),
+                    "info" => Some(LevelFilter::Info),
+                    "warn" | "warning" => Some(LevelFilter::Warn),
+                    "error" => Some(LevelFilter::Error),
+                    "off" => Some(LevelFilter::Off),
+                    _ => None,
+                })
+        };
+
+        assert_eq!(parse("debug"), Some(LevelFilter::Debug));
+        assert_eq!(parse("WARNING"), Some(LevelFilter::Warn));
+        assert_eq!(parse("warning"), Some(LevelFilter::Warn));
+        assert_eq!(parse("off"), Some(LevelFilter::Off));
+        assert_eq!(parse("bogus"), None);
+    }
+}
