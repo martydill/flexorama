@@ -290,10 +290,10 @@ pub fn provider_default_model(provider: Provider) -> String {
     match provider {
         Provider::Anthropic => "claude-opus-5".to_string(),
         Provider::Gemini => "gemini-flash-latest".to_string(),
-        Provider::Mistral => "mistral-large-latest".to_string(),
-        Provider::OpenAI => "gpt-5.6-sol".to_string(),
+        Provider::Mistral => "mistral-medium-latest".to_string(),
+        Provider::OpenAI => "gpt-6-astra".to_string(),
         Provider::Zai => "glm-5.3".to_string(),
-        Provider::Ollama => "llama2".to_string(),
+        Provider::Ollama => "qwen3:8b".to_string(),
         Provider::OpenRouter => "anthropic/claude-opus-5".to_string(),
     }
 }
@@ -301,6 +301,7 @@ pub fn provider_default_model(provider: Provider) -> String {
 pub fn provider_models(provider: Provider) -> &'static [&'static str] {
     match provider {
         Provider::Anthropic => &[
+            "claude-fable-5-1",
             "claude-fable-5",
             "claude-opus-5",
             "claude-opus-4-8",
@@ -314,6 +315,7 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
         ],
         Provider::Gemini => &[
             "gemini-flash-latest",
+            "gemini-3.8-flash",
             "gemini-3.7-flash",
             "gemini-3.6-flash",
             "gemini-3.5-flash",
@@ -327,9 +329,11 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
             "gemini-2.5-flash-lite",
         ],
         Provider::Mistral => &[
+            "mistral-medium-latest",
+            "mistral-medium-3-5",
+            "mistral-medium-2604",
             "mistral-large-latest",
             "mistral-large-2512",
-            "mistral-medium-2604",
             "mistral-small-2603",
             "codestral-2508",
             "ministral-14b-2512",
@@ -337,10 +341,12 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
             "ministral-3b-2512",
         ],
         Provider::OpenAI => &[
+            "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
             "gpt-5.6-cyber",
+            "gpt-5.3-codex",
             "gpt-5.1-codex-max",
             "gpt-5.1",
             "gpt-5.1-codex",
@@ -354,11 +360,23 @@ pub fn provider_models(provider: Provider) -> &'static [&'static str] {
             "gpt-4o-mini",
         ],
         Provider::Zai => &["glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6", "glm-4.5"],
-        Provider::Ollama => &["llama2", "gemma3:1b"],
+        Provider::Ollama => &[
+            "qwen3:8b",
+            "gpt-oss:20b",
+            "deepseek-r1:8b",
+            "qwen3-coder:30b",
+            "llama4:scout",
+            "gemma3:4b",
+            "gemma3:1b",
+        ],
         Provider::OpenRouter => &[
+            "openai/gpt-6-astra",
             "anthropic/claude-opus-5",
+            "anthropic/claude-fable-5",
             "anthropic/claude-sonnet-5",
             "openai/gpt-5.6-sol",
+            "google/gemini-3.7-flash",
+            "z-ai/glm-5.3",
             "google/gemini-2.5-pro",
             "meta-llama/llama-4-matrix",
             "mistralai/mistral-large",
@@ -699,6 +717,27 @@ mod tests {
                 "default model '{}' for {} missing from model list",
                 default_model,
                 provider
+            );
+        }
+    }
+
+    #[test]
+    fn provider_model_lists_include_latest_flagships() {
+        let latest = [
+            (Provider::Anthropic, "claude-fable-5-1"),
+            (Provider::Gemini, "gemini-3.8-flash"),
+            (Provider::Mistral, "mistral-medium-3-5"),
+            (Provider::OpenAI, "gpt-6-astra"),
+            (Provider::Zai, "glm-5.3"),
+            (Provider::Ollama, "qwen3:8b"),
+            (Provider::OpenRouter, "openai/gpt-6-astra"),
+        ];
+        for (provider, model) in latest {
+            assert!(
+                provider_models(provider).contains(&model),
+                "{} model list is missing latest model '{}'",
+                provider,
+                model
             );
         }
     }
