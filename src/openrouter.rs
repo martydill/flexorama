@@ -105,9 +105,13 @@ impl OpenRouterClient {
     /// Get a static list of fallback models in case API fetch fails
     pub fn fallback_models() -> &'static [&'static str] {
         &[
+            "openai/gpt-6-astra",
             "anthropic/claude-opus-5",
+            "anthropic/claude-fable-5",
             "anthropic/claude-sonnet-5",
             "openai/gpt-5.6-sol",
+            "google/gemini-3.7-flash",
+            "z-ai/glm-5.3",
             "google/gemini-2.5-pro",
             "meta-llama/llama-4-matrix",
             "mistralai/mistral-large",
@@ -257,5 +261,7 @@ mod fetch_tests {
         assert!(models.iter().any(|m| m.starts_with("anthropic/")));
         assert!(models.iter().any(|m| m.starts_with("openai/")));
         assert!(models.iter().any(|m| m.starts_with("google/")));
+        assert!(models.iter().any(|m| m.starts_with("z-ai/")));
+        assert!(models.iter().any(|m| m.starts_with("mistralai/")));
     }
 }

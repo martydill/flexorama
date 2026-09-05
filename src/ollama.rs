@@ -214,7 +214,7 @@ impl OllamaClient {
                     "Failed to fetch Ollama models: {}. Using default models.",
                     e
                 );
-                return Ok(vec!["llama2".to_string(), "gemma3:1b".to_string()]);
+                return Ok(Self::fallback_models());
             }
         };
 
@@ -225,7 +225,7 @@ impl OllamaClient {
                 "Ollama /api/tags returned error {}: {}. Using default models.",
                 status, error_text
             );
-            return Ok(vec!["llama2".to_string(), "gemma3:1b".to_string()]);
+            return Ok(Self::fallback_models());
         }
 
         let response_text = response.text().await?;
@@ -237,7 +237,7 @@ impl OllamaClient {
 
                 if model_names.is_empty() {
                     warn!("No models found in Ollama. Using default models.");
-                    Ok(vec!["llama2".to_string(), "gemma3:1b".to_string()])
+                    Ok(Self::fallback_models())
                 } else {
                     debug!("Found {} Ollama models", model_names.len());
                     Ok(model_names)
@@ -248,9 +248,18 @@ impl OllamaClient {
                     "Failed to parse Ollama tags response: {}. Using default models.",
                     e
                 );
-                Ok(vec!["llama2".to_string(), "gemma3:1b".to_string()])
+                Ok(Self::fallback_models())
             }
         }
+    }
+
+    /// Get the suggested models used when the Ollama server cannot be
+    /// reached or reports no installed models
+    pub fn fallback_models() -> Vec<String> {
+        crate::config::provider_models(crate::config::Provider::Ollama)
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     pub async fn create_message(
@@ -1517,7 +1526,7 @@ mod streaming_tests {
         std::env::set_var("NO_PROXY", "127.0.0.1,localhost");
         std::env::set_var("no_proxy", "127.0.0.1,localhost");
 
-        let fallback = vec!["llama2".to_string(), "gemma3:1b".to_string()];
+        let fallback = OllamaClient::fallback_models();
 
         // Server error status
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
